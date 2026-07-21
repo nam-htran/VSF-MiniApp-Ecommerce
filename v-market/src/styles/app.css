@@ -1,0 +1,3 @@
+@import 'tailwindcss';
+@import '@v-miniapp/ui-react/tailwind/styles.css';
+@import '@v-miniapp/ui-react/tailwind/colors.css';

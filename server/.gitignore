@@ -1,0 +1,7 @@
+node_modules
+dist
+*.log
+
+# Bí mật thật (client_secret, JWT_SECRET, ...) không bao giờ vào git.
+.env
+.env.local

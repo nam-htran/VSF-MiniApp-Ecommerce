@@ -1,0 +1,39 @@
+{
+  "name": "v-market",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "preview:ui": "vite preview --port 4002 --outDir node_modules/@v-miniapp/ui-react/dist-storybook --open",
+    "login": "v-miniapp-cli login",
+    "dev": "v-miniapp-cli dev",
+    "build": "v-miniapp-cli build",
+    "deploy": "v-miniapp-cli deploy",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.2.3",
+    "@types/react-dom": "^19.2.3",
+    "@v-miniapp/cli": "^0.0.84",
+    "@vitejs/plugin-react-swc": "^4.2.2",
+    "eslint": "^9.35.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.4.0",
+    "sass-embedded": "^1.97.1",
+    "tailwindcss": "^4.1.18",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.43.0",
+    "vite": "^7.1.6"
+  },
+  "dependencies": {
+    "@v-miniapp/apis": "^1.0.20",
+    "@v-miniapp/ui-react": "^1.0.79",
+    "clsx": "^2.1.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwind-merge": "^3.4.0"
+  }
+}

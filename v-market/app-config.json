@@ -1,0 +1,9 @@
+{
+  "appIdentifier": "YOUR_APP_ID",
+  "appName": "YOUR_APP_NAME",
+  "h5App": "YES",
+  "window": {
+    "defaultTitle": "",
+    "transparentTitle": "always"
+  }
+}
