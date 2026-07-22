@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +27,16 @@ app = FastAPI(
     description="Mock of the V-App Open API.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# The MiniApp calls /simulator/* directly in dev — it stands in for the
+# getAuthCode JSAPI — and in the Simulator that call is a browser fetch
+# from the dev server's port. Local origins only.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 Session = Annotated[AsyncSession, Depends(get_session)]

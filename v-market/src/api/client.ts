@@ -42,7 +42,9 @@ export async function apiRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const url = `${BASE}${path}`;
+  // Absolute URLs pass through — the auth flow talks to the mock V-App,
+  // which lives on its own base. Everything else goes to the backend.
+  const url = path.startsWith('http') ? path : `${BASE}${path}`;
   const method = init.method ?? 'GET';
 
   // The bridge is HTTPS-only — the Simulator rejects a plain-http URL

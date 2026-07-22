@@ -55,6 +55,7 @@ Cùng nguyên tắc với `unique` trên `shops.owner_id`: chặn ở nơi khôn
 
 | | Ai gọi được |
 |---|---|
+| `GET /products` | công khai — feed toàn sàn, join sẵn tên shop (một query, không N+1); `?onSale=true` → chỉ hàng giảm giá, nguồn của dải flash sale |
 | `GET /shops/{shop_id}/products` | công khai |
 | `GET /products/{product_id}` | công khai |
 | `GET /products/mine` | chủ shop |

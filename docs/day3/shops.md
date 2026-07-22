@@ -4,10 +4,12 @@
 |---|---|---|
 | 1 | Quản lý shop của người bán | xong — dưới đây |
 | 2 | Bỏ tài khoản seed, đăng ký được tài khoản V-App | xong — dưới đây |
-| 3 | Giao diện cơ bản cho MiniApp | mới có tầng gọi API → [frontend.md](frontend.md) |
-| 4 | Sản phẩm | xong → [products.md](products.md) |
+| 3 | Giao diện MiniApp: trang chủ, chi tiết, giỏ, đăng nhập | xong → [frontend.md](frontend.md) |
+| 4 | Sản phẩm (+ đơn vị, giá sale, feed toàn sàn) | xong → [products.md](products.md) |
 
-Ràng buộc của nền tảng, đọc trước khi dựng màn hình: [platform-constraints.md](platform-constraints.md).
+Ràng buộc của nền tảng — đọc trước khi viết gì mới: [platform-constraints.md](platform-constraints.md).
+
+Chưa làm: đơn hàng (mô hình B đã chốt ở [products.md](products.md) §5), thanh toán + IPN của ngày 2.
 
 Phần dưới chỉ nói về 1 và 2.
 

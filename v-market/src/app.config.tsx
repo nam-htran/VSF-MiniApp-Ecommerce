@@ -4,6 +4,7 @@ import { CartTabIcon } from './components/cart-tab-icon';
 import HomePage from './pages/home-page';
 import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
+import LoginPage from './pages/login-page';
 import OrdersPage from './pages/orders-page';
 import AccountPage from './pages/account-page';
 
@@ -45,6 +46,13 @@ export const getAppConfig = (): IAppConfig => ({
       Component: CartPage,
       navigationBar: { hidden: true },
       bottomTabBarId: 'cart',
+    },
+    {
+      // Dev-only stand-in for V-App's own sign-in; not a tab root, so the
+      // floating back button appears.
+      pathname: '/login',
+      Component: LoginPage,
+      navigationBar: { hidden: true },
     },
     {
       pathname: '/orders',
