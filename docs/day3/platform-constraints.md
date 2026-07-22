@@ -225,15 +225,55 @@ Trang cấu hình có nhắc `tabBar` nhưng không mô tả — **trang đượ
 ## 9. Whitelist domain
 
 > "Bất kỳ request nào gửi đến các tên miền không nằm trong danh sách an toàn này đều sẽ **bị nền tảng chặn tự động**."
-
-Đăng ký bắt buộc `https://`, **từ chối chứng chỉ tự ký**, và phải phục vụ file `vsf-verification.txt` ở gốc public để VSF gọi vào xác minh.
-
-Whitelist **bind vào bản build** — thêm domain sau thì phải build lại.
+> — `/development/devcenter/whitelist-domain`
 
 | `127.0.0.1:4000` | |
 |---|---|
 | `v-miniapp-cli dev` | ✅ chạy (proxy Node trên máy mình) |
 | Máy thật / production | ❌ chết |
+
+### Cách mở một domain
+
+Bốn bước, làm trong V-Console bằng tài khoản **Admin** của Mini App:
+
+| | |
+|---|---|
+| 1 | Cài đặt → **Quản lý tên miền** → **Tạo tên miền** |
+| 2 | Nhập domain kèm giao thức (`https://` hoặc `wss://`), bấm **Tải tệp xác thực** → nhận `vsf-verification.txt` |
+| 3 | Đặt tệp đó vào **thư mục gốc** của server, mở được công khai tại `https://domain/vsf-verification.txt` |
+| 4 | Quay lại V-Console bấm **Thêm tên miền** — backend của VSF tự gọi vào đọc tệp để xác minh |
+
+Whitelist **bind vào bản build**: domain thêm sau chỉ áp dụng cho build upload sau đó. Build cũ không tự nhận danh sách mới, phải build lại và upload lại.
+
+Năm lỗi tài liệu liệt kê, đáng để ý ba cái sau vì không rõ ràng:
+
+- **SSL tự ký bị từ chối.** Phải là chứng chỉ do một CA uy tín cấp.
+- **Không được redirect.** Khai `https://domain.com` mà server tự chuyển sang `https://www.domain.com` là hỏng — backend không đi theo redirect.
+- **Cloudflare / firewall chặn.** Request kiểm tra của VSF phải đọc được tệp đó; nếu proxy chặn bot thì phải mở ngoại lệ riêng cho đường dẫn này.
+
+### Hệ quả lớn: chỉ whitelist được domain mình sở hữu
+
+Bước 3 đòi **đặt tệp vào thư mục gốc** của domain. Nghĩa là không sở hữu domain thì không whitelist được.
+
+Nên các domain bên thứ ba **không dùng được**, kể cả khi chúng phổ biến:
+
+| | |
+|---|---|
+| `fonts.gstatic.com` | không đặt tệp lên máy chủ Google được |
+| CDN ảnh của bên khác (Cloudinary, imgix…) | trừ khi mua domain riêng trỏ về |
+| API bản đồ, reverse geocoding | phải proxy qua backend của mình |
+
+**Cách duy nhất là proxy qua backend của mình.** Ảnh, font, dịch vụ ngoài — tất cả đi qua domain đã whitelist, backend gọi ra ngoài rồi trả về. Điều này cũng khớp với mục §6 hiệu năng: CDN ảnh phải là domain của mình.
+
+### Về font Inter
+
+Thư viện nhúng **15 khối `@font-face`** trỏ tới `https://fonts.gstatic.com`. Mà theo trên thì domain đó **không whitelist được**.
+
+*(Suy luận)* Nhiều khả năng V-App đã có sẵn Inter trong ứng dụng chủ, nên `@font-face` không bao giờ phải tải — câu *"ưu tiên dùng Inter giống V-App để tránh việc tải lại Font"* trong tài liệu hiệu năng chính là ý đó. Nếu vậy thì không có vấn đề gì.
+
+Không phân biệt được hai khả năng từ máy dev: Simulator có internet nên trường hợp nào cũng chạy. Chỉ lộ ra trên thiết bị thật, và nếu sai thì chữ rơi về `sans-serif` của hệ điều hành chứ không vỡ layout.
+
+Kết luận thực dụng: **đừng đổi font**, và đừng tự thêm `@font-face` trỏ ra ngoài — cái đó thì chắc chắn hỏng.
 
 ## 10. Chỗ tài liệu sai
 
