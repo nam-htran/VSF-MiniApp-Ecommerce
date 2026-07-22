@@ -130,6 +130,48 @@ async def test_seller_cannot_edit_another_sellers_shop(base_url):
     assert after.json()["name"] == "Shop B"
 
 
+async def test_anyone_can_browse_the_shop_list(base_url):
+    """The home screen must work with no token — review rule 3.4.8."""
+    token_b = await token_for(base_url, USER_B_ID)
+    token_c = await token_for(base_url, USER_C_ID)
+
+    async with httpx.AsyncClient() as client:
+        for token, name in ((token_b, "Shop B"), (token_c, "Shop C")):
+            await client.post(
+                f"{base_url}/shops",
+                headers=auth(token),
+                json={"name": name, "description": "..."},
+            )
+
+        response = await client.get(f"{base_url}/shops")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [shop["name"] for shop in body["items"]] == ["Shop B", "Shop C"]
+    assert body["hasMore"] is False
+
+
+async def test_shop_list_pages(base_url):
+    token = await token_for(base_url, USER_A_ID)
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{base_url}/shops",
+            headers=auth(token),
+            json={"name": "Shop A", "description": "..."},
+        )
+        first = await client.get(f"{base_url}/shops", params={"limit": 1})
+        second = await client.get(
+            f"{base_url}/shops", params={"limit": 1, "offset": 1}
+        )
+
+    assert len(first.json()["items"]) == 1
+    # Exactly `limit` rows came back, so there may be more — the caller
+    # cannot tell yet, and the next page is what settles it.
+    assert first.json()["hasMore"] is True
+    assert second.json()["items"] == []
+
+
 async def test_request_without_a_token_is_rejected(base_url):
     async with httpx.AsyncClient() as client:
         response = await client.post(

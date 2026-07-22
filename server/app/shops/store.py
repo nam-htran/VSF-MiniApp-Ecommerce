@@ -36,6 +36,22 @@ async def find_by_owner(session: AsyncSession, owner_id: str) -> Shop | None:
     return await session.scalar(select(Shop).where(Shop.owner_id == owner_id))
 
 
+async def list_active(
+    session: AsyncSession, limit: int, offset: int
+) -> list[Shop]:
+    """Shops a buyer may browse. Ordered by name so paging is stable —
+    without an ORDER BY, Postgres may return rows in any order and the
+    same shop can appear on two pages."""
+    rows = await session.scalars(
+        select(Shop)
+        .where(Shop.status == "ACTIVE")
+        .order_by(Shop.name, Shop.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(rows)
+
+
 async def create_shop(
     session: AsyncSession,
     owner_id: str,

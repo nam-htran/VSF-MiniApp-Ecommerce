@@ -12,7 +12,7 @@ nobody could ever become one.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -77,6 +77,22 @@ async def create_shop(
     # from others.
     await users.promote_to_seller(session, user)
     return _serialise(shop)
+
+
+@router.get("")
+async def list_shops(
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    """Public: the buyer home screen, which must work without login."""
+    shops_page = await shops.list_active(session, limit=limit, offset=offset)
+    return {
+        "items": [_serialise(shop) for shop in shops_page],
+        # No total count: it costs a second query and the home screen only
+        # needs to know whether to keep scrolling.
+        "hasMore": len(shops_page) == limit,
+    }
 
 
 @router.get("/me")
