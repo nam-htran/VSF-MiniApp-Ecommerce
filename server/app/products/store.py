@@ -21,15 +21,29 @@ class Product(Base):
         # sell a tenth copy of a nine-copy product — the database refuses.
         CheckConstraint("stock >= 0", name="ck_products_stock_non_negative"),
         CheckConstraint("price >= 0", name="ck_products_price_non_negative"),
+        # A sale where the old price is not higher is not a sale. Enforced
+        # here so no code path can fake a discount badge.
+        CheckConstraint(
+            "original_price IS NULL OR original_price > price",
+            name="ck_products_original_price_above_price",
+        ),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True)
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
     name: Mapped[str]
     description: Mapped[str]
+    # "Hũ 300g", "Túi 5kg" — the pack-size line on the card.
+    unit: Mapped[str | None] = mapped_column(default=None)
     # Numeric, never Float: 0.1 + 0.2 != 0.3 in binary floating point, and a
     # basket of twenty lines would drift away from the price the buyer saw.
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    # Set = the product is on sale; this is the struck-through price. The
+    # discount percentage is derived, never stored — two numbers cannot
+    # drift apart.
+    original_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), default=None
+    )
     stock: Mapped[int]
     image_url: Mapped[str | None] = mapped_column(default=None)
     # HIDDEN keeps a product out of the storefront without deleting it —
@@ -39,6 +53,34 @@ class Product(Base):
 
 async def find_by_id(session: AsyncSession, product_id: str) -> Product | None:
     return await session.get(Product, product_id)
+
+
+async def list_active(
+    session: AsyncSession, limit: int, offset: int, on_sale: bool = False
+) -> list[tuple[Product, str]]:
+    """The marketplace storefront: active products across all shops,
+    each with its shop's name — the card on the home screen shows both.
+
+    Joined here rather than fetched per product: N cards must not cost
+    N+1 queries, and the response budget is under a second.
+    """
+    from app.shops.store import Shop
+
+    query = (
+        select(Product, Shop.name)
+        .join(Shop, Shop.id == Product.shop_id)
+        .where(Product.status == "ACTIVE", Shop.status == "ACTIVE")
+    )
+    if on_sale:
+        # On sale = has a struck-through price. No separate flag to drift.
+        query = query.where(Product.original_price.is_not(None))
+
+    rows = await session.execute(
+        # Ordered so paging is stable — without it Postgres may return
+        # rows in any order and one product can appear on two pages.
+        query.order_by(Product.name, Product.id).limit(limit).offset(offset)
+    )
+    return [(product, shop_name) for product, shop_name in rows.all()]
 
 
 async def list_for_shop(
@@ -73,13 +115,17 @@ async def create_product(
     price: Decimal,
     stock: int,
     image_url: str | None,
+    unit: str | None = None,
+    original_price: Decimal | None = None,
 ) -> Product:
     product = Product(
         id=str(uuid.uuid4()),
         shop_id=shop_id,
         name=name,
         description=description,
+        unit=unit,
         price=price,
+        original_price=original_price,
         stock=stock,
         image_url=image_url,
     )

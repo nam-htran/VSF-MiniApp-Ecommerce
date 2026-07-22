@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentSeller
@@ -27,9 +27,22 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 class CreateProductRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
+    unit: str | None = Field(default=None, max_length=60)
     price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    # Set = the product is on sale at `price`; this is the struck-through
+    # price. Mirrors the database CHECK, so the caller gets a 422 with a
+    # message instead of a bare IntegrityError.
+    originalPrice: Decimal | None = Field(
+        default=None, gt=0, max_digits=12, decimal_places=2
+    )
     stock: int = Field(ge=0)
     imageUrl: str | None = None
+
+    @model_validator(mode="after")
+    def sale_must_be_a_discount(self):
+        if self.originalPrice is not None and self.originalPrice <= self.price:
+            raise ValueError("originalPrice must be greater than price")
+        return self
 
 
 class UpdateProductRequest(BaseModel):
@@ -47,10 +60,16 @@ def _serialise(product: Product) -> dict:
         "shopId": product.shop_id,
         "name": product.name,
         "description": product.description,
+        "unit": product.unit,
         # A number, not a string: VND is whole đồng and stays far below the
         # 2^53 limit where JSON numbers stop being exact. What must not
         # happen is arithmetic on the client — order totals come from here.
         "price": float(product.price),
+        "originalPrice": (
+            float(product.original_price)
+            if product.original_price is not None
+            else None
+        ),
         "stock": product.stock,
         "imageUrl": product.image_url,
         "status": product.status,
@@ -87,6 +106,31 @@ async def list_shop_products(
     }
 
 
+@router.get("/products")
+async def list_products(
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    onSale: Annotated[bool, Query()] = False,
+) -> dict:
+    """Public: the marketplace storefront across all shops.
+
+    Must work without login, like every browsing endpoint. Each item
+    carries its shop's name so the card can show where it comes from.
+    ?onSale=true keeps only discounted items — the flash-sale strip.
+    """
+    page = await products.list_active(
+        session, limit=limit, offset=offset, on_sale=onSale
+    )
+    return {
+        "items": [
+            {**_serialise(product), "shopName": shop_name}
+            for product, shop_name in page
+        ],
+        "hasMore": len(page) == limit,
+    }
+
+
 @router.get("/products/mine")
 async def list_my_products(
     seller: CurrentSeller,
@@ -118,7 +162,9 @@ async def create_product(
         shop_id=shop.id,
         name=body.name,
         description=body.description,
+        unit=body.unit,
         price=body.price,
+        original_price=body.originalPrice,
         stock=body.stock,
         image_url=body.imageUrl,
     )

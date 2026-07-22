@@ -15,11 +15,17 @@ class Product(Base):
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
     name: Mapped[str]
     description: Mapped[str]
+    unit: Mapped[str | None]                  # "Hũ 300g", "Túi 5kg"
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    original_price: Mapped[Decimal | None]    # đặt = đang sale, đây là giá gạch
     stock: Mapped[int]
     image_url: Mapped[str | None]
     status: Mapped[str] = mapped_column(default="ACTIVE")
 ```
+
+**Sale không phải cờ riêng** — có `original_price` nghĩa là đang sale, badge % được tính chứ không lưu, nên hai con số không bao giờ lệch nhau. `CHECK (original_price > price)` ở tầng DB: không tồn tại "sale" mà giá cũ rẻ hơn giá mới. `GET /products?onSale=true` là nguồn của dải flash sale.
+
+**Cố ý chưa thêm:** `sold` (phải đếm từ bảng đơn hàng — chưa có), `warehouse` (là địa chỉ của shop, thuộc bảng `shops`), `shipDays` (chuyện giao vận). Nguyên tắc: demo bịa ở frontend thì ai cũng thấy chữ TEMPORARY; bịa trong database thì thành "dữ liệu".
 
 **Giá là `Numeric`, không phải `Float`.** Trong dấu phẩy động nhị phân `0.1 + 0.2 != 0.3`; cộng vài chục dòng đơn hàng là số tiền lệch khỏi con số người mua đã nhìn thấy.
 

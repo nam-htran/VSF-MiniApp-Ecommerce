@@ -146,6 +146,102 @@ async def test_negative_stock_is_rejected(base_url):
     assert response.status_code == 422
 
 
+async def test_marketplace_lists_products_across_shops(base_url):
+    """The home screen shows one feed over every shop, no token needed."""
+    token_b, _ = await seller_with_shop(base_url, USER_B_ID, "Shop B")
+    token_c, _ = await seller_with_shop(base_url, USER_C_ID, "Shop C")
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{base_url}/products", headers=auth(token_b), json=PRODUCT
+        )
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token_c),
+            json={**PRODUCT, "name": "Bàn ủi hơi nước"},
+        )
+
+        response = await client.get(f"{base_url}/products")
+
+    assert response.status_code == 200
+    body = response.json()
+    # Both shops present, each item naming its shop.
+    assert {item["shopName"] for item in body["items"]} == {"Shop B", "Shop C"}
+    assert body["hasMore"] is False
+
+
+async def test_marketplace_feed_pages_and_hides_hidden(base_url):
+    token, _ = await seller_with_shop(base_url, USER_A_ID, "Shop A")
+
+    async with httpx.AsyncClient() as client:
+        first = await client.post(
+            f"{base_url}/products", headers=auth(token), json=PRODUCT
+        )
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token),
+            json={**PRODUCT, "name": "Bình đun nước"},
+        )
+        await client.patch(
+            f"{base_url}/products/{first.json()['id']}",
+            headers=auth(token),
+            json={"status": "HIDDEN"},
+        )
+
+        page = await client.get(f"{base_url}/products", params={"limit": 1})
+
+    body = page.json()
+    # The hidden product neither appears nor counts toward paging.
+    assert [item["name"] for item in body["items"]] == ["Bình đun nước"]
+    assert body["hasMore"] is True  # exactly `limit` rows came back
+
+
+async def test_on_sale_filter_and_derived_fields(base_url):
+    """?onSale=true returns only discounted items, with unit and the old
+    price present so the card needs no second request."""
+    token, _ = await seller_with_shop(base_url, USER_A_ID, "Shop A")
+
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token),
+            json={**PRODUCT, "name": "Hàng thường"},
+        )
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token),
+            json={
+                **PRODUCT,
+                "name": "Hàng giảm giá",
+                "unit": "Hộp 1 cái",
+                "originalPrice": 500000,
+            },
+        )
+
+        sale = await client.get(f"{base_url}/products", params={"onSale": "true"})
+        everything = await client.get(f"{base_url}/products")
+
+    items = sale.json()["items"]
+    assert [item["name"] for item in items] == ["Hàng giảm giá"]
+    assert items[0]["unit"] == "Hộp 1 cái"
+    assert items[0]["originalPrice"] == 500000
+    # The plain feed still carries both.
+    assert len(everything.json()["items"]) == 2
+
+
+async def test_sale_price_must_beat_current_price(base_url):
+    token, _ = await seller_with_shop(base_url, USER_A_ID, "Shop A")
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{base_url}/products",
+            headers=auth(token),
+            json={**PRODUCT, "originalPrice": PRODUCT["price"]},
+        )
+
+    assert response.status_code == 422
+
+
 async def test_storefront_needs_no_token(base_url):
     token, shop_id = await seller_with_shop(base_url, USER_A_ID, "Shop A")
 
