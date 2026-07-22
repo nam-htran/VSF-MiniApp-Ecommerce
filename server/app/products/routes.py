@@ -1,0 +1,166 @@
+"""Products.
+
+Authorisation here is two hops, unlike shops: a product belongs to a shop,
+and a shop belongs to a seller. Owning the product means owning the shop it
+sits in — checked server-side, never trusted from the request.
+"""
+
+from decimal import Decimal
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.deps import CurrentSeller
+from app.db import get_session
+from app.products import store as products
+from app.products.store import Product
+from app.shops import store as shops
+from app.users.store import MarketUser
+
+router = APIRouter(tags=["Products"])
+
+Session = Annotated[AsyncSession, Depends(get_session)]
+
+
+class CreateProductRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=4000)
+    price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    stock: int = Field(ge=0)
+    imageUrl: str | None = None
+
+
+class UpdateProductRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1, max_length=4000)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    stock: int | None = Field(default=None, ge=0)
+    imageUrl: str | None = None
+    status: str | None = Field(default=None, pattern="^(ACTIVE|HIDDEN)$")
+
+
+def _serialise(product: Product) -> dict:
+    return {
+        "id": product.id,
+        "shopId": product.shop_id,
+        "name": product.name,
+        "description": product.description,
+        # A number, not a string: VND is whole đồng and stays far below the
+        # 2^53 limit where JSON numbers stop being exact. What must not
+        # happen is arithmetic on the client — order totals come from here.
+        "price": float(product.price),
+        "stock": product.stock,
+        "imageUrl": product.image_url,
+        "status": product.status,
+    }
+
+
+async def _my_shop(session: AsyncSession, seller: MarketUser):
+    shop = await shops.find_by_owner(session, seller.id)
+    if shop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No shop yet"
+        )
+    return shop
+
+
+@router.get("/shops/{shop_id}/products")
+async def list_shop_products(
+    shop_id: str,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    """Public: the storefront, which must work without login.
+
+    Hidden products are never included — that is the whole point of the
+    flag, and this endpoint has no way to ask for them.
+    """
+    page = await products.list_for_shop(
+        session, shop_id, limit=limit, offset=offset
+    )
+    return {
+        "items": [_serialise(product) for product in page],
+        "hasMore": len(page) == limit,
+    }
+
+
+@router.get("/products/mine")
+async def list_my_products(
+    seller: CurrentSeller,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    """The seller's own shop, hidden products included."""
+    shop = await _my_shop(session, seller)
+    page = await products.list_for_shop(
+        session, shop.id, limit=limit, offset=offset, include_hidden=True
+    )
+    return {
+        "items": [_serialise(product) for product in page],
+        "hasMore": len(page) == limit,
+    }
+
+
+@router.post("/products", status_code=status.HTTP_201_CREATED)
+async def create_product(
+    body: CreateProductRequest, seller: CurrentSeller, session: Session
+) -> dict:
+    # The shop comes from who is calling, never from the request body —
+    # otherwise a seller could post products into someone else's shop.
+    shop = await _my_shop(session, seller)
+
+    product = await products.create_product(
+        session,
+        shop_id=shop.id,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        stock=body.stock,
+        image_url=body.imageUrl,
+    )
+    return _serialise(product)
+
+
+@router.patch("/products/{product_id}")
+async def update_product(
+    product_id: str,
+    body: UpdateProductRequest,
+    seller: CurrentSeller,
+    session: Session,
+) -> dict:
+    product = await products.find_by_id(session, product_id)
+    shop = await shops.find_by_owner(session, seller.id)
+
+    # 404 for missing, for someone else's, and for "you have no shop" alike,
+    # so the response cannot be used to discover which product ids exist.
+    if product is None or shop is None or product.shop_id != shop.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+
+    updated = await products.update_product(
+        session,
+        product,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        stock=body.stock,
+        image_url=body.imageUrl,
+        status=body.status,
+    )
+    return _serialise(updated)
+
+
+@router.get("/products/{product_id}")
+async def get_product(product_id: str, session: Session) -> dict:
+    """Public: the product detail screen."""
+    product = await products.find_by_id(session, product_id)
+    if product is None or product.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+    return _serialise(product)

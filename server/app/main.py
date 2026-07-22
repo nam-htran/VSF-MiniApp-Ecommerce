@@ -5,9 +5,11 @@ from fastapi import FastAPI
 from app.auth.routes import router as auth_router
 from app.config import settings
 from app.db import create_tables, engine
+from app.products.routes import router as products_router
 from app.shops.routes import router as shops_router
 
 # Imported so SQLAlchemy knows about the models before create_tables() runs.
+from app.products import store as _products  # noqa: F401
 from app.shops import store as _shops  # noqa: F401
 from app.users import store as _users  # noqa: F401
 
@@ -29,6 +31,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(shops_router)
+    app.include_router(products_router)
     return app
 
 
