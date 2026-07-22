@@ -320,6 +320,10 @@ Kết luận thực dụng: **đừng đổi font**, và đừng tự thêm `@fo
 
 **Simulator có bơm `--vsf-title-bar-height`, đo từ mép trang** (gồm cả thanh trạng thái giả, ~96px) — không phải "không bơm gì" như đoán ban đầu. `--safe-area-inset-top` thì không thấy bơm. Cụm nút `⋯ ✕` đè lên trang, không chiếm chỗ layout.
 
+**`lazy` của `Image` hỏng trong app này (ui-react 1.0.79).** `Image` chỉ gán `src` sau khi `VisibilitySensor` nội bộ (div 0×0 + IntersectionObserver) bắn — mà trong container cuộn của App shell nó không bao giờ bắn, ngang hay dọc đều vậy. Triệu chứng: không lỗi, không ảnh, lặng lẽ rơi về `fallback`. Đừng dùng `lazy`; muốn lazy thật thì tự làm khi ảnh về từ backend. Ảnh đầu màn hình thì eager là đúng luôn — nó là ứng viên LCP.
+
+**`Carousel` mặc định `align: 'center'`** — banner chữ sẽ lệch khỏi mép trái và slide sau ló vào bên phải. Banner toàn trang cần `options={{ align: 'start', gap: 0 }}`. Autoplay có sẵn qua `options.autoplay/delay` (embla), không cần tự viết timer.
+
 ## 11. Vài quy định giao diện lặt vặt
 
 - §3.2.2 — không được có màn hình loading toàn trang lúc mở app
