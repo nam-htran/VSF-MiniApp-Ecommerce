@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "v-miniapp": {
+      "source": "v-open-platform/v-mini-app-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "aa3be383cc28ff237720b91d5d56b649b06f23eda17fbf3a86cd5b92254188b9"
+    },
+    "v-miniapp-ui-react": {
+      "source": "v-open-platform/ui-react-skills",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "9107049e918e04323381a2fe79333c93293ef9a6ecc03a3d15ea9723b6aaba4b"
+    }
+  }
+}

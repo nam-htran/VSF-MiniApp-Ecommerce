@@ -147,8 +147,12 @@ cd server
 
 Giao diện cơ bản cho MiniApp, ít nhất ba màn:
 
+- Danh sách shop cho người mua — **không cần đăng nhập**
 - Chọn hoặc tạo tài khoản V-App, rồi đăng nhập (thay cho JSAPI `getAuthCode`)
 - Mở shop / xem shop của mình
-- Danh sách shop cho người mua
 
-Chỗ này là nơi consent hai giai đoạn cuối cùng nhìn thấy được: tài khoản mới sẽ đi qua `CONSENT_REQUIRED` rồi mới vào, còn tài khoản cũ vào thẳng.
+Thứ tự đó là cố ý. Quy chế kiểm duyệt bắt buộc app phải dùng được khi chưa định danh, nên trang chủ phải chạy trước khi có đăng nhập — xem [platform-constraints.md](platform-constraints.md) §3.
+
+Màn đăng nhập là nơi consent hai giai đoạn cuối cùng nhìn thấy được: tài khoản mới đi qua `CONSENT_REQUIRED` rồi mới vào, tài khoản cũ vào thẳng.
+
+Trước khi viết màn nào, đọc [platform-constraints.md](platform-constraints.md) — có mấy ràng buộc làm sai thì phải viết lại, đáng kể nhất là **không có `fetch`** và **đường dẫn chỉ một tầng**.

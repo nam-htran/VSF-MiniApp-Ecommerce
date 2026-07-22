@@ -8,7 +8,7 @@ Tài liệu này giải thích code đã viết: ai gọi ai, dữ liệu nằm 
 
 | Thư mục | Là gì | Cổng |
 |---|---|---|
-| `v-market/` | MiniApp (React) — chưa làm | |
+| `v-market/` | MiniApp (React + `@v-miniapp/ui-react`) | 8080–8999 |
 | `server/` | MiniApp Backend | 4000 |
 | `mock-openAPI/` | V-App Open API giả | 4001 |
 
