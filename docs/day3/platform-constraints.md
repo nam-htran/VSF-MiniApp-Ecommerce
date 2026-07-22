@@ -316,6 +316,10 @@ Kết luận thực dụng: **đừng đổi font**, và đừng tự thêm `@fo
 
 **`tsconfig` của template bật `erasableSyntaxOnly`.** Không dùng được cú pháp gán thuộc tính ngay trong tham số constructor (`constructor(readonly x: number)`), phải khai báo trường tách ra rồi gán trong thân hàm.
 
+**Bridge của Simulator tự chặn HTTP** — `apisAsync.request` với URL `http://` bị từ chối ngay phía client: `TypeError: "url" has to be loaded over https`, request không bao giờ tới proxy Node (proxy thì không kiểm scheme, nhưng không ai tới được nó qua bridge bằng http). Cách chạy dev: Simulator là trình duyệt thật nên `fetch` tồn tại ở đó — `client.ts` đi bridge khi URL là `https://`, còn lại rơi về `fetch`, và `server/` phải bật CORS cho origin localhost. Trên máy thật không có fetch, nên bắt buộc `VITE_API_BASE` là https.
+
+**Simulator có bơm `--vsf-title-bar-height`, đo từ mép trang** (gồm cả thanh trạng thái giả, ~96px) — không phải "không bơm gì" như đoán ban đầu. `--safe-area-inset-top` thì không thấy bơm. Cụm nút `⋯ ✕` đè lên trang, không chiếm chỗ layout.
+
 ## 11. Vài quy định giao diện lặt vặt
 
 - §3.2.2 — không được có màn hình loading toàn trang lúc mở app

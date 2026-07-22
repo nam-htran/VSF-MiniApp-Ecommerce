@@ -36,6 +36,8 @@ type RequestInit = {
   headers?: Record<string, string>;
 };
 
+let warnedHttpFallback = false;
+
 export async function apiRequest<T>(
   path: string,
   init: RequestInit = {}
@@ -43,7 +45,13 @@ export async function apiRequest<T>(
   const url = `${BASE}${path}`;
   const method = init.method ?? 'GET';
 
-  if (hasBridge()) {
+  // The bridge is HTTPS-only — the Simulator rejects a plain-http URL
+  // client-side with `"url" has to be loaded over https` before the
+  // request even leaves the page. So the bridge is used exactly when it
+  // can work: bridge present AND an https target (device, staging).
+  // In local dev the target is http://127.0.0.1, and the Simulator is a
+  // real browser, so its own fetch works — with CORS enabled on server/.
+  if (hasBridge() && url.startsWith('https://')) {
     const response = await apisAsync.request({
       url,
       method,
@@ -58,11 +66,16 @@ export async function apiRequest<T>(
     return response.data as T;
   }
 
-  // Fallback so the app still runs under plain `vite dev` and in tests.
-  // Logged loudly on purpose: if this ever fires inside the Simulator it
-  // means the bridge is missing, and code that works here would fail on a
-  // real device where `fetch` does not exist.
-  console.warn(`[api] no V-App bridge, falling back to fetch: ${method} ${url}`);
+  if (hasBridge() && !warnedHttpFallback) {
+    warnedHttpFallback = true;
+    // One loud line, not one per request: this is expected in the
+    // Simulator with an http base, and fatal on a real device — there is
+    // no fetch there. Moving to a device means an https VITE_API_BASE.
+    console.warn(
+      `[api] bridge refuses plain http — using browser fetch for ${BASE}. ` +
+        'A real device needs an https VITE_API_BASE.'
+    );
+  }
 
   const response = await fetch(url, {
     method,

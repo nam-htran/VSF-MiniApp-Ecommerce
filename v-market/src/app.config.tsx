@@ -1,5 +1,5 @@
 import { IAppConfig } from '@v-miniapp/ui-react';
-import { AddressPicker } from './components/address-picker';
+import { BackButtonLayout } from './components/back-button-layout';
 import HomePage from './pages/home-page';
 import OrdersPage from './pages/orders-page';
 import AccountPage from './pages/account-page';
@@ -13,25 +13,30 @@ import AccountPage from './pages/account-page';
  * See docs/day3/platform-constraints.md §3.
  */
 export const getAppConfig = (): IAppConfig => ({
+  // Wraps every page: one fixed back button in the same spot everywhere,
+  // hidden on tab roots where there is nothing to go back to.
+  Layouts: [BackButtonLayout],
   pages: [
     {
       pathname: '/',
       Component: HomePage,
-      navigationBar: {
-        title: <AddressPicker />,
-      },
+      // Hidden so the promo section bleeds to the top edge. The page now
+      // owns the safe area: it pads by --safe-area-inset-top itself and
+      // keeps the top-right corner clear of V-App's own buttons. No back
+      // button needed — this is the tab root, there is nowhere to go back.
+      navigationBar: { hidden: true },
       bottomTabBarId: 'home',
     },
     {
       pathname: '/orders',
       Component: OrdersPage,
-      navigationBar: { title: 'Đơn hàng' },
+      navigationBar: { title: 'Đơn hàng', hidden: true },
       bottomTabBarId: 'orders',
     },
     {
       pathname: '/account',
       Component: AccountPage,
-      navigationBar: { title: 'Tài khoản' },
+      navigationBar: { title: 'Tài khoản', hidden: true },
       bottomTabBarId: 'account',
     },
   ],
