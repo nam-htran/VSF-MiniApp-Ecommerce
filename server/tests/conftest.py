@@ -12,9 +12,11 @@ from sqlalchemy.pool import NullPool
 
 SERVER_PORT = 4900
 
-BUYER_ID = "11111111-1111-4111-8111-111111111111"
-SELLER_A_ID = "22222222-2222-4222-8222-222222222222"
-SELLER_B_ID = "33333333-3333-4333-8333-333333333333"
+# Seed accounts in mock-openAPI. No role attached — roles are earned in
+# V-Market, not handed out by V-App.
+USER_A_ID = "11111111-1111-4111-8111-111111111111"
+USER_B_ID = "22222222-2222-4222-8222-222222222222"
+USER_C_ID = "33333333-3333-4333-8333-333333333333"
 
 
 def _reachable(url: str) -> bool:

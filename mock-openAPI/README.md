@@ -10,22 +10,37 @@ It mocks only what V-Market actually calls:
 | POST | `/oauth2/token/refresh` | |
 | GET | `/open/identity/v1/userinfo` | returns fields **per scope** |
 
-Plus two endpoints that **do not exist on the real V-App**. They stand in for
-the `getAuthCode` JSAPI, which needs an `appIdentifier` registered in DevCenter:
+Plus three endpoints that **do not exist on the real V-App**. They stand in for
+the `getAuthCode` JSAPI, which needs an `appIdentifier` registered in DevCenter,
+and for signing up with Vingroup:
 
 | Method | Path | |
 |---|---|---|
-| GET | `/simulator/users` | 3 seed accounts |
+| GET | `/simulator/users` | list accounts |
+| POST | `/simulator/users` | register an account (`{name}`) |
 | POST | `/simulator/authcode` | issue an authCode |
+
+Registration lives here rather than in `server/` because that is where it lives
+in production: a person signs up with Vingroup, and a MiniApp only ever receives
+an identity that already exists. V-Market never grows a password of its own.
 
 ## Run
 
+Needs the database from `docker-compose.yml` at the repository root:
+
 ```bash
+docker compose up -d
+
 py -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 copy .env.example .env
 .venv\Scripts\python.exe -m uvicorn main:app --port 4001 --reload
 ```
+
+Accounts live in the `vapp_mock` database — **separate from V-Market's**, so
+V-Market cannot read V-App's tables even by accident. Issued authCodes and
+access tokens stay in memory: they live 60s and 1h, and losing them on restart
+is correct.
 
 Swagger: http://127.0.0.1:4001/docs
 

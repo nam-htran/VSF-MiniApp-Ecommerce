@@ -1,16 +1,34 @@
 """Mock of the V-App Open API."""
 
-from fastapi import FastAPI, Header, Request
+from contextlib import asynccontextmanager
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import store
 from config import settings
+from db import SessionFactory, create_tables, engine, get_session
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await create_tables()
+    async with SessionFactory() as session:
+        await store.seed_users(session)
+    yield
+    await engine.dispose()
+
 
 app = FastAPI(
     title="V-App Open API (mock)",
     description="Mock of the V-App Open API.",
     version="0.1.0",
+    lifespan=lifespan,
 )
+
+Session = Annotated[AsyncSession, Depends(get_session)]
 
 # 101xx are documented:
 #   developer.v-app.vn/backend-api/open-api/error-codes
@@ -27,6 +45,10 @@ ERR_INVALID_AUTH_CODE = 10202
 ERR_AUTH_CODE_EXPIRED = 10203
 ERR_AUTH_CODE_ALREADY_USED = 10204
 ERR_INVALID_REFRESH_TOKEN = 10205
+
+# /simulator/* has no counterpart on the real V-App, so this code is ours
+# alone and nothing outside this file should recognise it.
+ERR_SIMULATOR_BAD_REQUEST = 10901
 
 _AUTH_CODE_ERRORS = {
     "not_found": (ERR_INVALID_AUTH_CODE, "Invalid auth_code"),
@@ -109,7 +131,9 @@ async def refresh_token(request: Request):
 
 
 @app.get("/open/identity/v1/userinfo", tags=["Open API"])
-async def user_info(authorization: str | None = Header(default=None)):
+async def user_info(
+    session: Session, authorization: str | None = Header(default=None)
+):
     if authorization is None:
         return fail(401, ERR_MISSING_AUTHORIZATION, "Missing Authorization header")
     if not authorization.startswith("Bearer "):
@@ -129,7 +153,7 @@ async def user_info(authorization: str | None = Header(default=None)):
         return fail(401, code, "Access token is invalid or expired")
 
     user_id, scopes = result
-    user = store.find_user(user_id)
+    user = await store.find_user(session, user_id)
     if user is None:
         return fail(500, ERR_INTERNAL, "User not found")
 
@@ -141,22 +165,48 @@ async def user_info(authorization: str | None = Header(default=None)):
 # registered in DevCenter.
 
 
+def _public(user: store.VAppUser) -> dict:
+    return {
+        "user_id": user.user_id,
+        "name": user.name,
+        "avatar_url": user.avatar_url,
+    }
+
+
 @app.get("/simulator/users", tags=["Demo controls"])
-async def simulator_users():
-    return ok(
-        [
-            {"user_id": u.user_id, "name": u.name, "avatar_url": u.avatar_url}
-            for u in store.SEED_USERS
-        ]
+async def simulator_users(session: Session):
+    return ok([_public(u) for u in await store.all_users(session)])
+
+
+@app.post("/simulator/users", tags=["Demo controls"], status_code=201)
+async def simulator_create_user(request: Request, session: Session):
+    """Sign up for a V-App account.
+
+    Stands in for registering with Vingroup. V-Market has no endpoint like
+    this and never will — a MiniApp receives identities, it does not mint
+    them.
+    """
+    body = await request.json()
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        return fail(400, ERR_SIMULATOR_BAD_REQUEST, "name is required")
+
+    user = await store.create_user(
+        session,
+        name=name,
+        phone_number=(body.get("phone_number") or "").strip() or None,
+        email=(body.get("email") or "").strip() or None,
     )
+    return ok(_public(user))
 
 
 @app.post("/simulator/authcode", tags=["Demo controls"])
-async def simulator_auth_code(request: Request):
+async def simulator_auth_code(request: Request, session: Session):
     body = await request.json()
     user_id = body.get("user_id")
 
-    if not user_id or store.find_user(user_id) is None:
+    if not user_id or await store.find_user(session, user_id) is None:
         return fail(400, ERR_INVALID_AUTH_CODE, "Unknown user_id")
 
     granted = store.parse_scopes(body.get("scopes")) or ["auth"]

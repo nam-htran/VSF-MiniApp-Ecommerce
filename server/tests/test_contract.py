@@ -21,7 +21,7 @@ import pytest
 from app.config import settings
 from app.vapp.errors import VAppApiError
 from app.vapp.gateway import exchange_auth_code, get_user_info, refresh_token
-from tests.conftest import BUYER_ID
+from tests.conftest import USER_A_ID
 
 UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I
@@ -43,7 +43,7 @@ async def issue_auth_code(scopes: str) -> str | None:
     async with httpx.AsyncClient() as client:
         response = await client.post(
             f"{settings.vapp_base_url}/simulator/authcode",
-            json={"user_id": BUYER_ID, "scopes": scopes},
+            json={"user_id": USER_A_ID, "scopes": scopes},
         )
     body = response.json()
     assert body["code"] == 0
@@ -112,7 +112,7 @@ async def test_refresh_returns_a_new_pair():
     assert second.refresh_token != first.refresh_token
 
     info = await get_user_info(second.access_token)
-    assert info["user_id"] == BUYER_ID
+    assert info["user_id"] == USER_A_ID
 
 
 @mock_only
@@ -127,4 +127,4 @@ async def test_access_token_is_opaque():
 
     # If user_id were encoded in the token, someone would decode it here
     # instead of calling userinfo, and that would break against the real API.
-    assert BUYER_ID not in token.access_token
+    assert USER_A_ID not in token.access_token

@@ -5,7 +5,7 @@ Checks the two rules from login-free-system:
   2. Known user -> silent login, consent never shown again.
 
 Plus one V-Market design rule:
-  3. role / sellerId come from V-Market, not from V-App.
+  3. role comes from V-Market, not from V-App.
 """
 
 import httpx
@@ -14,7 +14,7 @@ import pytest_asyncio
 
 from app.auth.tokens import verify_session_token
 from app.config import settings
-from tests.conftest import BUYER_ID, SELLER_A_ID
+from tests.conftest import USER_A_ID, USER_B_ID
 
 pytestmark = pytest.mark.skipif(
     "127.0.0.1" not in settings.vapp_base_url
@@ -47,7 +47,7 @@ async def login(base_url: str, auth_code: str) -> dict:
 
 
 async def test_new_user_with_auth_scope_needs_consent(base_url):
-    body = await login(base_url, await auth_code_for(BUYER_ID, "auth"))
+    body = await login(base_url, await auth_code_for(USER_A_ID, "auth"))
 
     assert body["status"] == "CONSENT_REQUIRED"
     assert "profile" in body["requiredScopes"]
@@ -55,8 +55,8 @@ async def test_new_user_with_auth_scope_needs_consent(base_url):
 
 
 async def test_account_is_created_after_consent(base_url):
-    await login(base_url, await auth_code_for(BUYER_ID, "auth"))
-    body = await login(base_url, await auth_code_for(BUYER_ID, "profile phone"))
+    await login(base_url, await auth_code_for(USER_A_ID, "auth"))
+    body = await login(base_url, await auth_code_for(USER_A_ID, "profile phone"))
 
     assert body["status"] == "AUTHENTICATED"
     assert body["token"]
@@ -64,29 +64,42 @@ async def test_account_is_created_after_consent(base_url):
 
 
 async def test_known_user_logs_in_silently(base_url):
-    await login(base_url, await auth_code_for(BUYER_ID, "profile phone"))
+    await login(base_url, await auth_code_for(USER_A_ID, "profile phone"))
 
     # Only scope 'auth' this time — that is the point of silent login.
-    body = await login(base_url, await auth_code_for(BUYER_ID, "auth"))
+    body = await login(base_url, await auth_code_for(USER_A_ID, "auth"))
 
     assert body["status"] == "AUTHENTICATED"
     assert body["token"]
 
 
-async def test_role_and_seller_id_come_from_v_market(base_url):
-    buyer = await login(base_url, await auth_code_for(BUYER_ID, "profile phone"))
-    seller = await login(base_url, await auth_code_for(SELLER_A_ID, "profile phone"))
+async def test_role_comes_from_v_market(base_url):
+    a = await login(base_url, await auth_code_for(USER_A_ID, "profile phone"))
+    b = await login(base_url, await auth_code_for(USER_B_ID, "profile phone"))
 
-    assert buyer["user"]["role"] == "BUYER"
-    assert buyer["user"]["sellerId"] is None
+    # V-App hands out identities only. Nobody arrives privileged — a seller
+    # is made by opening a shop, see test_shops.py.
+    assert a["user"]["role"] == "BUYER"
+    assert b["user"]["role"] == "BUYER"
 
-    assert seller["user"]["role"] == "SELLER"
-    assert seller["user"]["sellerId"] == "seller-a"
+    # Same fact must be in the JWT, for authorisation on later endpoints.
+    assert verify_session_token(a["token"]).role == "BUYER"
 
-    # Same facts must be in the JWT, for authorisation on later endpoints.
-    claims = verify_session_token(seller["token"])
-    assert claims.role == "SELLER"
-    assert claims.seller_id == "seller-a"
+
+async def test_an_account_registered_just_now_can_log_in(base_url):
+    """Accounts are not a fixed list — V-App can grow new ones."""
+    async with httpx.AsyncClient() as client:
+        registered = await client.post(
+            f"{settings.vapp_base_url}/simulator/users",
+            json={"name": "Phạm Minh Đức"},
+        )
+    user_id = registered.json()["data"]["user_id"]
+
+    body = await login(base_url, await auth_code_for(user_id, "profile phone"))
+
+    assert body["status"] == "AUTHENTICATED"
+    assert body["user"]["name"] == "Phạm Minh Đức"
+    assert body["user"]["role"] == "BUYER"
 
 
 async def test_bad_auth_code_returns_401(base_url):

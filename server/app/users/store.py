@@ -1,7 +1,7 @@
 """V-Market users.
 
-`role` and `seller_id` are V-Market's data, not V-App's. V-App only
-returns an identity — it has no notion of buyer or seller.
+`role` is V-Market's data, not V-App's. V-App only returns an identity —
+it has no notion of buyer or seller.
 """
 
 import uuid
@@ -22,19 +22,11 @@ class MarketUser(Base):
     id: Mapped[str] = mapped_column(primary_key=True)
     # Unique: two rows for one person would split their orders in half.
     vapp_user_id: Mapped[str] = mapped_column(unique=True, index=True)
-    role: Mapped[str]
-    seller_id: Mapped[str | None] = mapped_column(default=None)
+    # Everyone arrives a BUYER. Opening a shop is what makes a SELLER, so
+    # there is no list of privileged accounts anywhere.
+    role: Mapped[str] = mapped_column(default="BUYER")
     name: Mapped[str | None] = mapped_column(default=None)
     phone_number: Mapped[str | None] = mapped_column(default=None)
-
-
-# Roles for the demo accounts. Deliberately a V-Market-side table, so the
-# boundary with V-App stays visible.
-_SEED_ROLES: dict[str, tuple[UserRole, str | None]] = {
-    "11111111-1111-4111-8111-111111111111": ("BUYER", None),
-    "22222222-2222-4222-8222-222222222222": ("SELLER", "seller-a"),
-    "33333333-3333-4333-8333-333333333333": ("SELLER", "seller-b"),
-}
 
 
 async def find_by_id(session: AsyncSession, user_id: str) -> MarketUser | None:
@@ -55,19 +47,24 @@ async def create_user(
     name: str | None,
     phone_number: str | None,
 ) -> MarketUser:
-    # New users default to BUYER; becoming a SELLER is a separate action
-    # (creating a shop, day 3).
-    role, seller_id = _SEED_ROLES.get(vapp_user_id, ("BUYER", None))
-
     user = MarketUser(
         id=str(uuid.uuid4()),
         vapp_user_id=vapp_user_id,
-        role=role,
-        seller_id=seller_id,
+        role="BUYER",
         name=name,
         phone_number=phone_number,
     )
     session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+async def promote_to_seller(
+    session: AsyncSession, user: MarketUser
+) -> MarketUser:
+    """Called when a shop is opened. A seller keeps buying from other shops."""
+    user.role = "SELLER"
     await session.commit()
     await session.refresh(user)
     return user

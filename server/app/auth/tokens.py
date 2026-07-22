@@ -19,7 +19,6 @@ _ALGORITHM = "HS256"
 class SessionClaims:
     sub: str
     role: str
-    seller_id: str | None
 
 
 def issue_session_token(user: MarketUser) -> str:
@@ -28,7 +27,6 @@ def issue_session_token(user: MarketUser) -> str:
         {
             "sub": user.id,
             "role": user.role,
-            "sellerId": user.seller_id,
             "iat": now,
             "exp": now + settings.jwt_ttl_seconds,
         },
@@ -39,8 +37,4 @@ def issue_session_token(user: MarketUser) -> str:
 
 def verify_session_token(token: str) -> SessionClaims:
     payload = jwt.decode(token, settings.jwt_secret, algorithms=[_ALGORITHM])
-    return SessionClaims(
-        sub=str(payload["sub"]),
-        role=str(payload["role"]),
-        seller_id=payload.get("sellerId"),
-    )
+    return SessionClaims(sub=str(payload["sub"]), role=str(payload["role"]))

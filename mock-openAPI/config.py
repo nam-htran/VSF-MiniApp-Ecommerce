@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     client_id: str = "v-market-dev"
     client_secret: str = "dev-secret"
 
+    # Its own database, not V-Market's — see docker/initdb/01-databases.sql
+    database_url: str = (
+        "postgresql+asyncpg://vmarket:vmarket@127.0.0.1:5433/vapp_mock"
+    )
+
     # Short on purpose, so expiry and reuse bugs surface early.
     authcode_ttl_seconds: int = 60
     access_token_ttl_seconds: int = 3600

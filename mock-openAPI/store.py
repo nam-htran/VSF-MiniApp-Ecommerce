@@ -2,6 +2,13 @@ import secrets
 import time
 import uuid
 from dataclasses import dataclass
+from urllib.parse import quote
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column
+
+from db import Base
 
 # Docs: developer.v-app.vn/backend-api/open-api/scopes
 # `auth` is silent login — user_id only, no consent screen.
@@ -11,50 +18,62 @@ from dataclasses import dataclass
 ALL_SCOPES = ("auth", "profile", "phone", "email")
 
 
-@dataclass(frozen=True)
-class VAppUser:
-    user_id: str
-    name: str
-    date_of_birth: str
-    gender: str
-    phone_number: str
-    email: str
-    avatar_url: str
+class VAppUser(Base):
+    """A V-App account.
+
+    Persisted, because V-Market's users table is persisted too. If accounts
+    lived in memory, a restart would leave V-Market holding rows that point
+    at a vapp_user_id V-App no longer knows.
+    """
+
+    __tablename__ = "users"
+
+    user_id: Mapped[str] = mapped_column(primary_key=True)
+    name: Mapped[str]
+    date_of_birth: Mapped[str]
+    gender: Mapped[str]
+    phone_number: Mapped[str]
+    email: Mapped[str]
+    avatar_url: Mapped[str]
 
 
-# Fixed IDs so V-Market's seed data still matches after a restart.
-# V-App has no notion of buyer/seller — that is V-Market's data.
-SEED_USERS: tuple[VAppUser, ...] = (
-    VAppUser(
-        user_id="11111111-1111-4111-8111-111111111111",
-        name="Nguyễn Thị Mua",
-        date_of_birth="1995-04-12",
-        gender="female",
-        phone_number="+84901000001",
-        email="buyer@example.com",
-        avatar_url="https://placehold.co/128x128?text=Buyer",
-    ),
-    VAppUser(
-        user_id="22222222-2222-4222-8222-222222222222",
-        name="Trần Văn Bán A",
-        date_of_birth="1990-08-03",
-        gender="male",
-        phone_number="+84901000002",
-        email="seller-a@example.com",
-        avatar_url="https://placehold.co/128x128?text=A",
-    ),
-    VAppUser(
-        user_id="33333333-3333-4333-8333-333333333333",
-        name="Lê Thị Bán B",
-        date_of_birth="1992-12-21",
-        gender="female",
-        phone_number="+84901000003",
-        email="seller-b@example.com",
-        avatar_url="https://placehold.co/128x128?text=B",
-    ),
+# Fixed IDs so tests can reach a known account after a restart. The names
+# carry no role: V-App has no notion of buyer or seller, and V-Market
+# decides that for itself.
+SEED_USERS: tuple[dict, ...] = (
+    {
+        "user_id": "11111111-1111-4111-8111-111111111111",
+        "name": "Nguyễn Thị An",
+        "date_of_birth": "1995-04-12",
+        "gender": "female",
+        "phone_number": "+84901000001",
+        "email": "an@example.com",
+        "avatar_url": "https://placehold.co/128x128?text=A",
+    },
+    {
+        "user_id": "22222222-2222-4222-8222-222222222222",
+        "name": "Trần Văn Bình",
+        "date_of_birth": "1990-08-03",
+        "gender": "male",
+        "phone_number": "+84901000002",
+        "email": "binh@example.com",
+        "avatar_url": "https://placehold.co/128x128?text=B",
+    },
+    {
+        "user_id": "33333333-3333-4333-8333-333333333333",
+        "name": "Lê Thị Chi",
+        "date_of_birth": "1992-12-21",
+        "gender": "female",
+        "phone_number": "+84901000003",
+        "email": "chi@example.com",
+        "avatar_url": "https://placehold.co/128x128?text=C",
+    },
 )
 
 
+# Tickets stay in memory on purpose. An authCode lives 60 seconds and an
+# access token an hour; losing them on restart is correct behaviour, and
+# persisting them would only add expired rows to sweep up.
 @dataclass
 class _AuthCode:
     user_id: str
@@ -91,8 +110,50 @@ def parse_scopes(raw: str | list[str] | None) -> list[str]:
     return [p for p in parts if p in ALL_SCOPES]
 
 
-def find_user(user_id: str) -> VAppUser | None:
-    return next((u for u in SEED_USERS if u.user_id == user_id), None)
+async def seed_users(session: AsyncSession) -> None:
+    """Insert the fixed accounts if they are not there yet."""
+    for row in SEED_USERS:
+        if await session.get(VAppUser, row["user_id"]) is None:
+            session.add(VAppUser(**row))
+    await session.commit()
+
+
+async def find_user(session: AsyncSession, user_id: str) -> VAppUser | None:
+    return await session.get(VAppUser, user_id)
+
+
+async def all_users(session: AsyncSession) -> list[VAppUser]:
+    return list(await session.scalars(select(VAppUser)))
+
+
+async def create_user(
+    session: AsyncSession,
+    name: str,
+    phone_number: str | None = None,
+    email: str | None = None,
+) -> VAppUser:
+    """Register a V-App account.
+
+    Registration belongs to V-App, not to V-Market. In production a person
+    signs up with Vingroup once, and a MiniApp only ever receives an
+    identity that already exists — which is why V-Market has no endpoint
+    like this and never grows a password of its own.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    user = VAppUser(
+        user_id=str(uuid.uuid4()),
+        name=name,
+        date_of_birth="2000-01-01",
+        gender="unknown",
+        phone_number=phone_number or f"+8490{int(suffix, 16) % 10**7:07d}",
+        email=email or f"user-{suffix}@example.com",
+        # quote() because a Vietnamese initial would break the URL otherwise.
+        avatar_url=f"https://placehold.co/128x128?text={quote(name[:1].upper())}",
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
 
 
 def issue_auth_code(user_id: str, scopes: list[str], ttl_seconds: int) -> str:
@@ -173,6 +234,7 @@ def project_user_info(user: VAppUser, scopes: list[str]) -> dict:
 
 
 def reset() -> None:
+    """Drop the issued tickets. Accounts live in the database and stay."""
     _auth_codes.clear()
     _access_tokens.clear()
     _refresh_tokens.clear()

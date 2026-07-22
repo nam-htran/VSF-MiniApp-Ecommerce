@@ -1,8 +1,13 @@
 """Shop management.
 
-Two rules the tests care about:
+Three rules the tests care about:
   PROD-02  one seller may own only one shop (MVP)
+  AUTH-04  a user with no shop cannot reach the seller endpoints
   AUTH-05  a seller may only touch their own shop, checked server-side
+
+Opening a shop is open to any logged-in user — that action is what turns a
+buyer into a seller. Requiring the SELLER role to create a shop would mean
+nobody could ever become one.
 """
 
 from typing import Annotated
@@ -12,10 +17,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import CurrentSeller
+from app.auth.deps import CurrentSeller, CurrentUser
 from app.db import get_session
 from app.shops import store as shops
 from app.shops.store import Shop
+from app.users import store as users
 
 router = APIRouter(prefix="/shops", tags=["Shops"])
 
@@ -47,12 +53,12 @@ def _serialise(shop: Shop) -> dict:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_shop(
-    body: CreateShopRequest, seller: CurrentSeller, session: Session
+    body: CreateShopRequest, user: CurrentUser, session: Session
 ) -> dict:
     try:
         shop = await shops.create_shop(
             session,
-            owner_id=seller.id,
+            owner_id=user.id,
             name=body.name,
             description=body.description,
             image_url=body.imageUrl,
@@ -67,6 +73,9 @@ async def create_shop(
             detail="This seller already has a shop",
         ) from None
 
+    # Same person, same account — they just gained a shop and keep buying
+    # from others.
+    await users.promote_to_seller(session, user)
     return _serialise(shop)
 
 
