@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Icon, Image, Typography } from '@v-miniapp/ui-react';
+import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
+import type { ProductCardData } from '@/lib/product-card';
 import imgChicken from '@/assets/products/chicken.jpg';
 import imgEggs from '@/assets/products/eggs.jpg';
 import imgBeef from '@/assets/products/beef.jpg';
@@ -15,16 +16,8 @@ import imgRice from '@/assets/products/rice.jpg';
  * whitelisted (only domains we own can be), so remote URLs would break on
  * a device. Unsplash-licensed, downloaded into src/assets/products.
  */
-type DemoProduct = {
-  id: string;
-  name: string;
-  unit: string;
-  price: number;
-  oldPrice: number;
-  image: string;
-  emoji: string;
-  tint: string;
-};
+/** Every flash item has a sale, so oldPrice is required here. */
+type DemoProduct = ProductCardData & { oldPrice: number };
 
 const DEMO_PRODUCTS: DemoProduct[] = [
   {
@@ -144,8 +137,17 @@ export const FlashSaleSection = () => {
   );
 };
 
-const ProductCard = ({ product }: { product: DemoProduct }) => (
-  <div className="flex w-32 shrink-0 flex-col gap-1.5 rounded-xl bg-alias-background p-2">
+const ProductCard = ({ product }: { product: DemoProduct }) => {
+  const navigate = useNavigate();
+  return (
+  <button
+    type="button"
+    // The whole card opens the detail page, carrying its data in
+    // navigation state so the detail renders without a request.
+    onClick={() =>
+      navigate('/product', { params: { id: product.id }, state: { product } })
+    }
+    className="flex w-32 shrink-0 flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left">
     <div className="relative">
       <Image
         src={product.image}
@@ -193,5 +195,6 @@ const ProductCard = ({ product }: { product: DemoProduct }) => (
         {formatVnd(product.oldPrice)}
       </Typography>
     </div>
-  </div>
-);
+  </button>
+  );
+};

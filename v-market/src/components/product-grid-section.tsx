@@ -1,5 +1,6 @@
-import { Icon, Image, Typography } from '@v-miniapp/ui-react';
+import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
+import type { ProductCardData } from '@/lib/product-card';
 import imgSauce from '@/assets/products/sauce.jpg';
 import imgGreens from '@/assets/products/greens.jpg';
 import imgMilk from '@/assets/products/milk.jpg';
@@ -16,18 +17,11 @@ import imgApple from '@/assets/products/apple.jpg';
  * whitelisted). Names follow the photos, not the other way round, and
  * carry no brand names — review rule 1.2.4 bans third-party trademarks.
  */
-type DemoProduct = {
-  id: string;
-  name: string;
-  unit: string;
-  price: number;
-  oldPrice?: number;
+/** Grid items always carry the Shopee rows, so those are required here. */
+type DemoProduct = ProductCardData & {
   shipDays: string;
   warehouse: string;
   sold: number;
-  image: string;
-  emoji: string;
-  tint: string;
 };
 
 const DEMO_PRODUCTS: DemoProduct[] = [
@@ -127,8 +121,17 @@ export const ProductGridSection = () => (
   </section>
 );
 
-const ProductCard = ({ product }: { product: DemoProduct }) => (
-  <div className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 shadow-sm">
+const ProductCard = ({ product }: { product: DemoProduct }) => {
+  const navigate = useNavigate();
+  return (
+  <button
+    type="button"
+    // The whole card opens the detail page, carrying its data in
+    // navigation state so the detail renders without a request.
+    onClick={() =>
+      navigate('/product', { params: { id: product.id }, state: { product } })
+    }
+    className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
     <Image
       src={product.image}
       alt={product.name}
@@ -191,5 +194,6 @@ const ProductCard = ({ product }: { product: DemoProduct }) => (
         </Typography>
       </span>
     </div>
-  </div>
-);
+  </button>
+  );
+};

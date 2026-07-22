@@ -1,6 +1,7 @@
 import { IAppConfig } from '@v-miniapp/ui-react';
 import { BackButtonLayout } from './components/back-button-layout';
 import HomePage from './pages/home-page';
+import ProductPage from './pages/product-page';
 import OrdersPage from './pages/orders-page';
 import AccountPage from './pages/account-page';
 
@@ -26,6 +27,16 @@ export const getAppConfig = (): IAppConfig => ({
       // button needed — this is the tab root, there is nowhere to go back.
       navigationBar: { hidden: true },
       bottomTabBarId: 'home',
+    },
+    {
+      // Detail pages take the id as a query param — /product?id=… — the
+      // router only supports single-level paths. Not a tab root, so the
+      // fixed back button from BackButtonLayout appears here.
+      pathname: '/product',
+      Component: ProductPage,
+      navigationBar: { hidden: true },
+      // No bottomTabBarId — the tab bar hides itself on pages without
+      // one, leaving room for this page's own fixed buy bar.
     },
     {
       pathname: '/orders',
