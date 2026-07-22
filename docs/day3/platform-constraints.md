@@ -262,6 +262,20 @@ Whitelist **bind vào bản build** — thêm domain sau thì phải build lại
 
 **Quy tắc:** cần component mà skill không nhắc tới thì tra thẳng `.d.ts` trong `node_modules` — chắc hơn tài liệu.
 
+### Ba thứ tài liệu không nói, tự mò ra khi chạy
+
+**Dev server chỉ bind IPv6.** `http://127.0.0.1:8080` → không kết nối được. `http://localhost:8080` → 200. Lỗi trông y hệt như server chưa chạy, nên dễ mất thời gian.
+
+**Payload của proxy lồng hai tầng, và `payload.method` không phải HTTP method** mà là loại thao tác (`upload` / `download` / còn lại). HTTP method nằm trong `params`:
+
+```json
+{"id":"...","payload":{"method":"request","params":{"url":"...","method":"GET"}}}
+```
+
+Đọc ra từ `@v-miniapp/cli/dist/plugins/api-endpoints.js`. Bình thường không cần biết vì `apisAsync.request` lo hộ — chỉ cần khi muốn gọi thẳng vào proxy để kiểm tra.
+
+**`tsconfig` của template bật `erasableSyntaxOnly`.** Không dùng được cú pháp gán thuộc tính ngay trong tham số constructor (`constructor(readonly x: number)`), phải khai báo trường tách ra rồi gán trong thân hàm.
+
 ## 11. Vài quy định giao diện lặt vặt
 
 - §3.2.2 — không được có màn hình loading toàn trang lúc mở app

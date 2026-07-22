@@ -1,14 +1,15 @@
 # Ngày 3 — Shop và tài khoản
 
-Ba việc:
-
 | | | |
 |---|---|---|
-| 1 | Quản lý shop của người bán | xong |
-| 2 | Bỏ tài khoản seed, đăng ký được tài khoản V-App | xong |
-| 3 | Giao diện cơ bản cho MiniApp | chưa |
+| 1 | Quản lý shop của người bán | xong — dưới đây |
+| 2 | Bỏ tài khoản seed, đăng ký được tài khoản V-App | xong — dưới đây |
+| 3 | Giao diện cơ bản cho MiniApp | mới có tầng gọi API → [frontend.md](frontend.md) |
+| 4 | Sản phẩm | xong → [products.md](products.md) |
 
-Mục 3 chưa làm — phần dưới chỉ nói về 1 và 2.
+Ràng buộc của nền tảng, đọc trước khi dựng màn hình: [platform-constraints.md](platform-constraints.md).
+
+Phần dưới chỉ nói về 1 và 2.
 
 ---
 
