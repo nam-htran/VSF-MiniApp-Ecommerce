@@ -1,3 +1,25 @@
 @import 'tailwindcss';
 @import '@v-miniapp/ui-react/tailwind/styles.css';
 @import '@v-miniapp/ui-react/tailwind/colors.css';
+
+/*
+ * Top toasts assume a visible navigation bar: the library places them at
+ * --vsf-current-navigation-bar-height + 16px, which is 16px from the top
+ * edge once the bar is hidden — underneath the status bar and V-App's
+ * ⋯ ✕ pill. Every page here hides the bar, so anchor toasts below the
+ * whole title-bar zone instead. Unlayered on purpose: the library's rule
+ * sits in a layer, and unlayered declarations win.
+ */
+.vsf-toast-provider--top {
+  top: calc(var(--vsf-title-bar-height, 52px) + 8px);
+}
+
+/*
+ * Bottom toasts, same story at the other edge: the library only clears
+ * the tab bar, not our fixed buy/checkout bars (~64px tall). 88px keeps a
+ * toast above whichever of them the current page has; on pages with no
+ * fixed bar it just floats a bit higher, which reads fine.
+ */
+.vsf-toast-provider--bottom {
+  bottom: calc(var(--vsf-current-bottom-tab-bar-height, 0px) + 88px);
+}

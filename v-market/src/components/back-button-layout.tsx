@@ -12,7 +12,7 @@ import { Icon, useLocation, useNavigate } from '@v-miniapp/ui-react';
  *
  * Top-left on purpose — V-App's own ⋯ ✕ controls occupy the top-right.
  */
-const TAB_ROOTS = ['/', '/orders', '/account'];
+const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
 
 export const BackButtonLayout = ({ children }: PropsWithChildren) => {
   const location = useLocation();

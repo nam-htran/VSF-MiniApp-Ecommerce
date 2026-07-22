@@ -4,11 +4,13 @@ import {
   Icon,
   Image,
   Skeleton,
+  Toast,
   Typography,
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
 import { getProduct } from '@/api/products';
+import { addToCart } from '@/lib/cart';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
 
@@ -138,7 +140,7 @@ const Detail = ({ product }: { product: ProductCardData }) => (
       </div>
     </div>
 
-    <BuyBar />
+    <BuyBar product={product} />
   </div>
 );
 
@@ -149,21 +151,41 @@ const InfoRow = ({ icon, text }: { icon: 'scooter-front' | 'pin' | 'receipt'; te
   </span>
 );
 
-/** Visual only until a cart exists. */
-const BuyBar = () => (
-  <div
-    className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
-    style={{
-      paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)',
-    }}>
-    <Button type="outline" theme="brand" block>
-      Thêm vào giỏ
-    </Button>
-    <Button type="solid" theme="brand" block>
-      Mua ngay
-    </Button>
-  </div>
-);
+const BuyBar = ({ product }: { product: ProductCardData }) => {
+  const navigate = useNavigate();
+  return (
+    <div
+      className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
+      style={{
+        paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)',
+      }}>
+      <Button
+        type="outline"
+        theme="brand"
+        block
+        onClick={() => {
+          addToCart(product);
+          Toast.show({
+            type: 'positive',
+            message: 'Đã thêm vào giỏ hàng',
+            position: 'bottom',
+          });
+        }}>
+        Thêm vào giỏ
+      </Button>
+      <Button
+        type="solid"
+        theme="brand"
+        block
+        onClick={() => {
+          addToCart(product);
+          navigate('/cart');
+        }}>
+        Mua ngay
+      </Button>
+    </div>
+  );
+};
 
 // Same footprint as the real content, so the skeleton cannot get locked
 // in as the LCP element.

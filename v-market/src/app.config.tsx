@@ -1,7 +1,9 @@
-import { IAppConfig } from '@v-miniapp/ui-react';
+import { IAppConfig, Icon } from '@v-miniapp/ui-react';
 import { BackButtonLayout } from './components/back-button-layout';
+import { CartTabIcon } from './components/cart-tab-icon';
 import HomePage from './pages/home-page';
 import ProductPage from './pages/product-page';
+import CartPage from './pages/cart-page';
 import OrdersPage from './pages/orders-page';
 import AccountPage from './pages/account-page';
 
@@ -39,6 +41,12 @@ export const getAppConfig = (): IAppConfig => ({
       // one, leaving room for this page's own fixed buy bar.
     },
     {
+      pathname: '/cart',
+      Component: CartPage,
+      navigationBar: { hidden: true },
+      bottomTabBarId: 'cart',
+    },
+    {
       pathname: '/orders',
       Component: OrdersPage,
       navigationBar: { title: 'Đơn hàng', hidden: true },
@@ -61,19 +69,45 @@ export const getAppConfig = (): IAppConfig => ({
     enable: true,
   },
   bottomTabBar: {
+    // The active tab pops: brand colour, filled icon variant, and a
+    // slight lift. The inactive state stays outline and quiet.
+    activeColor: 'global-teal-teal-60',
     items: [
-      { id: 'home', name: 'Trang chủ', path: '/', icon: { name: 'house' } },
+      {
+        id: 'home',
+        name: 'Trang chủ',
+        path: '/',
+        icon: { name: 'house' },
+        activeIcon: (
+          <Icon name="house" type="fill" className="-translate-y-0.5 scale-110 transition-transform" />
+        ),
+      },
+      {
+        id: 'cart',
+        name: 'Giỏ hàng',
+        path: '/cart',
+        // A live component: the config is built once, but the element
+        // inside it subscribes to the cart store and shows the count.
+        icon: <CartTabIcon />,
+        activeIcon: <CartTabIcon active />,
+      },
       {
         id: 'orders',
         name: 'Đơn hàng',
         path: '/orders',
         icon: { name: 'receipt' },
+        activeIcon: (
+          <Icon name="receipt" type="fill" className="-translate-y-0.5 scale-110 transition-transform" />
+        ),
       },
       {
         id: 'account',
         name: 'Tài khoản',
         path: '/account',
         icon: { name: 'user' },
+        activeIcon: (
+          <Icon name="user" type="fill" className="-translate-y-0.5 scale-110 transition-transform" />
+        ),
       },
     ],
   },
