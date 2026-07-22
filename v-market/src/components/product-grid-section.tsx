@@ -9,7 +9,8 @@ import imgApple from '@/assets/products/apple.jpg';
 
 /**
  * TEMPORARY demo content, like the flash-sale strip — replace with a real
- * cross-shop product endpoint when one exists.
+ * cross-shop product endpoint when one exists. Shipping days, warehouse
+ * and sold counts are invented until orders and inventory carry them.
  *
  * Photos are bundled, not hotlinked (external hosts cannot be
  * whitelisted). Names follow the photos, not the other way round, and
@@ -20,6 +21,10 @@ type DemoProduct = {
   name: string;
   unit: string;
   price: number;
+  oldPrice?: number;
+  shipDays: string;
+  warehouse: string;
+  sold: number;
   image: string;
   emoji: string;
   tint: string;
@@ -31,6 +36,10 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Sốt cà chua',
     unit: 'Hũ 300g',
     price: 42000,
+    oldPrice: 52000,
+    shipDays: '1–2 ngày',
+    warehouse: 'Long Biên, Hà Nội',
+    sold: 1243,
     image: imgSauce,
     emoji: '🍅',
     tint: 'bg-global-red-red-10',
@@ -40,6 +49,9 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Salad rau củ tươi',
     unit: 'Hộp 400g',
     price: 35000,
+    shipDays: 'trong ngày',
+    warehouse: 'Gia Lâm, Hà Nội',
+    sold: 862,
     image: imgGreens,
     emoji: '🥬',
     tint: 'bg-global-lime-lime-10',
@@ -49,6 +61,10 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Sữa tươi nguyên chất',
     unit: 'Chai 1 lít',
     price: 38000,
+    oldPrice: 45000,
+    shipDays: '1–2 ngày',
+    warehouse: 'Thủ Đức, TP.HCM',
+    sold: 3521,
     image: imgMilk,
     emoji: '🥛',
     tint: 'bg-global-sky-sky-10',
@@ -58,6 +74,10 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Cá hồi phi lê',
     unit: '200–250g /khay',
     price: 129000,
+    oldPrice: 155000,
+    shipDays: 'trong ngày',
+    warehouse: 'Cầu Giấy, Hà Nội',
+    sold: 428,
     image: imgSalmon,
     emoji: '🐟',
     tint: 'bg-global-rose-rose-10',
@@ -67,6 +87,9 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Bánh mì nguyên cám',
     unit: 'Ổ 400g',
     price: 45000,
+    shipDays: 'trong ngày',
+    warehouse: 'Hoàn Kiếm, Hà Nội',
+    sold: 2107,
     image: imgBread,
     emoji: '🍞',
     tint: 'bg-global-orange-orange-10',
@@ -76,18 +99,28 @@ const DEMO_PRODUCTS: DemoProduct[] = [
     name: 'Táo đỏ nhập khẩu',
     unit: 'Túi 1kg',
     price: 89000,
+    oldPrice: 105000,
+    shipDays: '2–3 ngày',
+    warehouse: 'Bình Thạnh, TP.HCM',
+    sold: 5934,
     image: imgApple,
     emoji: '🍎',
     tint: 'bg-global-red-red-10',
   },
 ];
 
+/** 1234 -> "1,2k", Shopee-style. */
+const formatSold = (sold: number) =>
+  sold >= 1000 ? `${(sold / 1000).toFixed(1).replace('.', ',')}k` : String(sold);
+
 /**
- * Two-column product grid on the page's own background — the mint block
- * ends with the flash-sale strip above it.
+ * Shopee-style two-column grid: image, name, price with the old price
+ * struck through, then the rows buyers actually decide on — how long
+ * shipping takes, which warehouse it ships from, how many sold. No add
+ * button; the whole card opens the product once a detail page exists.
  */
 export const ProductGridSection = () => (
-  <section className="grid grid-cols-2 gap-3 p-4">
+  <section className="grid grid-cols-2 gap-2 p-3">
     {DEMO_PRODUCTS.map(product => (
       <ProductCard key={product.id} product={product} />
     ))}
@@ -95,43 +128,68 @@ export const ProductGridSection = () => (
 );
 
 const ProductCard = ({ product }: { product: DemoProduct }) => (
-  <div className="flex flex-col gap-2 rounded-2xl bg-alias-background p-3 shadow-sm">
+  <div className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 shadow-sm">
     <Image
       src={product.image}
       alt={product.name}
       fit="cover"
-      lazy
-      className="h-32 w-full rounded-xl"
+      // NOT lazy — same story as the flash strip: Image only sets src
+      // after its internal VisibilitySensor fires, and inside the app's
+      // scroll container it never does, so photos silently fall back to
+      // the emoji. Bundled images are cheap; real lazy-loading returns
+      // when products come from the backend, implemented by hand.
+      className="h-36 w-full rounded-lg"
       // The emoji tile steps in if the photo fails, at the same size,
       // so the card never collapses and shifts the grid.
       fallback={
         <div
-          className={`flex h-32 w-full items-center justify-center rounded-xl text-5xl ${product.tint}`}>
+          className={`flex h-36 w-full items-center justify-center rounded-lg text-4xl ${product.tint}`}>
           {product.emoji}
         </div>
       }
     />
 
-    <div className="flex flex-col gap-0.5">
-      <Typography size="base" weight="bold" className="line-clamp-2">
+    <div className="flex flex-col">
+      <Typography size="small" weight="bold" className="line-clamp-2">
         {product.name}
       </Typography>
-      <Typography size="x-small" color="text-secondary">
+      <Typography size="2x-small" color="text-secondary" className="truncate">
         {product.unit}
       </Typography>
     </div>
 
-    <div className="mt-auto flex items-center justify-between">
-      <Typography size="base" weight="bold">
+    <div className="flex flex-wrap items-baseline gap-x-1.5">
+      <Typography
+        size="base"
+        weight="bold"
+        className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
         {formatVnd(product.price)}
       </Typography>
-      {/* Visual only until a cart exists. */}
-      <button
-        type="button"
-        aria-label={`Thêm ${product.name} vào giỏ`}
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-global-teal-teal-60">
-        <Icon name="plus" size={18} className="text-global-basic-white" />
-      </button>
+      {product.oldPrice && (
+        <Typography size="2x-small" color="text-tertiary" className="line-through">
+          {formatVnd(product.oldPrice)}
+        </Typography>
+      )}
+    </div>
+
+    <div className="mt-auto flex flex-col gap-0.5">
+      <div className="flex items-center justify-between gap-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <Icon name="scooter-front" size={12} className="shrink-0 text-global-teal-teal-60" />
+          <Typography size="2x-small" color="text-secondary" className="truncate">
+            Giao {product.shipDays}
+          </Typography>
+        </span>
+        <Typography size="2x-small" color="text-tertiary" className="shrink-0">
+          Đã bán {formatSold(product.sold)}
+        </Typography>
+      </div>
+      <span className="flex min-w-0 items-center gap-1">
+        <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
+        <Typography size="2x-small" color="text-secondary" className="truncate">
+          Kho {product.warehouse}
+        </Typography>
+      </span>
     </div>
   </div>
 );

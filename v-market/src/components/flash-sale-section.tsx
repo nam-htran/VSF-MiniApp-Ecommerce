@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Icon, Image, Typography } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
 import imgChicken from '@/assets/products/chicken.jpg';
@@ -71,93 +72,126 @@ const DEMO_PRODUCTS: DemoProduct[] = [
 const discountPercent = (product: DemoProduct) =>
   Math.round((1 - product.price / product.oldPrice) * 100);
 
-/**
- * "Flash sale" row from the reference: a section header with a "see all"
- * link, then a horizontal strip where every product is its own white
- * card — photo with a red discount badge, name, unit, price with the old
- * price struck through, and a round add button.
- */
-export const FlashSaleSection = () => (
-  <section className="flex flex-col gap-3 bg-global-teal-teal-10 px-4 pb-4">
-    <div className="flex items-center justify-between">
-      <Typography size="large" weight="bold" component="h2">
-        Flash sale 🔥
-      </Typography>
-      <button type="button" className="flex items-center gap-0.5">
-        <Typography
-          size="small"
-          weight="semibold"
-          className="text-global-teal-teal-60">
-          Xem tất cả
-        </Typography>
-        <Icon name="chevron-right" size={16} className="text-global-teal-teal-60" />
-      </button>
-    </div>
+/** hh:mm:ss until midnight — flash sales "end today", every day. */
+const timeLeftToday = () => {
+  const now = new Date();
+  const midnight = new Date(now);
+  midnight.setHours(24, 0, 0, 0);
+  const total = Math.max(0, Math.floor((midnight.getTime() - now.getTime()) / 1000));
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+};
 
-    {/* Scrolls inside itself; the page never scrolls sideways. */}
-    <div className="-mx-4 overflow-x-auto px-4">
-      <div className="flex w-max gap-3 pb-1">
-        {DEMO_PRODUCTS.map(product => (
-          <ProductCard key={product.id} product={product} />
-        ))}
+const useCountdown = () => {
+  const [left, setLeft] = useState(timeLeftToday);
+  useEffect(() => {
+    const timer = setInterval(() => setLeft(timeLeftToday()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return left;
+};
+
+/**
+ * "Flash sale" strip: header with a live countdown and a "see all" link,
+ * then a horizontal row of compact white cards — photo with a discount
+ * badge, name, unit, sale price with the old price struck through.
+ *
+ * No add-to-cart button on the cards: the goal is density, supermarket
+ * style — the card itself will open the product once a detail page
+ * exists.
+ */
+export const FlashSaleSection = () => {
+  const countdown = useCountdown();
+
+  return (
+    <section className="flex flex-col gap-3 bg-global-teal-teal-10 px-4 pb-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Typography size="large" weight="bold" component="h2">
+            Flash sale <span className="animate-pulse">🔥</span>
+          </Typography>
+          {/* The ticking clock is what makes the screen feel alive. */}
+          <span className="flex items-center gap-1 rounded-lg bg-global-red-red-60 px-2 py-0.5">
+            <Icon name="clock" size={12} className="text-global-basic-white" />
+            <Typography
+              size="x-small"
+              weight="bold"
+              className="text-global-basic-white tabular-nums">
+              {countdown}
+            </Typography>
+          </span>
+        </div>
+        <button type="button" className="flex items-center gap-0.5">
+          <Typography
+            size="small"
+            weight="semibold"
+            className="text-global-teal-teal-60">
+            Xem tất cả
+          </Typography>
+          <Icon name="chevron-right" size={16} className="text-global-teal-teal-60" />
+        </button>
       </div>
-    </div>
-  </section>
-);
+
+      {/* Scrolls inside itself; the page never scrolls sideways. */}
+      <div className="-mx-4 overflow-x-auto px-4">
+        <div className="flex w-max gap-2 pb-1">
+          {DEMO_PRODUCTS.map(product => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
 
 const ProductCard = ({ product }: { product: DemoProduct }) => (
-  <div className="flex w-40 shrink-0 flex-col gap-2 rounded-2xl bg-alias-background p-3">
+  <div className="flex w-32 shrink-0 flex-col gap-1.5 rounded-xl bg-alias-background p-2">
     <div className="relative">
       <Image
         src={product.image}
         alt={product.name}
         fit="cover"
-        lazy
-        className="h-32 w-full rounded-xl"
+        // Deliberately NOT lazy. Image only sets src after an internal
+        // VisibilitySensor fires, and inside this horizontal scroller the
+        // sensor never does — the photo silently falls back to the emoji.
+        // Above-the-fold images should load eagerly anyway: this strip is
+        // the LCP candidate.
+        className="h-24 w-full rounded-lg"
         // The emoji tile steps in if the photo fails, at the same size,
         // so the card never collapses and shifts the row.
         fallback={
           <div
-            className={`flex h-32 w-full items-center justify-center rounded-xl text-5xl ${product.tint}`}>
+            className={`flex h-24 w-full items-center justify-center rounded-lg text-4xl ${product.tint}`}>
             {product.emoji}
           </div>
         }
       />
-      <span className="absolute right-2 top-2 rounded-lg bg-global-red-red-60 px-2 py-0.5">
-        <Typography size="x-small" weight="bold" className="text-global-basic-white">
-          {discountPercent(product)}%
+      <span className="absolute right-1 top-1 rounded-md bg-global-red-red-60 px-1.5 py-0.5">
+        <Typography size="2x-small" weight="bold" className="text-global-basic-white">
+          -{discountPercent(product)}%
         </Typography>
       </span>
     </div>
 
-    <div className="flex flex-col gap-0.5">
-      <Typography size="base" weight="bold" className="line-clamp-2">
+    <div className="flex flex-col">
+      <Typography size="small" weight="bold" className="line-clamp-2">
         {product.name}
       </Typography>
-      <Typography size="x-small" color="text-secondary">
+      <Typography size="2x-small" color="text-secondary" className="truncate">
         {product.unit}
       </Typography>
     </div>
 
-    <div className="mt-auto flex items-center justify-between">
-      <div className="flex flex-col">
-        <Typography size="base" weight="bold">
-          {formatVnd(product.price)}
-        </Typography>
-        <Typography
-          size="x-small"
-          color="text-tertiary"
-          className="line-through">
-          {formatVnd(product.oldPrice)}
-        </Typography>
-      </div>
-      {/* Visual only until a cart exists. */}
-      <button
-        type="button"
-        aria-label={`Thêm ${product.name} vào giỏ`}
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-global-teal-teal-60">
-        <Icon name="plus" size={18} className="text-global-basic-white" />
-      </button>
+    <div className="mt-auto flex flex-wrap items-baseline gap-x-1.5">
+      <Typography
+        size="small"
+        weight="bold"
+        className="text-global-red-red-60">
+        {formatVnd(product.price)}
+      </Typography>
+      <Typography size="2x-small" color="text-tertiary" className="line-through">
+        {formatVnd(product.oldPrice)}
+      </Typography>
     </div>
   </div>
 );
