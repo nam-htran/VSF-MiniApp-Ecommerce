@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.routes import router as auth_router
 from app.config import settings
@@ -24,6 +25,18 @@ async def lifespan(_: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="V-Market Backend", version="0.1.0", lifespan=lifespan)
+
+    # For the Simulator only. Its bridge refuses plain-http URLs, so in dev
+    # the MiniApp falls back to the browser's own fetch — a cross-origin
+    # call from the dev server's port to 4000, which needs CORS. Scoped to
+    # local origins: a real device talks HTTPS through the platform bridge
+    # and never sends a localhost Origin.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.get("/healthz", tags=["System"])
     async def healthz() -> dict:
