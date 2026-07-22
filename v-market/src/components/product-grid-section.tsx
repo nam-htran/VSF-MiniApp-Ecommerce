@@ -113,15 +113,20 @@ const formatSold = (sold: number) =>
  * shipping takes, which warehouse it ships from, how many sold. No add
  * button; the whole card opens the product once a detail page exists.
  */
-export const ProductGridSection = () => (
+export const ProductGridSection = ({
+  products,
+}: {
+  /** Real items from the backend; the demo array fills in until they load. */
+  products?: ProductCardData[];
+}) => (
   <section className="grid grid-cols-2 gap-2 p-3">
-    {DEMO_PRODUCTS.map(product => (
+    {(products ?? DEMO_PRODUCTS).map(product => (
       <ProductCard key={product.id} product={product} />
     ))}
   </section>
 );
 
-const ProductCard = ({ product }: { product: DemoProduct }) => {
+const ProductCard = ({ product }: { product: ProductCardData }) => {
   const navigate = useNavigate();
   return (
   <button
@@ -156,9 +161,11 @@ const ProductCard = ({ product }: { product: DemoProduct }) => {
       <Typography size="small" weight="bold" className="line-clamp-2">
         {product.name}
       </Typography>
-      <Typography size="2x-small" color="text-secondary" className="truncate">
-        {product.unit}
-      </Typography>
+      {product.unit && (
+        <Typography size="2x-small" color="text-secondary" className="truncate">
+          {product.unit}
+        </Typography>
+      )}
     </div>
 
     <div className="flex flex-wrap items-baseline gap-x-1.5">
@@ -176,23 +183,32 @@ const ProductCard = ({ product }: { product: DemoProduct }) => {
     </div>
 
     <div className="mt-auto flex flex-col gap-0.5">
-      <div className="flex items-center justify-between gap-1">
+      {(product.shipDays || product.sold !== undefined) && (
+        <div className="flex items-center justify-between gap-1">
+          {product.shipDays && (
+            <span className="flex min-w-0 items-center gap-1">
+              <Icon name="scooter-front" size={12} className="shrink-0 text-global-teal-teal-60" />
+              <Typography size="2x-small" color="text-secondary" className="truncate">
+                Giao {product.shipDays}
+              </Typography>
+            </span>
+          )}
+          {product.sold !== undefined && (
+            <Typography size="2x-small" color="text-tertiary" className="shrink-0">
+              Đã bán {formatSold(product.sold)}
+            </Typography>
+          )}
+        </div>
+      )}
+      {/* Demo rows carry a warehouse; real items name their shop. */}
+      {(product.warehouse || product.shopName) && (
         <span className="flex min-w-0 items-center gap-1">
-          <Icon name="scooter-front" size={12} className="shrink-0 text-global-teal-teal-60" />
+          <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
           <Typography size="2x-small" color="text-secondary" className="truncate">
-            Giao {product.shipDays}
+            {product.warehouse ? `Kho ${product.warehouse}` : product.shopName}
           </Typography>
         </span>
-        <Typography size="2x-small" color="text-tertiary" className="shrink-0">
-          Đã bán {formatSold(product.sold)}
-        </Typography>
-      </div>
-      <span className="flex min-w-0 items-center gap-1">
-        <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
-        <Typography size="2x-small" color="text-secondary" className="truncate">
-          Kho {product.warehouse}
-        </Typography>
-      </span>
+      )}
     </div>
   </button>
   );

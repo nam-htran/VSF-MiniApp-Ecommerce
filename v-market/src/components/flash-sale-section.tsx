@@ -93,8 +93,18 @@ const useCountdown = () => {
  * style — the card itself will open the product once a detail page
  * exists.
  */
-export const FlashSaleSection = () => {
+export const FlashSaleSection = ({
+  products,
+}: {
+  /** Real discounted items; the demo array fills in until they load. */
+  products?: ProductCardData[];
+}) => {
   const countdown = useCountdown();
+  // A flash item is defined by its old price — anything without one
+  // cannot render a badge or a struck-through price, so it stays out.
+  const items: DemoProduct[] = products?.length
+    ? products.filter((p): p is DemoProduct => p.oldPrice !== undefined)
+    : DEMO_PRODUCTS;
 
   return (
     <section className="flex flex-col gap-3 bg-global-teal-teal-10 px-4 pb-4">
@@ -128,7 +138,7 @@ export const FlashSaleSection = () => {
       {/* Scrolls inside itself; the page never scrolls sideways. */}
       <div className="-mx-4 overflow-x-auto px-4">
         <div className="flex w-max gap-2 pb-1">
-          {DEMO_PRODUCTS.map(product => (
+          {items.map(product => (
             <ProductCard key={product.id} product={product} />
           ))}
         </div>

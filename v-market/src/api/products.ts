@@ -6,7 +6,10 @@ export type ApiProduct = {
   shopId: string;
   name: string;
   description: string;
+  unit: string | null;
   price: number;
+  /** Set = on sale at `price`; this is the struck-through price. */
+  originalPrice: number | null;
   stock: number;
   imageUrl: string | null;
   status: 'ACTIVE' | 'HIDDEN';
@@ -15,4 +18,17 @@ export type ApiProduct = {
 /** Public — the product detail screen works without a session. */
 export function getProduct(id: string) {
   return apiRequest<ApiProduct>(`/products/${id}`);
+}
+
+/** Items in the marketplace feed also name their shop. */
+export type ApiProductListItem = ApiProduct & { shopName: string };
+
+export type ProductPage = {
+  items: ApiProductListItem[];
+  hasMore: boolean;
+};
+
+/** Public — the storefront across every shop, no session needed. */
+export function listProducts(limit = 20, offset = 0) {
+  return apiRequest<ProductPage>(`/products?limit=${limit}&offset=${offset}`);
 }
