@@ -1,0 +1,10 @@
+# Store everything with LF in the repository. Windows checkouts still get
+# CRLF where the tool chain expects it; only what git stores is normalised.
+* text=auto eol=lf
+
+# Office files are zip archives. Left to text=auto they would be diffed and
+# line-ending-converted, which corrupts them.
+*.xlsx binary
+*.docx binary
+*.pptx binary
+*.pdf  binary
