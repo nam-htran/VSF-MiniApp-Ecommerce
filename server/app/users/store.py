@@ -2,25 +2,30 @@
 
 `role` and `seller_id` are V-Market's data, not V-App's. V-App only
 returns an identity — it has no notion of buyer or seller.
-
-In memory for now; moves to a real DB on day 2 along with proper seeding.
 """
 
 import uuid
-from dataclasses import dataclass
 from typing import Literal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
 
 UserRole = Literal["BUYER", "SELLER"]
 
 
-@dataclass
-class MarketUser:
-    id: str
-    vapp_user_id: str
-    role: UserRole
-    seller_id: str | None
-    name: str | None
-    phone_number: str | None
+class MarketUser(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    # Unique: two rows for one person would split their orders in half.
+    vapp_user_id: Mapped[str] = mapped_column(unique=True, index=True)
+    role: Mapped[str]
+    seller_id: Mapped[str | None] = mapped_column(default=None)
+    name: Mapped[str | None] = mapped_column(default=None)
+    phone_number: Mapped[str | None] = mapped_column(default=None)
 
 
 # Roles for the demo accounts. Deliberately a V-Market-side table, so the
@@ -31,15 +36,24 @@ _SEED_ROLES: dict[str, tuple[UserRole, str | None]] = {
     "33333333-3333-4333-8333-333333333333": ("SELLER", "seller-b"),
 }
 
-_by_vapp_user_id: dict[str, MarketUser] = {}
+
+async def find_by_id(session: AsyncSession, user_id: str) -> MarketUser | None:
+    return await session.get(MarketUser, user_id)
 
 
-def find_by_vapp_user_id(vapp_user_id: str) -> MarketUser | None:
-    return _by_vapp_user_id.get(vapp_user_id)
+async def find_by_vapp_user_id(
+    session: AsyncSession, vapp_user_id: str
+) -> MarketUser | None:
+    return await session.scalar(
+        select(MarketUser).where(MarketUser.vapp_user_id == vapp_user_id)
+    )
 
 
-def create_user(
-    vapp_user_id: str, name: str | None, phone_number: str | None
+async def create_user(
+    session: AsyncSession,
+    vapp_user_id: str,
+    name: str | None,
+    phone_number: str | None,
 ) -> MarketUser:
     # New users default to BUYER; becoming a SELLER is a separate action
     # (creating a shop, day 3).
@@ -53,9 +67,7 @@ def create_user(
         name=name,
         phone_number=phone_number,
     )
-    _by_vapp_user_id[vapp_user_id] = user
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
     return user
-
-
-def reset() -> None:
-    _by_vapp_user_id.clear()

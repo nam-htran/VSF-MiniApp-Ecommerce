@@ -13,11 +13,13 @@ So the consent screen appears exactly once per user, ever.
 
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import issue_session_token
+from app.db import get_session
 from app.users import store as users
 from app.vapp.errors import VAppApiError
 from app.vapp.gateway import exchange_auth_code, get_user_info
@@ -34,7 +36,10 @@ class SessionRequest(BaseModel):
 
 
 @router.post("/auth/session")
-async def create_session(body: SessionRequest) -> JSONResponse:
+async def create_session(
+    body: SessionRequest,
+    session: AsyncSession = Depends(get_session),
+) -> JSONResponse:
     try:
         token = await exchange_auth_code(body.authCode)
         info = await get_user_info(token.access_token)
@@ -50,7 +55,7 @@ async def create_session(body: SessionRequest) -> JSONResponse:
             },
         )
 
-    existing = users.find_by_vapp_user_id(info["user_id"])
+    existing = await users.find_by_vapp_user_id(session, info["user_id"])
     if existing is not None:
         return JSONResponse(content=_authenticated(existing))
 
@@ -61,7 +66,8 @@ async def create_session(body: SessionRequest) -> JSONResponse:
             content={"status": "CONSENT_REQUIRED", "requiredScopes": PROFILE_SCOPES}
         )
 
-    created = users.create_user(
+    created = await users.create_user(
+        session,
         vapp_user_id=info["user_id"],
         name=info["name"],
         phone_number=info.get("phone_number"),

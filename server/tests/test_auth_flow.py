@@ -10,6 +10,7 @@ Plus one V-Market design rule:
 
 import httpx
 import pytest
+import pytest_asyncio
 
 from app.auth.tokens import verify_session_token
 from app.config import settings
@@ -20,6 +21,12 @@ pytestmark = pytest.mark.skipif(
     and "localhost" not in settings.vapp_base_url,
     reason="Needs the mock to mint authCodes on demand",
 )
+
+
+# These tests do hit the database, unlike the contract tests.
+@pytest_asyncio.fixture(autouse=True)
+async def _empty(clean_db):
+    yield
 
 
 async def auth_code_for(user_id: str, scopes: str) -> str:

@@ -4,31 +4,47 @@ import time
 from urllib.parse import urlparse
 
 import pytest
+import pytest_asyncio
 import uvicorn
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 SERVER_PORT = 4900
 
 BUYER_ID = "11111111-1111-4111-8111-111111111111"
 SELLER_A_ID = "22222222-2222-4222-8222-222222222222"
+SELLER_B_ID = "33333333-3333-4333-8333-333333333333"
 
 
 def _reachable(url: str) -> bool:
     parsed = urlparse(url)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     try:
-        with socket.create_connection((parsed.hostname, port), timeout=2):
+        with socket.create_connection((parsed.hostname, port), timeout=3):
             return True
     except OSError:
         return False
+
+
+def _throwaway_engine():
+    """A short-lived engine for test bookkeeping.
+
+    The app's engine is shared with the uvicorn thread, which runs its own
+    event loop; an asyncpg pool cannot be used from two loops. So tests get
+    their own NullPool engine and dispose it right away.
+    """
+    from app.config import settings
+
+    return create_async_engine(settings.database_url, poolclass=NullPool)
 
 
 @pytest.fixture(scope="session", autouse=True)
 def require_vapp():
     """mock-openAPI is a separate program, so tests need it already running.
 
-    Deliberately not imported and booted from here: the whole point is
-    that the gateway reaches V-App over the network, exactly as it will
-    against the real API.
+    Deliberately not booted from here: the point is that the gateway reaches
+    V-App over the network, exactly as it will against the real API.
     """
     from app.config import settings
 
@@ -39,6 +55,46 @@ def require_vapp():
             ".venv\\Scripts\\python.exe -m uvicorn main:app --port 4001",
             allow_module_level=True,
         )
+
+
+# Not autouse: the contract tests only exercise the gateway against
+# mock-openAPI and never touch the database, so they must keep running even
+# with no database around.
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def prepare_db(require_vapp):
+    from app.db import Base
+
+    # Import registers each model on Base before create_all runs.
+    from app.shops import store as _shops  # noqa: F401
+    from app.users import store as _users  # noqa: F401
+
+    engine = _throwaway_engine()
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except OSError as error:
+        pytest.skip(
+            f"No database reachable: {error}\n"
+            "Start it with:  docker compose up -d",
+            allow_module_level=True,
+        )
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def clean_db(prepare_db):
+    """Each test starts with empty tables.
+
+    Truncating rather than rolling back: the app runs in another thread with
+    its own sessions, so a test-side transaction would not isolate it.
+    CASCADE because shops reference users.
+    """
+    engine = _throwaway_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text("TRUNCATE TABLE shops, users CASCADE"))
+    await engine.dispose()
+    yield
 
 
 @pytest.fixture(scope="session")
@@ -63,11 +119,3 @@ def base_url(require_vapp):
 
     server.should_exit = True
     thread.join(timeout=10)
-
-
-@pytest.fixture(autouse=True)
-def clean_users():
-    from app.users.store import reset
-
-    reset()
-    yield

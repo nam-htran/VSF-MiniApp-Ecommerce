@@ -1,0 +1,75 @@
+import uuid
+from typing import Literal
+
+from sqlalchemy import ForeignKey, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
+
+ShopStatus = Literal["ACTIVE", "LOCKED"]
+
+
+class Shop(Base):
+    __tablename__ = "shops"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    # unique=True is what enforces one seller, one shop. A plain `if
+    # already_has_shop` check loses to two concurrent requests; a database
+    # constraint does not.
+    owner_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id"), unique=True, index=True
+    )
+    name: Mapped[str]
+    description: Mapped[str]
+    image_url: Mapped[str | None] = mapped_column(default=None)
+    # The proposal activates a shop once the required fields are present,
+    # which the create endpoint already enforces. LOCKED is here for later.
+    status: Mapped[str] = mapped_column(default="ACTIVE")
+
+
+async def find_by_id(session: AsyncSession, shop_id: str) -> Shop | None:
+    return await session.get(Shop, shop_id)
+
+
+async def find_by_owner(session: AsyncSession, owner_id: str) -> Shop | None:
+    return await session.scalar(select(Shop).where(Shop.owner_id == owner_id))
+
+
+async def create_shop(
+    session: AsyncSession,
+    owner_id: str,
+    name: str,
+    description: str,
+    image_url: str | None,
+) -> Shop:
+    shop = Shop(
+        id=str(uuid.uuid4()),
+        owner_id=owner_id,
+        name=name,
+        description=description,
+        image_url=image_url,
+    )
+    session.add(shop)
+    await session.commit()
+    await session.refresh(shop)
+    return shop
+
+
+async def update_shop(
+    session: AsyncSession,
+    shop: Shop,
+    name: str | None,
+    description: str | None,
+    image_url: str | None,
+) -> Shop:
+    if name is not None:
+        shop.name = name
+    if description is not None:
+        shop.description = description
+    if image_url is not None:
+        shop.image_url = image_url
+
+    await session.commit()
+    await session.refresh(shop)
+    return shop

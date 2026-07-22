@@ -7,6 +7,11 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 4000
 
+    # Postgres from docker-compose.yml at the project root.
+    database_url: str = (
+        "postgresql+asyncpg://vmarket:vmarket@127.0.0.1:5433/vmarket"
+    )
+
     vapp_base_url: str = "http://127.0.0.1:4001"
     vapp_client_id: str = "v-market-dev"
     vapp_client_secret: str = "dev-secret"
