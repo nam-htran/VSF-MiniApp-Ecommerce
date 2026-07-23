@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.auth.routes import router as auth_router
 from app.config import settings
@@ -10,6 +11,7 @@ from app.addresses.routes import router as addresses_router
 from app.geo.routes import router as geo_router
 from app.orders.routes import router as orders_router
 from app.payments.routes import router as payments_router
+from app.uploads.routes import UPLOAD_DIR, router as uploads_router
 from app.products.routes import router as products_router
 from app.shops.routes import router as shops_router
 
@@ -55,6 +57,9 @@ def create_app() -> FastAPI:
     app.include_router(geo_router)
     app.include_router(addresses_router)
     app.include_router(payments_router)
+    app.include_router(uploads_router)
+    # Serve uploaded product images from the same origin as the API.
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
     return app
 
 

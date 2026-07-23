@@ -87,6 +87,13 @@ const SignedIn = () => {
           label="Giỏ hàng"
           onClick={() => navigate('/cart', { animation: { type: 'none' } })}
         />
+        <Divider />
+        <MenuRow
+          icon={<Icon name="office" size={20} className="shrink-0 text-brand" />}
+          label="Kênh người bán"
+          hint={user.role === 'SELLER' ? 'Cửa hàng của tôi' : 'Mở cửa hàng'}
+          onClick={() => navigate('/seller')}
+        />
       </div>
 
       <div className="mx-3 mt-1">

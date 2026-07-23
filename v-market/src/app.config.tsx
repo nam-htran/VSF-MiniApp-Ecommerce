@@ -7,6 +7,7 @@ import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
 import CheckoutPage from './pages/checkout-page';
 import OrderDetailPage from './pages/order-detail-page';
+import SellerPage from './pages/seller-page';
 import LoginPage from './pages/login-page';
 import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
@@ -94,6 +95,13 @@ export const getAppConfig = (): IAppConfig => ({
       Component: AccountPage,
       navigationBar: { title: 'Tài khoản', hidden: true },
       bottomTabBarId: 'account',
+    },
+    {
+      // The seller channel: open a shop, then manage products. Reached from
+      // the account tab; not a tab root, so the floating back button shows.
+      pathname: '/seller',
+      Component: SellerPage,
+      navigationBar: { hidden: true },
     },
   ],
   animation: {

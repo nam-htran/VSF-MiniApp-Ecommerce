@@ -24,7 +24,7 @@ import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
  * it; the 112px fallback clears the pill the Simulator draws.
  */
 const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
-const NO_SEARCH = ['/login', '/checkout', '/order'];
+const NO_SEARCH = ['/login', '/checkout', '/order', '/seller'];
 
 /** Pages scroll in an inner container the library owns, not on window —
  * a capturing listener hears them all without naming the element. */
