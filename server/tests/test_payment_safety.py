@@ -186,6 +186,16 @@ async def test_reconciliation_recovers_a_payment_whose_webhook_was_lost(
             )
         ).json()
 
+        # Capture whatever the mock is configured with, so it can be put
+        # back exactly. Restoring to this test's own base_url pointed the
+        # shared mock at a port that dies with the test run, and every later
+        # webhook — including the seed script's — went nowhere.
+        original = (
+            await client.post(
+                f"{settings.vapp_base_url}/simulator/config", json={}
+            )
+        ).json()["data"]["merchant_ipn_url"]
+
         # Break the mock's delivery so the notification is lost in transit.
         # It stays broken for the whole test: the gateway retries with
         # backoff, and restoring the URL early just lets a retry win —
@@ -226,7 +236,7 @@ async def test_reconciliation_recovers_a_payment_whose_webhook_was_lost(
             # would silently break every later test.
             await client.post(
                 f"{settings.vapp_base_url}/simulator/config",
-                json={"merchant_ipn_url": f"{base_url}/payments/ipn"},
+                json={"merchant_ipn_url": original},
             )
 
     assert during["status"] == "PENDING"  # the webhook never came

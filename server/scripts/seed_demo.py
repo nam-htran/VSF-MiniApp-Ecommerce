@@ -395,6 +395,7 @@ def seed_shops() -> list[dict]:
 def seed_reviews(listed: list[dict]) -> int:
     """Buy, pay, then rate — the only order the server permits."""
     written = 0
+    paid = 0
     for name in BUYER_NAMES:
         token = token_for(name)
         basket = random.sample(listed, random.randint(6, 11))
@@ -440,6 +441,10 @@ def seed_reviews(listed: list[dict]) -> int:
             {"orderId": order["id"], "amount": int(order["total"])},
         )["data"]
         call(MOCK, f"/simulator/payment/{payment['paymentId']}/confirm", {})
+        # Count what actually settled rather than assuming: a lost webhook
+        # would otherwise be reported as a paid order with no reviews.
+        if call(BACKEND, f"/orders/{order['id']}", token=token)["status"] == "PAID":
+            paid += 1
 
         for item in random.sample(basket, k=max(int(len(basket) * 0.75), 1)):
             rating = random.choice(_RATING_POOL)
@@ -455,7 +460,7 @@ def seed_reviews(listed: list[dict]) -> int:
                 # One review per buyer per product; a repeat is harmless.
                 if error.code not in (403, 409):
                     raise
-    return written
+    return written, paid
 
 
 if __name__ == "__main__":
@@ -466,8 +471,8 @@ if __name__ == "__main__":
     asyncio.run(truncate())
     listed = seed_shops()
     print(f"\nĐang tạo đơn và đánh giá cho {len(BUYER_NAMES)} người mua…")
-    reviews = seed_reviews(listed)
+    reviews, paid = seed_reviews(listed)
     print(
         f"\nXong: {len(SHOPS)} shop, {len(listed)} sản phẩm, "
-        f"{len(BUYER_NAMES)} đơn đã thanh toán, {reviews} đánh giá."
+        f"{paid}/{len(BUYER_NAMES)} đơn đã thanh toán, {reviews} đánh giá."
     )
