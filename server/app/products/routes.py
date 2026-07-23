@@ -205,10 +205,19 @@ async def update_product(
 
 @router.get("/products/{product_id}")
 async def get_product(product_id: str, session: Session) -> dict:
-    """Public: the product detail screen."""
+    """Public: the product detail screen, with its shop's origin and
+    contact so the page can show where it ships from and estimate how long
+    it will take."""
     product = await products.find_by_id(session, product_id)
     if product is None or product.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
-    return _serialise(product)
+    shop = await shops.find_by_id(session, product.shop_id)
+    return {
+        **_serialise(product),
+        "shopName": shop.name if shop else None,
+        "shopAddress": shop.address if shop else None,
+        "shopProvince": shop.province if shop else None,
+        "shopPhone": shop.phone if shop else None,
+    }

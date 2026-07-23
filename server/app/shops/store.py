@@ -23,6 +23,12 @@ class Shop(Base):
     name: Mapped[str]
     description: Mapped[str]
     image_url: Mapped[str | None] = mapped_column(default=None)
+    # Contact and origin. `province` is kept apart from the free-text
+    # address so delivery time can be estimated from it (see the product
+    # page) without parsing a string.
+    address: Mapped[str | None] = mapped_column(default=None)
+    phone: Mapped[str | None] = mapped_column(default=None)
+    province: Mapped[str | None] = mapped_column(default=None)
     # The proposal activates a shop once the required fields are present,
     # which the create endpoint already enforces. LOCKED is here for later.
     status: Mapped[str] = mapped_column(default="ACTIVE")
@@ -58,6 +64,9 @@ async def create_shop(
     name: str,
     description: str,
     image_url: str | None,
+    address: str | None = None,
+    phone: str | None = None,
+    province: str | None = None,
 ) -> Shop:
     shop = Shop(
         id=str(uuid.uuid4()),
@@ -65,6 +74,9 @@ async def create_shop(
         name=name,
         description=description,
         image_url=image_url,
+        address=address,
+        phone=phone,
+        province=province,
     )
     session.add(shop)
     await session.commit()
@@ -78,6 +90,9 @@ async def update_shop(
     name: str | None,
     description: str | None,
     image_url: str | None,
+    address: str | None = None,
+    phone: str | None = None,
+    province: str | None = None,
 ) -> Shop:
     if name is not None:
         shop.name = name
@@ -85,6 +100,12 @@ async def update_shop(
         shop.description = description
     if image_url is not None:
         shop.image_url = image_url
+    if address is not None:
+        shop.address = address
+    if phone is not None:
+        shop.phone = phone
+    if province is not None:
+        shop.province = province
 
     await session.commit()
     await session.refresh(shop)

@@ -7,7 +7,18 @@ export type Shop = {
   name: string;
   description: string;
   imageUrl: string | null;
+  address: string | null;
+  phone: string | null;
+  province: string | null;
   status: 'ACTIVE' | 'LOCKED';
+};
+
+export type ShopContact = {
+  name: string;
+  description: string;
+  province?: string | null;
+  address?: string | null;
+  phone?: string | null;
 };
 
 const bearer = (): Record<string, string> | undefined => {
@@ -36,10 +47,18 @@ export function getMyShop() {
 }
 
 /** Open to any session — opening a shop is what grants the SELLER role. */
-export function openShop(name: string, description: string) {
+export function openShop(body: ShopContact) {
   return apiRequest<Shop>('/shops', {
     method: 'POST',
-    data: { name, description },
+    data: body,
+    headers: bearer(),
+  });
+}
+
+export function updateShop(id: string, body: Partial<ShopContact>) {
+  return apiRequest<Shop>(`/shops/${id}`, {
+    method: 'PATCH',
+    data: body,
     headers: bearer(),
   });
 }

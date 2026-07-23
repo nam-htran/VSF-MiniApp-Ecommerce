@@ -21,9 +21,18 @@ export type ApiProduct = {
   status: 'ACTIVE' | 'HIDDEN';
 };
 
+/** The detail screen also carries the shop's origin and contact, so it can
+ *  show where the item ships from and estimate delivery time. */
+export type ApiProductDetail = ApiProduct & {
+  shopName: string | null;
+  shopAddress: string | null;
+  shopProvince: string | null;
+  shopPhone: string | null;
+};
+
 /** Public — the product detail screen works without a session. */
 export function getProduct(id: string) {
-  return apiRequest<ApiProduct>(`/products/${id}`);
+  return apiRequest<ApiProductDetail>(`/products/${id}`);
 }
 
 /** Items in the marketplace feed also name their shop. */

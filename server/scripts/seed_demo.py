@@ -37,6 +37,9 @@ SHOPS = [
     (
         "Điện máy Bình Minh",
         "Thiết bị điện tử, âm thanh chính hãng, bảo hành 12 tháng",
+        "Thành phố Hồ Chí Minh",
+        "45 Cách Mạng Tháng 8, P.6, Quận 3",
+        "0902 111 222",
         [
             ("Tai nghe chụp tai không dây", "Chống ồn chủ động, kết nối 2 thiết bị.", "Pin 30 giờ", 890000, 1290000, 25, "headphones"),
             ("Đồng hồ thông minh", "Theo dõi nhịp tim, chống nước 5ATM.", "Dây silicone", 990000, 1490000, 30, "watch"),
@@ -48,6 +51,9 @@ SHOPS = [
     (
         "Thời trang An Nhiên",
         "Quần áo, giày và phụ kiện — đổi size trong 7 ngày",
+        "Thành phố Hà Nội",
+        "88 Trần Duy Hưng, P. Trung Hoà, Q. Cầu Giấy",
+        "0903 333 444",
         [
             ("Giày chạy bộ nam", "Đế đàn hồi, thoáng khí.", "Size 39–44", 1150000, 1590000, 50, "sneakers"),
             ("Áo thun cotton trơn", "100% cotton, form regular.", "Size S–XXL", 129000, None, 200, "tshirt"),
@@ -57,6 +63,9 @@ SHOPS = [
     (
         "Gia dụng Nhà Mình",
         "Đồ dùng nhà cửa thiết yếu, giao nhanh nội thành",
+        "Thành phố Đà Nẵng",
+        "12 Lê Duẩn, P. Thạch Thang, Q. Hải Châu",
+        "0905 555 666",
         [
             ("Đèn làm việc kim loại", "Tay đèn xoay 180°.", "Bóng E27, dây 1.8m", 350000, None, 45, "lamp"),
             ("Bình giữ nhiệt 500ml", "Giữ nóng 12h, giữ lạnh 24h.", "Inox 304", 220000, 280000, 80, "bottle"),
@@ -90,7 +99,14 @@ async def truncate() -> None:
 
 
 def seed() -> None:
-    for index, (shop_name, shop_desc, product_rows) in enumerate(SHOPS):
+    for index, (
+        shop_name,
+        shop_desc,
+        province,
+        address,
+        phone,
+        product_rows,
+    ) in enumerate(SHOPS):
         owner = post(MOCK, "/simulator/users", {"name": f"Chủ shop {index + 1}"})
         code = post(
             MOCK,
@@ -99,7 +115,18 @@ def seed() -> None:
         )["data"]["authCode"]
         token = post(BACKEND, "/auth/session", {"authCode": code})["token"]
 
-        post(BACKEND, "/shops", {"name": shop_name, "description": shop_desc}, token)
+        post(
+            BACKEND,
+            "/shops",
+            {
+                "name": shop_name,
+                "description": shop_desc,
+                "province": province,
+                "address": address,
+                "phone": phone,
+            },
+            token,
+        )
         for name, description, unit, price, original, stock, image in product_rows:
             payload = {
                 "name": name,
@@ -119,5 +146,5 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     asyncio.run(truncate())
     seed()
-    total = sum(len(rows) for _, _, rows in SHOPS)
+    total = sum(len(rows) for *_, rows in SHOPS)
     print(f"Xong: {len(SHOPS)} shop, {total} sản phẩm.")

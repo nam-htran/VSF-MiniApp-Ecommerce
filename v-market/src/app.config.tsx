@@ -39,8 +39,9 @@ export const getAppConfig = (): IAppConfig => ({
     },
     {
       // Detail pages take the id as a query param — /product?id=… — the
-      // router only supports single-level paths. Not a tab root, so the
-      // fixed back button from BackButtonLayout appears here.
+      // router only supports single-level paths. Same app chrome as every
+      // other page (floating back + search pill); the page just pads its
+      // content below the chrome so the photo isn't tucked under it.
       pathname: '/product',
       Component: ProductPage,
       navigationBar: { hidden: true },

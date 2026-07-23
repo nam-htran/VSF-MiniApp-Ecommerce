@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Button,
   Icon,
@@ -9,163 +9,275 @@ import {
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
-import { getProduct } from '@/api/products';
+import { getProduct, type ApiProductDetail } from '@/api/products';
+import { listAddresses } from '@/api/addresses';
 import { addToCart } from '@/lib/cart';
+import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
 
 /**
  * Product detail at /product?id=… (single-level path, id in the query).
+ * Rendered under the platform navigation bar — the app's floating chrome is
+ * suppressed here (see TopChromeLayout NO_CHROME).
  *
- * Two ways in:
- *  - tapped from a card: the card's data arrives in navigation state and
- *    renders instantly, no request;
- *  - opened cold (deep link): only the id exists, so the page fetches
- *    GET /products/{id} from the backend.
- * Demo cards carry made-up ids the backend has never heard of — state is
- *    what makes them work at all.
+ * The card that was tapped arrives in navigation state for an instant first
+ * paint; the full detail — shop origin, contact, real stock — is always
+ * fetched so the shipping and estimate sections can fill in.
  */
+type View = {
+  id: string;
+  name: string;
+  price: number;
+  oldPrice?: number;
+  image?: string;
+  unit?: string;
+  description?: string;
+  emoji: string;
+  tint: string;
+  stock?: number;
+  shopId?: string;
+  shopName?: string;
+  shopAddress?: string | null;
+  shopProvince?: string | null;
+  shopPhone?: string | null;
+};
+
+const fromDetail = (p: ApiProductDetail): View => ({
+  id: p.id,
+  name: p.name,
+  price: p.price,
+  oldPrice: p.originalPrice ?? undefined,
+  image: p.imageUrl ?? undefined,
+  unit: p.unit ?? undefined,
+  description: p.description,
+  emoji: '🛒',
+  tint: 'bg-global-neutral-neutral-10',
+  stock: p.stock,
+  shopId: p.shopId,
+  shopName: p.shopName ?? undefined,
+  shopAddress: p.shopAddress,
+  shopProvince: p.shopProvince,
+  shopPhone: p.shopPhone,
+});
+
 const ProductPage = () => {
   const location = useLocation();
   const passed = (location?.state as { product?: ProductCardData } | undefined)
     ?.product;
-  const id = location?.params?.id;
+  const id = location?.params?.id ?? passed?.id;
 
-  const [state, setState] = useState<
-    | { status: 'ready'; product: ProductCardData }
-    | { status: 'loading' }
-    | { status: 'missing' }
-  >(passed ? { status: 'ready', product: passed } : { status: 'loading' });
+  const [detail, setDetail] = useState<ApiProductDetail | null>(null);
+  const [missing, setMissing] = useState(false);
+  // The buyer's default address, if any — lets the estimate say "same area".
+  const [buyerAddress, setBuyerAddress] = useState<string | undefined>();
 
   useEffect(() => {
-    if (passed || !id) {
-      if (!passed && !id) setState({ status: 'missing' });
+    if (!id) {
+      setMissing(true);
       return;
     }
     getProduct(id)
-      .then(product =>
-        setState({
-          status: 'ready',
-          product: {
-            id: product.id,
-            name: product.name,
-            description: product.description,
-            unit: product.unit ?? undefined,
-            price: product.price,
-            oldPrice: product.originalPrice ?? undefined,
-            image: product.imageUrl ?? undefined,
-            shopId: product.shopId,
-            emoji: '🛒',
-            tint: 'bg-global-neutral-neutral-10',
-          },
-        })
-      )
-      .catch(() => setState({ status: 'missing' }));
+      .then(setDetail)
+      .catch(() => {
+        if (!passed) setMissing(true);
+      });
+    listAddresses()
+      .then(list => {
+        const chosen = list.find(a => a.isDefault) ?? list[0];
+        setBuyerAddress(chosen?.addressLine);
+      })
+      .catch(() => setBuyerAddress(undefined));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  if (state.status === 'loading') return <DetailSkeleton />;
-  if (state.status === 'missing') return <NotFound />;
-  return <Detail product={state.product} />;
+  if (missing) return <NotFound />;
+
+  const view: View | null = detail
+    ? fromDetail(detail)
+    : passed
+      ? { ...passed, shopId: passed.shopId, shopName: passed.shopName }
+      : null;
+
+  if (!view) return <DetailSkeleton />;
+  return <Detail view={view} buyerAddress={buyerAddress} />;
 };
 
-const Detail = ({ product }: { product: ProductCardData }) => (
-  <div
-    className="flex min-h-full flex-col"
-    style={{
-      // Room for the fixed buy bar, plus the device's bottom inset.
-      paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 72px)',
-    }}>
-    {/* Bleeds to the top edge; the floating back button from the app
-        layout is the only chrome up there. */}
-    <Image
-      src={product.image}
-      alt={product.name}
-      fit="cover"
-      className="h-72 w-full"
-      fallback={
-        <div
-          className={`flex h-72 w-full items-center justify-center text-7xl ${product.tint}`}>
-          {product.emoji}
-        </div>
-      }
-    />
+const Detail = ({
+  view,
+  buyerAddress,
+}: {
+  view: View;
+  buyerAddress?: string;
+}) => {
+  const eta = estimateDelivery(view.shopProvince ?? null, buyerAddress);
 
-    <div className="flex flex-col gap-3 p-4">
-      <div className="flex flex-col gap-1">
-        <Typography size="large" weight="bold" component="h1">
-          {product.name}
-        </Typography>
-        {product.unit && (
-          <Typography size="small" color="text-secondary">
-            {product.unit}
-          </Typography>
-        )}
+  return (
+    <div
+      className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01"
+      style={{
+        paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 72px)',
+      }}>
+      <div className="bg-alias-background">
+        <Image
+          src={view.image}
+          alt={view.name}
+          fit="cover"
+          className="h-72 w-full"
+          fallback={
+            <div
+              className={`flex h-72 w-full items-center justify-center text-7xl ${view.tint}`}>
+              {view.emoji}
+            </div>
+          }
+        />
+      </div>
+
+      <Card>
         <div className="flex flex-wrap items-baseline gap-x-2">
           <Typography
             size="2x-large"
             weight="bold"
-            className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
-            {formatVnd(product.price)}
+            className={view.oldPrice ? 'text-global-red-red-60' : undefined}>
+            {formatVnd(view.price)}
           </Typography>
-          {product.oldPrice && (
+          {view.oldPrice && (
             <Typography size="small" color="text-tertiary" className="line-through">
-              {formatVnd(product.oldPrice)}
+              {formatVnd(view.oldPrice)}
             </Typography>
           )}
         </div>
-      </div>
+        <Typography size="large" weight="bold" component="h1">
+          {view.name}
+        </Typography>
+        {view.unit && (
+          <Typography size="small" color="text-secondary">
+            {view.unit}
+          </Typography>
+        )}
+        {view.stock !== undefined && (
+          <Typography
+            size="x-small"
+            className={
+              view.stock > 0 ? 'text-global-teal-teal-60' : 'text-global-red-red-60'
+            }>
+            {view.stock > 0 ? `Còn ${view.stock} sản phẩm` : 'Tạm hết hàng'}
+          </Typography>
+        )}
+      </Card>
 
-      {(product.shipDays || product.warehouse || product.sold !== undefined) && (
-        <div className="flex flex-col gap-1.5 rounded-xl bg-alias-layer-01 p-3">
-          {product.shipDays && (
-            <InfoRow icon="scooter-front" text={`Giao ${product.shipDays}`} />
+      {/* Shipping: estimate from the shop's province, plus origin and
+          contact. Only shows once the fetched detail brings the shop in. */}
+      {(view.shopName || view.shopProvince) && (
+        <Card>
+          <InfoRow
+            icon="scooter-front"
+            title="Giao đến khu vực của bạn"
+            value={`${eta.days}${eta.sameRegion ? ' · cùng khu vực' : ''}`}
+          />
+          {(view.shopAddress || view.shopProvince) && (
+            <InfoRow
+              icon="pin"
+              title="Giao từ"
+              value={
+                view.shopAddress
+                  ? `${view.shopAddress}${view.shopProvince ? `, ${view.shopProvince}` : ''}`
+                  : (view.shopProvince ?? '')
+              }
+            />
           )}
-          {product.warehouse && (
-            <InfoRow icon="pin" text={`Kho ${product.warehouse}`} />
+          {view.shopName && (
+            <InfoRow icon="office" title="Cửa hàng" value={view.shopName} />
           )}
-          {product.sold !== undefined && (
-            <InfoRow icon="receipt" text={`Đã bán ${product.sold.toLocaleString('vi-VN')}`} />
+          {view.shopPhone && (
+            <InfoRow icon="phone" title="Liên hệ" value={view.shopPhone} />
           )}
-        </div>
+        </Card>
       )}
 
-      <div className="flex flex-col gap-1">
+      <Card>
         <Typography size="base" weight="bold" component="h2">
-          Mô tả
+          Mô tả sản phẩm
         </Typography>
-        <Typography size="small" color="text-secondary">
-          {product.description ??
-            'Người bán chưa bổ sung mô tả cho sản phẩm này.'}
+        <Typography size="small" color="text-secondary" className="whitespace-pre-line">
+          {view.description ?? 'Người bán chưa bổ sung mô tả cho sản phẩm này.'}
         </Typography>
-      </div>
-    </div>
+      </Card>
 
-    <BuyBar product={product} />
+      <Card>
+        <Typography size="base" weight="bold" component="h2">
+          Chính sách &amp; điều khoản
+        </Typography>
+        <Policy text="Thanh toán an toàn qua cổng V-App." />
+        <Policy text="Đổi trả trong 7 ngày nếu hàng lỗi do nhà sản xuất." />
+        <Policy text="Thông tin nhận hàng chỉ dùng để giao đơn này." />
+      </Card>
+
+      <BuyBar view={view} />
+    </div>
+  );
+};
+
+const Card = ({ children }: { children: ReactNode }) => (
+  <div className="mx-3 flex flex-col gap-2 rounded-2xl bg-alias-background p-3.5 shadow-sm">
+    {children}
   </div>
 );
 
-const InfoRow = ({ icon, text }: { icon: 'scooter-front' | 'pin' | 'receipt'; text: string }) => (
-  <span className="flex items-center gap-2">
-    <Icon name={icon} size={16} className="shrink-0 text-global-teal-teal-60" />
-    <Typography size="small">{text}</Typography>
+const InfoRow = ({
+  icon,
+  title,
+  value,
+}: {
+  icon: 'scooter-front' | 'pin' | 'office' | 'phone';
+  title: string;
+  value: string;
+}) => (
+  <div className="flex items-start gap-2">
+    <Icon name={icon} size={16} className="mt-0.5 shrink-0 text-global-teal-teal-60" />
+    <div className="flex min-w-0 flex-1 flex-col">
+      <Typography size="2x-small" color="text-tertiary">
+        {title}
+      </Typography>
+      <Typography size="small">{value}</Typography>
+    </div>
+  </div>
+);
+
+const Policy = ({ text }: { text: string }) => (
+  <span className="flex items-start gap-2">
+    <Icon name="check" size={14} className="mt-0.5 shrink-0 text-global-teal-teal-60" />
+    <Typography size="x-small" color="text-secondary">
+      {text}
+    </Typography>
   </span>
 );
 
-const BuyBar = ({ product }: { product: ProductCardData }) => {
+const BuyBar = ({ view }: { view: View }) => {
   const navigate = useNavigate();
+  const card: ProductCardData = {
+    id: view.id,
+    name: view.name,
+    price: view.price,
+    oldPrice: view.oldPrice,
+    image: view.image,
+    unit: view.unit,
+    description: view.description,
+    emoji: view.emoji,
+    tint: view.tint,
+    shopId: view.shopId,
+    shopName: view.shopName,
+  };
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
-      style={{
-        paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)',
-      }}>
+      style={{ paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)' }}>
       <Button
         type="outline"
         theme="brand"
         block
         onClick={() => {
-          addToCart(product);
+          addToCart(card);
           Toast.show({
             type: 'positive',
             message: 'Đã thêm vào giỏ hàng',
@@ -179,7 +291,7 @@ const BuyBar = ({ product }: { product: ProductCardData }) => {
         theme="brand"
         block
         onClick={() => {
-          addToCart(product);
+          addToCart(card);
           navigate('/cart');
         }}>
         Mua ngay
@@ -188,23 +300,21 @@ const BuyBar = ({ product }: { product: ProductCardData }) => {
   );
 };
 
-// Same footprint as the real content, so the skeleton cannot get locked
-// in as the LCP element.
 const DetailSkeleton = () => (
-  <div className="flex flex-col">
+  <div className="pt-chrome flex flex-col gap-2 bg-alias-layer-01">
     <Skeleton className="h-72 w-full" />
-    <div className="flex flex-col gap-3 p-4">
-      <Skeleton className="h-6 w-2/3" />
+    <div className="mx-3 flex flex-col gap-2 rounded-2xl bg-alias-background p-3.5">
       <Skeleton className="h-8 w-1/3" />
-      <Skeleton className="h-20 w-full rounded-xl" />
+      <Skeleton className="h-6 w-2/3" />
     </div>
+    <Skeleton className="mx-3 h-24 rounded-2xl" />
   </div>
 );
 
 const NotFound = () => {
   const navigate = useNavigate();
   return (
-    <div className="flex flex-col items-center gap-3 px-8 pt-32 text-center">
+    <div className="pt-chrome-hero flex flex-col items-center gap-3 px-8 text-center">
       <Icon name="circle-question" size={48} color="text-tertiary" />
       <Typography size="large" weight="semibold">
         Không tìm thấy sản phẩm

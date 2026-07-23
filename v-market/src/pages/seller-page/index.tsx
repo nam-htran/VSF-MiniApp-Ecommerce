@@ -4,14 +4,16 @@ import {
   Button,
   Icon,
   Image,
+  Sheet,
+  SheetBody,
+  SheetHeader,
   Skeleton,
-  TextField,
-  Toast,
   Typography,
 } from '@v-miniapp/ui-react';
-import { getMyShop, openShop, type Shop } from '@/api/shops';
+import { getMyShop, type Shop } from '@/api/shops';
 import { listMyProducts, type ApiProduct } from '@/api/products';
 import { ProductFormSheet } from '@/components/product-form-sheet';
+import { ShopForm } from '@/components/shop-form';
 import { ApiError } from '@/api/client';
 import { formatVnd } from '@/lib/format';
 
@@ -62,70 +64,33 @@ const SellerPage = () => {
       </div>
     );
   if (state.status === 'noshop') return <OpenShop onOpened={load} />;
-  return <ShopDashboard shop={state.shop} />;
+  return <ShopDashboard shop={state.shop} onShopChanged={load} />;
 };
 
-const OpenShop = ({ onOpened }: { onOpened: () => void }) => {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const open = async () => {
-    if (name.trim().length < 1 || description.trim().length < 1 || busy) return;
-    setBusy(true);
-    try {
-      await openShop(name.trim(), description.trim());
-      Toast.show({
-        type: 'positive',
-        message: 'Đã mở cửa hàng!',
-        position: 'bottom',
-      });
-      onOpened();
-    } catch (error) {
-      Toast.show({
-        type: 'negative',
-        message: error instanceof Error ? error.message : 'Không mở được',
-        position: 'bottom',
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="pt-chrome flex flex-col gap-4 px-4">
-      <div className="flex flex-col items-center gap-2 pt-4 text-center">
-        <Icon name="office" size={44} className="text-brand" />
-        <Typography size="large" weight="bold">
-          Mở cửa hàng của bạn
-        </Typography>
-        <Typography size="small" color="text-secondary">
-          Bắt đầu bán hàng trên V-Market. Mở cửa hàng là xong — bạn thành
-          người bán ngay.
-        </Typography>
-      </div>
-      <div className="flex flex-col gap-3">
-        <TextField value={name} onChange={setName} placeholder="Tên cửa hàng" />
-        <TextField
-          value={description}
-          onChange={setDescription}
-          placeholder="Giới thiệu ngắn về cửa hàng"
-        />
-        <Button
-          type="solid"
-          theme="brand"
-          block
-          loading={busy}
-          disabled={!name.trim() || !description.trim()}
-          onClick={open}>
-          Mở cửa hàng
-        </Button>
-      </div>
+const OpenShop = ({ onOpened }: { onOpened: () => void }) => (
+  <div className="pt-chrome flex flex-col gap-4 px-4 pb-8">
+    <div className="flex flex-col items-center gap-2 pt-4 text-center">
+      <Icon name="office" size={44} className="text-brand" />
+      <Typography size="large" weight="bold">
+        Mở cửa hàng của bạn
+      </Typography>
+      <Typography size="small" color="text-secondary">
+        Bắt đầu bán hàng trên V-Market. Mở cửa hàng là xong — bạn thành người
+        bán ngay.
+      </Typography>
     </div>
-  );
-};
+    <ShopForm onSaved={onOpened} />
+  </div>
+);
 
-const ShopDashboard = ({ shop }: { shop: Shop }) => {
+const ShopDashboard = ({
+  shop,
+  onShopChanged,
+}: {
+  shop: Shop;
+  onShopChanged: () => void;
+}) => {
+  const [editing, setEditing] = useState(false);
   const [products, setProducts] = useState<ApiProduct[] | null>(null);
   // undefined = closed; null = creating; a product = editing.
   const [form, setForm] = useState<ApiProduct | null | undefined>(undefined);
@@ -144,15 +109,43 @@ const ShopDashboard = ({ shop }: { shop: Shop }) => {
         <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-global-red-red-05">
           <Icon name="office" size={22} className="text-brand" />
         </div>
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           <Typography size="large" weight="bold" className="truncate">
             {shop.name}
           </Typography>
           <Typography size="x-small" color="text-secondary" className="line-clamp-1">
             {shop.description}
           </Typography>
+          {shop.province && (
+            <span className="mt-0.5 flex items-center gap-1">
+              <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
+              <Typography size="2x-small" color="text-tertiary" className="truncate">
+                {shop.address ? `${shop.address}, ${shop.province}` : shop.province}
+              </Typography>
+            </span>
+          )}
         </div>
+        <button
+          type="button"
+          aria-label="Sửa cửa hàng"
+          onClick={() => setEditing(true)}
+          className="shrink-0 self-start p-1">
+          <Icon name="pen" size={18} color="text-tertiary" />
+        </button>
       </div>
+
+      {!shop.province && (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="mx-3 flex items-center gap-2 rounded-xl border border-dashed border-alias-border-subtle-01 px-3 py-2 text-left">
+          <Icon name="triangle-warning" size={16} className="shrink-0 text-global-amber-amber-60" />
+          <Typography size="x-small" color="text-secondary" className="flex-1">
+            Thêm địa chỉ & tỉnh/thành để hiện thời gian giao dự kiến trên sản phẩm.
+          </Typography>
+          <Icon name="chevron-right" size={14} color="text-tertiary" />
+        </button>
+      )}
 
       <div className="flex items-center justify-between px-4">
         <Typography size="base" weight="bold">
@@ -235,6 +228,21 @@ const ShopDashboard = ({ shop }: { shop: Shop }) => {
           }}
         />
       )}
+
+      <Sheet open={editing} onBackdropClick={() => setEditing(false)}>
+        <SheetHeader title="Sửa cửa hàng" />
+        <SheetBody>
+          <div className="pb-2">
+            <ShopForm
+              shop={shop}
+              onSaved={() => {
+                setEditing(false);
+                onShopChanged();
+              }}
+            />
+          </div>
+        </SheetBody>
+      </Sheet>
     </div>
   );
 };
