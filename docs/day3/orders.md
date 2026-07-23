@@ -4,6 +4,11 @@ Nối tiếp [products.md §5](products.md#5-tiếp-theo--đơn-hàng), nơi đ�
 hình **B**. Đây là phần đã dựng thật: đặt hàng, thanh toán qua cổng giả
 lập, và người bán xử lý giao hàng.
 
+> Tài liệu này viết ở giai đoạn đầu. Từ đó hệ thống có thêm **giữ hàng có
+> thời hạn**, **idempotency khi đặt hàng**, và **ba lớp bảo vệ tiền của
+> người mua** — xem [§6](#6-tiền-của-người-mua) ở cuối. Phần voucher và
+> phân loại sản phẩm nằm ở [vouchers-variants.md](vouchers-variants.md).
+
 ---
 
 ## 1. Model B, như đã dựng
@@ -121,3 +126,66 @@ nuốt mất chữ "shop".
 - seller khác không thấy và không đẩy được lát của shop mình (404)
 - lọc theo `status` thu hẹp đúng queue
 - buyer chưa có shop gọi endpoint seller → 403
+
+---
+
+## 6. Tiền của người mua
+
+Phần này viết sau, khi hệ thống đã chạy và câu hỏi chuyển từ "có đặt được
+hàng không" sang "mất mạng giữa chừng thì sao".
+
+### Điều phải hiểu trước
+
+Khách mất mạng **không** ngăn được giao dịch — cổng và ngân hàng vẫn xử lý
+xong. Nên "khách mất tiền" không bao giờ là *tiền không trừ*, mà là:
+
+> **tiền đã trừ nhưng đơn không thành `PAID`.**
+
+Vì vậy client không bao giờ được là thứ báo "đã thanh toán". Đơn chỉ đổi
+trạng thái khi **IPN server-to-server** tới, có chữ ký, và xử lý idempotent.
+
+### Giữ hàng có thời hạn
+
+Đặt hàng trừ kho ngay — đó chính là cách chặn hai người giành món cuối
+(INV-05). Cái giá phải trả: một giỏ hàng bỏ dở sẽ giữ món đó mãi mãi.
+
+Nên khoản giữ có hạn. Quá `order_hold_minutes`, đơn `PENDING` bị huỷ và mọi
+dòng hàng được trả về đúng chỗ đã lấy đi — biến thể nếu có chọn, không thì
+sản phẩm. **Chính trạng thái đơn là cái chặn cộng lại hai lần**: đơn đã
+`CANCELLED` không còn `PENDING` nên lượt quét sau bỏ qua.
+
+### Ba lớp bảo vệ
+
+| | Cơ chế | Vì sao |
+|---|---|---|
+| **Ngăn** | `POST /payments/session` mở phiên **qua server**, đơn ghi `payment_id`; đơn có phiên sống được giữ thêm `payment_grace_minutes` | Trước đây client gọi thẳng cổng, server không phân biệt được "bỏ giỏ" với "đang nhập OTP" — và huỷ nhầm cái thứ hai |
+| **Phát hiện** | `POST /payments/reconcile` hỏi cổng về đơn chưa nhận được webhook | Webhook có thể mất: server sập một phút, hết lượt retry, mạng nuốt mất |
+| **Khắc phục** | Tiền không áp được ghi vào `payment_exceptions` kèm `gateway_payment_id` và số tiền | Trả lỗi cho cổng chỉ ngăn mình nói dối; nó không trả tiền lại cho ai cả |
+
+Thứ tự là có chủ ý: **chặn không cho xảy ra**, **tự biết khi vẫn xảy ra**,
+**sửa được hậu quả**.
+
+### Chạy nền
+
+Cả việc trả hàng về kho lẫn việc đối soát đều chạy trong
+[`app/scheduler.py`](../../server/app/scheduler.py), mỗi
+`scheduler_interval_seconds` một lượt. Trước đó chúng chạy ké theo request
+người dùng — nghĩa là một đêm vắng khách thì hàng bị giữ cứ nằm đó, và lưới
+an toàn cho webhook chỉ hoạt động nếu có người nhớ bấm.
+
+**Giới hạn, nói thẳng:** chạy in-process nên nhiều worker thì mỗi worker
+chạy một bản, poll trùng nhau. Vô hại vì cả hai job đều idempotent, nhưng
+production thật cần leader lock hoặc trigger từ ngoài.
+
+### Đặt hàng lặp
+
+`POST /orders` nhận header `Idempotency-Key`: cùng key trả về **cùng một
+đơn** thay vì mua hai lần. Trước khi đọc gì, request lấy
+`pg_advisory_xact_lock` trên chính cái key — request thứ hai chờ request đầu
+commit rồi đọc thấy đơn.
+
+Cách đầu tiên tôi làm là bắt `IntegrityError` từ ràng buộc unique rồi đọc
+lại. Nó **sai**: lúc ràng buộc nổ, request thua đã ở sâu trong transaction
+đang giữ khoá tồn kho, và phục hồi từ một `flush` hỏng để lại connection bẩn
+khiến **request kế tiếp cũng chết**. Ràng buộc unique vẫn còn, làm lớp chặn
+cuối.

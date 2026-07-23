@@ -150,6 +150,18 @@ export function listOrders(limit = 20, offset = 0) {
   );
 }
 
+/**
+ * Call off an order. Allowed until a shop starts shipping; after that the
+ * server refuses, because goods on the road are a returns problem. The
+ * stock goes back either way the server decides — never assumed here.
+ */
+export function cancelOrder(id: string) {
+  return apiRequest<OrderView>(`/orders/${id}/cancel`, {
+    method: 'POST',
+    headers: bearer(),
+  });
+}
+
 export function getOrder(id: string) {
   return apiRequest<OrderView>(`/orders/${id}`, { headers: bearer() });
 }

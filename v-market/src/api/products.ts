@@ -10,6 +10,9 @@ const bearer = (): Record<string, string> | undefined => {
 export type ApiProduct = {
   id: string;
   shopId: string;
+  /** The seller's article number. Unique inside their shop, not across
+   *  the marketplace — two shops may both use "AO-001". */
+  sku: string | null;
   name: string;
   description: string;
   unit: string | null;
@@ -126,6 +129,7 @@ export function listOnSale(limit = 50) {
 // --- Seller-facing (bearer required) ---
 
 export type NewProduct = {
+  sku?: string | null;
   name: string;
   description: string;
   unit?: string | null;
@@ -168,6 +172,7 @@ export function createProduct(body: NewProduct) {
 export function updateProduct(
   id: string,
   body: Partial<{
+    sku: string | null;
     name: string;
     description: string;
     price: number;

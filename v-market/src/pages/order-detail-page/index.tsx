@@ -8,7 +8,8 @@ import {
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
-import { getOrder, type OrderView } from '@/api/orders';
+import { cancelOrder, getOrder, type OrderView } from '@/api/orders';
+import { ApiError } from '@/api/client';
 import { initPayment } from '@/api/payments';
 import {
   ORDER_STATUS,
@@ -42,6 +43,7 @@ const OrderDetailPage = () => {
     amount: number;
   } | null>(null);
   const [paying, setPaying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const load = useCallback(() => {
     if (!id) {
@@ -60,6 +62,35 @@ const OrderDetailPage = () => {
   if (state.status === 'missing') return <NotFound />;
 
   const { order } = state;
+
+  const cancelNow = async () => {
+    setCancelling(true);
+    try {
+      // The server answers with the order in its new state, so the screen
+      // reflects what actually happened rather than what was asked for.
+      const updated = await cancelOrder(order.id);
+      setState({ status: 'ready', order: updated });
+      Toast.show({
+        type: 'positive',
+        message: 'Đã huỷ đơn, hàng được trả lại kho',
+        position: 'bottom',
+      });
+    } catch (error) {
+      Toast.show({
+        type: 'negative',
+        message:
+          error instanceof ApiError &&
+          error.body &&
+          typeof error.body === 'object' &&
+          'detail' in error.body
+            ? String((error.body as { detail: unknown }).detail)
+            : 'Không huỷ được đơn',
+        position: 'bottom',
+      });
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const payNow = async () => {
     setPaying(true);
@@ -114,6 +145,19 @@ const OrderDetailPage = () => {
             loading={paying}
             onClick={payNow}>
             Thanh toán {formatVnd(order.total)}
+          </Button>
+          {/* Cancelling is the buyer's own decision, so it is offered
+              plainly rather than hidden — but as the quiet option, since
+              paying is what they came here to do. The server decides
+              whether it is still allowed; a shop that has started shipping
+              refuses, and the message says so. */}
+          <Button
+            shape="pill"
+            type="ghost"
+            block
+            loading={cancelling}
+            onClick={cancelNow}>
+            Huỷ đơn
           </Button>
         </Card>
       ) : null}

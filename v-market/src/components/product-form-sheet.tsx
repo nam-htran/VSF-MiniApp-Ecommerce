@@ -51,6 +51,7 @@ export const ProductFormSheet = ({
     product?.originalPrice != null ? String(product.originalPrice) : ''
   );
   const [stock, setStock] = useState(product ? String(product.stock) : '');
+  const [sku, setSku] = useState(product?.sku ?? '');
   // Options the seller has defined. Empty = a plain product, and `stock`
   // above is what counts; otherwise stock lives only on these.
   const [variants, setVariants] = useState<DraftVariant[]>(
@@ -265,6 +266,14 @@ export const ProductFormSheet = ({
               inputMode="numeric"
             />
           )}
+          {/* The seller's own article number, for reconciling against
+              their stock book. Unique inside this shop; another shop may
+              use the same code. */}
+          <TextField
+            value={sku}
+            onChange={setSku}
+            placeholder="Mã SKU (không bắt buộc)"
+          />
           <TextField
             value={stock}
             onChange={setStock}
