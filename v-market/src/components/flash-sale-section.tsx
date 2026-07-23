@@ -46,6 +46,7 @@ export const FlashSaleSection = ({
 }: {
   products?: ProductCardData[];
 }) => {
+  const navigate = useNavigate();
   const countdown = useCountdown();
   const items = products?.filter(
     (p): p is FlashProduct => p.oldPrice !== undefined
@@ -75,7 +76,10 @@ export const FlashSaleSection = ({
             </Typography>
           </span>
         </div>
-        <button type="button" className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={() => navigate('/flash-sale')}
+          className="flex items-center gap-0.5">
           <Typography
             size="small"
             weight="semibold"

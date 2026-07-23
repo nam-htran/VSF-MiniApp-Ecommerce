@@ -8,6 +8,7 @@ import CartPage from './pages/cart-page';
 import CheckoutPage from './pages/checkout-page';
 import OrderDetailPage from './pages/order-detail-page';
 import SellerPage from './pages/seller-page';
+import FlashSalePage from './pages/flash-sale-page';
 import LoginPage from './pages/login-page';
 import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
@@ -60,6 +61,13 @@ export const getAppConfig = (): IAppConfig => ({
       // bottomTabBarId so the tab bar hides for its own place-order bar.
       pathname: '/checkout',
       Component: CheckoutPage,
+      navigationBar: { hidden: true },
+    },
+    {
+      // The flash-sale "see all" grid, opened from the home strip. Not a
+      // tab root, so the floating back button appears.
+      pathname: '/flash-sale',
+      Component: FlashSalePage,
       navigationBar: { hidden: true },
     },
     {

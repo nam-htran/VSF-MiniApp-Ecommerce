@@ -79,6 +79,11 @@ export function listProducts(limit = 20, offset = 0, q?: string) {
   return apiRequest<ProductPage>(`/products?${params.toString()}`);
 }
 
+/** Public — only discounted items, for the flash-sale "see all" page. */
+export function listOnSale(limit = 50) {
+  return apiRequest<ProductPage>(`/products?onSale=true&limit=${limit}`);
+}
+
 // --- Seller-facing (bearer required) ---
 
 export type NewProduct = {

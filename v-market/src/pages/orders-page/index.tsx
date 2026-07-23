@@ -30,8 +30,32 @@ type Feed =
   | { status: 'ready'; orders: OrderView[] }
   | { status: 'failed'; message: string };
 
+type Stage = 'pending' | 'processing' | 'shipping' | 'delivered' | 'cancelled';
+
+/** One overall stage per order, folding payment state and the per-shop
+ *  fulfilment states into what a buyer scans a tab list for. */
+const orderStage = (order: OrderView): Stage => {
+  if (order.status === 'CANCELLED' || order.status === 'FAILED')
+    return 'cancelled';
+  if (order.status === 'PENDING') return 'pending';
+  const shops = order.shopOrders;
+  if (shops.length > 0 && shops.every(s => s.status === 'DELIVERED'))
+    return 'delivered';
+  if (shops.some(s => s.status === 'SHIPPING')) return 'shipping';
+  return 'processing';
+};
+
+const TABS: [Stage | 'all', string][] = [
+  ['all', 'Tất cả'],
+  ['pending', 'Chờ thanh toán'],
+  ['processing', 'Đang xử lý'],
+  ['shipping', 'Đang giao'],
+  ['delivered', 'Đã giao'],
+];
+
 const OrdersPage = () => {
   const [feed, setFeed] = useState<Feed>({ status: 'loading' });
+  const [tab, setTab] = useState<Stage | 'all'>('all');
 
   const load = () => {
     setFeed({ status: 'loading' });
@@ -53,6 +77,11 @@ const OrdersPage = () => {
     return <Failed message={feed.message} onRetry={load} />;
   if (feed.orders.length === 0) return <EmptyOrders />;
 
+  const filtered =
+    tab === 'all'
+      ? feed.orders
+      : feed.orders.filter(order => orderStage(order) === tab);
+
   return (
     <div className="pt-chrome flex min-h-full flex-col gap-3 px-3 pb-6">
       <div className="px-1 pt-1">
@@ -60,9 +89,37 @@ const OrdersPage = () => {
           Đơn hàng
         </Typography>
       </div>
-      {feed.orders.map(order => (
-        <OrderCard key={order.id} order={order} />
-      ))}
+
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {TABS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setTab(value)}
+            className={`shrink-0 rounded-full px-3 py-1.5 ${
+              tab === value ? 'bg-brand' : 'bg-alias-layer-01'
+            }`}>
+            <Typography
+              size="small"
+              weight={tab === value ? 'semibold' : 'regular'}
+              className={tab === value ? 'text-alias-background' : undefined}
+              color={tab === value ? undefined : 'text-secondary'}>
+              {label}
+            </Typography>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-8 pt-16 text-center">
+          <span className="text-4xl">📭</span>
+          <Typography size="small" color="text-secondary">
+            Không có đơn nào ở trạng thái này.
+          </Typography>
+        </div>
+      ) : (
+        filtered.map(order => <OrderCard key={order.id} order={order} />)
+      )}
     </div>
   );
 };

@@ -35,9 +35,25 @@ const CartPage = () => {
         <EmptyCart />
       ) : (
         <>
-          <div className="flex flex-col gap-2 px-4">
-            {lines.map(line => (
-              <CartRow key={line.product.id} line={line} />
+          <div className="flex flex-col gap-2">
+            {groupByShop(lines).map(group => (
+              <div
+                key={group.key}
+                className="mx-4 flex flex-col gap-2 rounded-2xl bg-alias-background p-3 shadow-sm">
+                <span className="flex items-center gap-1.5">
+                  <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
+                  <Typography size="small" weight="semibold" className="truncate">
+                    {group.shopName}
+                  </Typography>
+                </span>
+                {group.lines.map((line, i) => (
+                  <div
+                    key={line.product.id}
+                    className={i > 0 ? 'border-t border-alias-border-subtle-01 pt-2' : ''}>
+                    <CartRow line={line} />
+                  </div>
+                ))}
+              </div>
             ))}
           </div>
           <CheckoutBar lines={lines} />
@@ -47,10 +63,29 @@ const CartPage = () => {
   );
 };
 
+/** Group cart lines by shop — one card per shop, like checkout. */
+type CartGroup = { key: string; shopName: string; lines: CartLine[] };
+
+const groupByShop = (lines: CartLine[]): CartGroup[] => {
+  const groups = new Map<string, CartGroup>();
+  for (const line of lines) {
+    const key = line.product.shopId ?? line.product.shopName ?? '—';
+    const existing = groups.get(key);
+    if (existing) existing.lines.push(line);
+    else
+      groups.set(key, {
+        key,
+        shopName: line.product.shopName ?? 'Cửa hàng',
+        lines: [line],
+      });
+  }
+  return [...groups.values()];
+};
+
 const CartRow = ({ line }: { line: CartLine }) => {
   const { product, qty } = line;
   return (
-    <div className="flex gap-3 rounded-xl bg-alias-background p-2 shadow-sm">
+    <div className="flex gap-3">
       <Image
         src={product.image}
         alt={product.name}
