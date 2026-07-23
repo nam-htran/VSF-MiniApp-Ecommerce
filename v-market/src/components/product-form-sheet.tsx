@@ -13,6 +13,7 @@ import {
   Typography,
 } from '@v-miniapp/ui-react';
 import { CATEGORIES } from '@/lib/categories';
+import { VariantEditor, type DraftVariant } from '@/components/variant-editor';
 import {
   createProduct,
   updateProduct,
@@ -50,6 +51,16 @@ export const ProductFormSheet = ({
     product?.originalPrice != null ? String(product.originalPrice) : ''
   );
   const [stock, setStock] = useState(product ? String(product.stock) : '');
+  // Options the seller has defined. Empty = a plain product, and `stock`
+  // above is what counts; otherwise stock lives only on these.
+  const [variants, setVariants] = useState<DraftVariant[]>(
+    () =>
+      product?.variants?.map(v => ({
+        options: v.options,
+        stock: v.stock,
+        price: v.price,
+      })) ?? []
+  );
   const [images, setImages] = useState<string[]>(
     product?.imageUrls ?? (product?.imageUrl ? [product.imageUrl] : [])
   );
@@ -105,6 +116,13 @@ export const ProductFormSheet = ({
           category: category ?? null,
           imageUrls: images,
           status: hidden ? 'HIDDEN' : 'ACTIVE',
+          // Always sent when editing: an empty list is how a seller removes
+          // options and goes back to a single stock figure.
+          variants: variants.map(v => ({
+            options: v.options,
+            stock: v.stock,
+            price: v.price ?? null,
+          })),
         });
       } else {
         await createProduct({
@@ -116,6 +134,15 @@ export const ProductFormSheet = ({
           stock: stockNum,
           category: category ?? null,
           imageUrls: images,
+          // Omitted when there are none, so a plain product is created
+          // exactly as before.
+          variants: variants.length
+            ? variants.map(v => ({
+                options: v.options,
+                stock: v.stock,
+                price: v.price ?? null,
+              }))
+            : undefined,
         });
       }
       Toast.show({
@@ -243,7 +270,18 @@ export const ProductFormSheet = ({
             onChange={setStock}
             placeholder="Tồn kho"
             inputMode="numeric"
+            // Once options exist their quantities are the stock, so this
+            // field would be a second number nobody reads.
+            disabled={variants.length > 0}
           />
+          {variants.length > 0 && (
+            <Typography size="2x-small" color="text-tertiary">
+              Tồn kho lấy theo từng phân loại bên dưới (tổng{' '}
+              {variants.reduce((sum, v) => sum + v.stock, 0)}).
+            </Typography>
+          )}
+
+          <VariantEditor value={variants} onChange={setVariants} />
 
           {originalNum !== null &&
             Number.isFinite(originalNum) &&

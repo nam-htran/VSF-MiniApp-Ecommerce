@@ -86,6 +86,11 @@ class OrderItem(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     qty: Mapped[int]
     image_url: Mapped[str | None]
+    # Which option was bought, and what it was called at the time. The id is
+    # for the seller's own reporting; the label is what the receipt shows,
+    # snapshotted because the option may be renamed or removed later.
+    variant_id: Mapped[str | None] = mapped_column(default=None)
+    variant_label: Mapped[str | None] = mapped_column(default=None)
 
 
 class OrderError(Exception):
@@ -110,36 +115,103 @@ async def place_order(
     out-of-stock half would ship something different from what the buyer
     confirmed.
     """
-    # Merge duplicate lines before locking.
-    wanted: dict[str, int] = {}
-    for product_id, qty in requested:
-        wanted[product_id] = wanted.get(product_id, 0) + qty
+    # Merge duplicate lines before locking. A line is a product *and* the
+    # variant chosen, so two sizes of the same shirt stay two lines.
+    wanted: dict[tuple[str, str | None], int] = {}
+    for product_id, variant_id, qty in requested:
+        key = (product_id, variant_id)
+        wanted[key] = wanted.get(key, 0) + qty
 
-    # Lock rows in a stable order. Two checkouts locking {A,B} and {B,A}
-    # would deadlock; both locking in sorted order cannot.
+    # Read the products (no lock — nothing here is decremented on them
+    # unless they have no variants) and find out which ones oblige a choice.
     products: dict[str, Product] = {}
-    for product_id in sorted(wanted):
-        product = await session.get(Product, product_id, with_for_update=True)
+    for product_id in {pid for pid, _ in wanted}:
+        product = await session.get(Product, product_id)
         if product is None or product.status != "ACTIVE":
             raise OrderError("UNAVAILABLE", "Product is no longer available")
         products[product_id] = product
 
+    from app.products.store import ProductVariant, variant_label, variants_for
+
+    catalogue = await variants_for(session, list(products))
+
+    for (product_id, variant_id), _ in wanted.items():
+        has_variants = bool(catalogue.get(product_id))
+        if has_variants and variant_id is None:
+            raise OrderError(
+                "VARIANT_REQUIRED",
+                f"Chọn phân loại cho {products[product_id].name}",
+            )
+        if variant_id is not None and not has_variants:
+            raise OrderError("UNAVAILABLE", "Product has no such option")
+
+    # Lock exactly the rows that will be decremented, in a fixed order:
+    # two checkouts locking {A,B} and {B,A} would deadlock, both locking in
+    # id order cannot. For a product with variants that row is the variant;
+    # for a plain product it is the product itself.
+    variants: dict[str, ProductVariant] = {}
+    locked_products: dict[str, Product] = {}
+    for lock_id, product_id, variant_id in sorted(
+        (variant_id or product_id, product_id, variant_id)
+        for product_id, variant_id in wanted
+    ):
+        if variant_id is None:
+            # populate_existing is load-bearing, not tidiness: the product was
+            # already read above, so without it session.get hands back the
+            # identity-mapped object and never issues SELECT … FOR UPDATE —
+            # the lock silently disappears and two buyers both win the last
+            # unit. INV-05 dies quietly. (Caught by
+            # test_two_buyers_race_for_the_last_unit.)
+            locked = await session.get(
+                Product, product_id, with_for_update=True, populate_existing=True
+            )
+            if locked is None or locked.status != "ACTIVE":
+                raise OrderError("UNAVAILABLE", "Product is no longer available")
+            locked_products[product_id] = locked
+            products[product_id] = locked
+        else:
+            variant = await session.get(
+                ProductVariant,
+                variant_id,
+                with_for_update=True,
+                populate_existing=True,
+            )
+            if variant is None or variant.product_id != product_id:
+                raise OrderError("UNAVAILABLE", "That option is no longer sold")
+            variants[variant_id] = variant
+
+    def _available(product_id: str, variant_id: str | None) -> int:
+        if variant_id is None:
+            return locked_products[product_id].stock
+        return variants[variant_id].stock
+
+    def _describe(product_id: str, variant_id: str | None) -> str:
+        name = products[product_id].name
+        if variant_id is None:
+            return name
+        return f"{name} ({variant_label(variants[variant_id])})"
+
     short = [
-        product.name
-        for product_id, product in products.items()
-        if product.stock < wanted[product_id]
+        _describe(product_id, variant_id)
+        for (product_id, variant_id), qty in wanted.items()
+        if _available(product_id, variant_id) < qty
     ]
     if short:
         raise OrderError(
             "OUT_OF_STOCK", f"Not enough stock for: {', '.join(sorted(short))}"
         )
 
-    for product_id, product in products.items():
-        product.stock -= wanted[product_id]
+    for (product_id, variant_id), qty in wanted.items():
+        if variant_id is None:
+            locked_products[product_id].stock -= qty
+        else:
+            variants[variant_id].stock -= qty
 
-    by_shop: dict[str, list[str]] = {}
-    for product_id, product in products.items():
-        by_shop.setdefault(product.shop_id, []).append(product_id)
+    by_shop: dict[str, list[tuple[str, str | None]]] = {}
+    for product_id, variant_id in wanted:
+        by_shop.setdefault(products[product_id].shop_id, []).append(
+            (product_id, variant_id)
+        )
 
     order = Order(
         id=str(uuid.uuid4()),
@@ -166,9 +238,16 @@ async def place_order(
     total = Decimal("0")
     shop_orders: list[ShopOrder] = []
     for shop_id in sorted(by_shop):
+        # A variant may carry its own price (a 2XL, a 512GB); when it
+        # doesn't, the product's price stands.
+        def _unit(product_id: str, variant_id: str | None) -> Decimal:
+            if variant_id is not None and variants[variant_id].price is not None:
+                return variants[variant_id].price
+            return products[product_id].price
+
         lines = [
-            (products[pid].category, products[pid].price * wanted[pid])
-            for pid in by_shop[shop_id]
+            (products[pid].category, _unit(pid, vid) * wanted[(pid, vid)])
+            for pid, vid in by_shop[shop_id]
         ]
         subtotal = sum((amount for _, amount in lines), Decimal("0"))
         applicable = [
@@ -208,8 +287,14 @@ async def place_order(
     await session.flush()
 
     for shop_order in shop_orders:
-        for pid in by_shop[shop_order.shop_id]:
+        for pid, vid in by_shop[shop_order.shop_id]:
             product = products[pid]
+            variant = variants.get(vid) if vid else None
+            unit_price = (
+                variant.price
+                if variant is not None and variant.price is not None
+                else product.price
+            )
             session.add(
                 OrderItem(
                     id=str(uuid.uuid4()),
@@ -217,9 +302,20 @@ async def place_order(
                     product_id=pid,
                     name=product.name,
                     unit=product.unit,
-                    price=product.price,
-                    qty=wanted[pid],
-                    image_url=product.image_url,
+                    price=unit_price,
+                    qty=wanted[(pid, vid)],
+                    # The swatch, when the variant has one — a receipt for a
+                    # red shirt should not show the blue photo.
+                    image_url=(
+                        variant.image_url
+                        if variant is not None and variant.image_url
+                        else product.image_url
+                    ),
+                    variant_id=vid,
+                    # Snapshotted like the price above: the seller may drop
+                    # this option tomorrow, and the receipt must still read
+                    # "Đen / L".
+                    variant_label=variant_label(variant) if variant else None,
                 )
             )
 
@@ -233,7 +329,7 @@ async def place_order(
 
 async def quote(
     session: AsyncSession,
-    requested: list[tuple[str, int]],
+    requested: list[tuple[str, str | None, int]],
     chosen: dict[str, str] | None = None,
 ) -> dict:
     """Price a basket without placing it — what checkout previews.
@@ -243,21 +339,33 @@ async def quote(
     takes no locks and writes nothing: stock is only checked for real inside
     the order transaction, where it can be held.
     """
+    from app.products.store import ProductVariant
     from app.vouchers import store as vouchers
 
-    wanted: dict[str, int] = {}
-    for product_id, qty in requested:
-        wanted[product_id] = wanted.get(product_id, 0) + qty
+    wanted: dict[tuple[str, str | None], int] = {}
+    for product_id, variant_id, qty in requested:
+        key = (product_id, variant_id)
+        wanted[key] = wanted.get(key, 0) + qty
 
     found: dict[str, Product] = {}
-    for product_id in wanted:
-        product = await session.get(Product, product_id)
-        if product is not None and product.status == "ACTIVE":
-            found[product_id] = product
+    variants: dict[str, ProductVariant] = {}
+    for product_id, variant_id in wanted:
+        if product_id not in found:
+            product = await session.get(Product, product_id)
+            if product is not None and product.status == "ACTIVE":
+                found[product_id] = product
+        if variant_id and variant_id not in variants:
+            variant = await session.get(ProductVariant, variant_id)
+            if variant is not None:
+                variants[variant_id] = variant
 
-    by_shop: dict[str, list[str]] = {}
-    for product_id, product in found.items():
-        by_shop.setdefault(product.shop_id, []).append(product_id)
+    by_shop: dict[str, list[tuple[str, str | None]]] = {}
+    for product_id, variant_id in wanted:
+        product = found.get(product_id)
+        if product is not None:
+            by_shop.setdefault(product.shop_id, []).append(
+                (product_id, variant_id)
+            )
 
     live_vouchers = await vouchers.list_live(session)
 
@@ -267,8 +375,16 @@ async def quote(
     discount_total = Decimal("0")
     for shop_id in sorted(by_shop):
         lines = [
-            (found[pid].category, found[pid].price * wanted[pid])
-            for pid in by_shop[shop_id]
+            (
+                found[pid].category,
+                (
+                    variants[vid].price
+                    if vid and variants.get(vid) and variants[vid].price is not None
+                    else found[pid].price
+                )
+                * wanted[(pid, vid)],
+            )
+            for pid, vid in by_shop[shop_id]
         ]
         subtotal = sum((amount for _, amount in lines), Decimal("0"))
         applicable = [

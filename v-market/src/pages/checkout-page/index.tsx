@@ -11,6 +11,8 @@ import {
 import {
   cartSubtotal,
   clearCart,
+  lineKey,
+  linePrice,
   setQty,
   useCart,
   type CartLine,
@@ -118,7 +120,11 @@ const CheckoutPage = () => {
     if (lines.length === 0) return;
     let current = true;
     quoteOrder(
-      lines.map(line => ({ productId: line.product.id, qty: line.qty })),
+      lines.map(line => ({
+        productId: line.product.id,
+        variantId: line.variant?.id,
+        qty: line.qty,
+      })),
       picked
     )
       .then(result => {
@@ -171,7 +177,11 @@ const CheckoutPage = () => {
     try {
       order = await placeOrder(
         composed,
-        lines.map(line => ({ productId: line.product.id, qty: line.qty })),
+        lines.map(line => ({
+          productId: line.product.id,
+          variantId: line.variant?.id,
+          qty: line.qty,
+        })),
         // The server re-validates each pick and silently falls back to the
         // best voucher, so a stale choice can never fail the order.
         picked
@@ -355,13 +365,13 @@ const AddressPicker = ({
 /** Compact +/- stepper; the totals above recompute live as it changes.
  *  Minimum is 1 here — removing an item is done back in the cart, not at
  *  checkout, so a stray tap can't empty the order mid-payment. */
-const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
+const QtyStepper = ({ lineId, qty }: { lineId: string; qty: number }) => (
   <div className="flex items-center gap-2 rounded-full bg-alias-layer-01 px-1.5 py-0.5">
     <button
       type="button"
       aria-label="Giảm số lượng"
       disabled={qty <= 1}
-      onClick={() => setQty(id, Math.max(1, qty - 1))}
+      onClick={() => setQty(lineId, Math.max(1, qty - 1))}
       className="flex size-6 items-center justify-center rounded-full active:bg-alias-background disabled:opacity-30">
       <Icon name="minus" size={12} />
     </button>
@@ -371,7 +381,7 @@ const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
     <button
       type="button"
       aria-label="Tăng số lượng"
-      onClick={() => setQty(id, qty + 1)}
+      onClick={() => setQty(lineId, qty + 1)}
       className="flex size-6 items-center justify-center rounded-full active:bg-alias-background">
       <Icon name="plus" size={12} />
     </button>
@@ -420,29 +430,36 @@ const ShopGroupCard = ({
       </span>
     )}
 
-    {group.lines.map(({ product, qty }) => (
-      <div key={product.id} className="flex gap-3">
+    {group.lines.map(line => (
+      <div key={lineKey(line)} className="flex gap-3">
         <Image
-          src={product.image}
-          alt={product.name}
+          src={line.variant?.imageUrl ?? line.product.image}
+          alt={line.product.name}
           fit="cover"
           className="size-14 shrink-0 rounded-lg"
           fallback={
             <div
-              className={`flex size-14 shrink-0 items-center justify-center rounded-lg text-2xl ${product.tint}`}>
-              {product.emoji}
+              className={`flex size-14 shrink-0 items-center justify-center rounded-lg text-2xl ${line.product.tint}`}>
+              {line.product.emoji}
             </div>
           }
         />
         <div className="flex min-w-0 flex-1 flex-col justify-center">
           <Typography size="small" className="line-clamp-2">
-            {product.name}
+            {line.product.name}
           </Typography>
+          {/* Which option is being bought — the buyer is about to pay, so
+              the size had better be on screen. */}
+          {line.variant && (
+            <Typography size="2x-small" color="text-secondary">
+              {line.variant.label}
+            </Typography>
+          )}
           <div className="flex items-center justify-between">
             <Typography size="small" weight="semibold">
-              {formatVnd(product.price)}
+              {formatVnd(linePrice(line))}
             </Typography>
-            <QtyStepper id={product.id} qty={qty} />
+            <QtyStepper lineId={lineKey(line)} qty={line.qty} />
           </div>
         </div>
       </div>

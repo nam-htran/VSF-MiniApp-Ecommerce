@@ -13,12 +13,14 @@ import {
   getProduct,
   listProducts,
   type ApiProductDetail,
+  type ApiVariant,
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
 import { ProductStrip } from '@/components/product-strip';
 import { ShopPreview } from '@/components/shop-preview';
 import { ReviewsSection, Stars } from '@/components/reviews-section';
 import { addToCart } from '@/lib/cart';
+import { VariantPicker } from '@/components/variant-picker';
 import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
 import { listItemToCard, type ProductCardData } from '@/lib/product-card';
@@ -53,6 +55,9 @@ type View = {
   shopPhone?: string | null;
   ratingAverage?: number;
   ratingCount?: number;
+  /** undefined = not fetched yet; [] = a plain product; otherwise the
+   *  buyer must pick one before the cart will take it. */
+  variants?: ApiVariant[];
 };
 
 const fromDetail = (p: ApiProductDetail): View => ({
@@ -74,6 +79,7 @@ const fromDetail = (p: ApiProductDetail): View => ({
   shopPhone: p.shopPhone,
   ratingAverage: p.ratingAverage,
   ratingCount: p.ratingCount,
+  variants: p.variants ?? [],
 });
 
 const ProductPage = () => {
@@ -131,6 +137,9 @@ const Detail = ({
   buyerAddress?: string;
 }) => {
   const eta = estimateDelivery(view.shopProvince ?? null, buyerAddress);
+  // Which option the buyer has settled on; null until every group is
+  // answered. The buy bar stays disabled until then.
+  const [chosen, setChosen] = useState<ApiVariant | null>(null);
 
   // "More from this shop" moved into ShopPreview, which fetches its own —
   // only the cross-shop suggestions are the page's business now.
@@ -210,6 +219,14 @@ const Detail = ({
         )}
       </Card>
 
+      {/* Only where the seller defined options. A plain product shows
+          nothing here and adds to the cart straight away, as before. */}
+      {(view.variants?.length ?? 0) > 0 && (
+        <Card>
+          <VariantPicker variants={view.variants!} onSelect={setChosen} />
+        </Card>
+      )}
+
       {/* Shipping: estimate from the shop's province, plus origin and
           contact. Only shows once the fetched detail brings the shop in. */}
       {(view.shopName || view.shopProvince) && (
@@ -271,7 +288,7 @@ const Detail = ({
 
       <ProductStrip title="Sản phẩm tương tự" products={similar} />
 
-      <BuyBar view={view} />
+      <BuyBar view={view} variants={view.variants} chosen={chosen} />
     </div>
   );
 };
@@ -370,8 +387,28 @@ const Policy = ({ text }: { text: string }) => (
   </span>
 );
 
-const BuyBar = ({ view }: { view: View }) => {
+const BuyBar = ({
+  view,
+  variants,
+  chosen,
+}: {
+  view: View;
+  /** undefined while the detail is still loading. */
+  variants?: ApiVariant[];
+  chosen: ApiVariant | null;
+}) => {
   const navigate = useNavigate();
+  // A product with options cannot be added until one is picked — the
+  // server refuses such a line anyway, so blocking it here turns a
+  // confusing 409 at checkout into an obvious disabled button.
+  //
+  // undefined means the detail hasn't landed, so whether this product has
+  // options is genuinely unknown. Adding now could put an option-less line
+  // in the cart for a product that needs one, so the button waits — a
+  // fraction of a second, against a basket that cannot be checked out.
+  const unknown = variants === undefined;
+  const needsChoice = (variants?.length ?? 0) > 0 && chosen === null;
+  const soldOut = chosen !== null && chosen.stock <= 0;
   const card: ProductCardData = {
     id: view.id,
     name: view.name,
@@ -385,6 +422,19 @@ const BuyBar = ({ view }: { view: View }) => {
     shopId: view.shopId,
     shopName: view.shopName,
   };
+
+  const add = () =>
+    addToCart(
+      card,
+      chosen
+        ? {
+            id: chosen.id,
+            label: chosen.label,
+            price: chosen.price ?? undefined,
+            imageUrl: chosen.imageUrl,
+          }
+        : undefined
+    );
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
@@ -394,26 +444,28 @@ const BuyBar = ({ view }: { view: View }) => {
         type="outline"
         theme="brand"
         block
+        disabled={unknown || needsChoice || soldOut}
         onClick={() => {
-          addToCart(card);
+          add();
           Toast.show({
             type: 'positive',
-            message: 'Đã thêm vào giỏ hàng',
+            message: `Đã thêm vào giỏ${chosen ? ` — ${chosen.label}` : ''}`,
             position: 'bottom',
           });
         }}>
-        Thêm vào giỏ
+        {needsChoice ? 'Chọn phân loại' : 'Thêm vào giỏ'}
       </Button>
       <Button
         shape="pill"
         type="solid"
         theme="brand"
         block
+        disabled={unknown || needsChoice || soldOut}
         onClick={() => {
-          addToCart(card);
+          add();
           navigate('/cart');
         }}>
-        Mua ngay
+        {soldOut ? 'Hết hàng' : 'Mua ngay'}
       </Button>
     </div>
   );

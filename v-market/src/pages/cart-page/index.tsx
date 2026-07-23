@@ -7,6 +7,8 @@ import {
 } from '@v-miniapp/ui-react';
 import {
   cartSubtotal,
+  lineKey,
+  linePrice,
   removeLine,
   setQty,
   useCart,
@@ -64,7 +66,7 @@ const CartPage = () => {
                 )}
                 {group.lines.map((line, i) => (
                   <div
-                    key={line.product.id}
+                    key={lineKey(line)}
                     className={i > 0 ? 'border-t border-alias-border-subtle-01 pt-2' : ''}>
                     <CartRow line={line} />
                   </div>
@@ -105,7 +107,7 @@ const groupByShop = (lines: CartLine[]): CartGroup[] => {
 };
 
 const CartRow = ({ line }: { line: CartLine }) => {
-  const { product, qty } = line;
+  const { product, variant, qty } = line;
   const navigate = useNavigate();
 
   // The photo and the title open the product; the stepper and the bin keep
@@ -139,25 +141,35 @@ const CartRow = ({ line }: { line: CartLine }) => {
           <Typography size="small" weight="bold" className="line-clamp-1">
             {product.name}
           </Typography>
-          {product.unit && (
-            <Typography size="2x-small" color="text-secondary">
-              {product.unit}
-            </Typography>
+          {/* The option bought, not the pack size — a cart row for a
+              shirt must say which size it is. */}
+          {variant ? (
+            <span className="rounded bg-alias-layer-01 px-1.5 py-0.5">
+              <Typography size="2x-small" color="text-secondary">
+                {variant.label}
+              </Typography>
+            </span>
+          ) : (
+            product.unit && (
+              <Typography size="2x-small" color="text-secondary">
+                {product.unit}
+              </Typography>
+            )
           )}
           <Typography
             size="base"
             weight="bold"
             className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
-            {formatVnd(product.price)}
+            {formatVnd(linePrice(line))}
           </Typography>
         </button>
 
         <div className="mt-auto flex items-center justify-between">
-          <QtyStepper id={product.id} qty={qty} />
+          <QtyStepper lineId={lineKey(line)} qty={qty} />
           <button
             type="button"
             aria-label={`Xoá ${product.name} khỏi giỏ`}
-            onClick={() => removeLine(product.id)}
+            onClick={() => removeLine(lineKey(line))}
             className="p-1">
             <Icon name="trash" size={16} color="text-tertiary" />
           </button>
@@ -167,13 +179,13 @@ const CartRow = ({ line }: { line: CartLine }) => {
   );
 };
 
-const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
+const QtyStepper = ({ lineId, qty }: { lineId: string; qty: number }) => (
   <div className="flex items-center gap-3 rounded-full bg-alias-layer-01 px-2 py-1">
     {/* setQty(0) removes the line, so minus at qty 1 behaves like trash. */}
     <button
       type="button"
       aria-label="Giảm số lượng"
-      onClick={() => setQty(id, qty - 1)}
+      onClick={() => setQty(lineId, qty - 1)}
       className="p-0.5">
       <Icon name="minus" size={14} />
     </button>
@@ -183,7 +195,7 @@ const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
     <button
       type="button"
       aria-label="Tăng số lượng"
-      onClick={() => setQty(id, qty + 1)}
+      onClick={() => setQty(lineId, qty + 1)}
       className="p-0.5">
       <Icon name="plus" size={14} />
     </button>

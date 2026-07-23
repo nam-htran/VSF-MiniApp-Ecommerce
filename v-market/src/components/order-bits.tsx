@@ -101,6 +101,13 @@ export const ShopBlock = ({
           <Typography size="small" className="line-clamp-1">
             {item.name}
           </Typography>
+          {/* Snapshotted at purchase, so a receipt still reads "Đen / L"
+              after the seller drops that option. */}
+          {item.variantLabel && (
+            <Typography size="2x-small" color="text-tertiary">
+              {item.variantLabel}
+            </Typography>
+          )}
           <Typography size="2x-small" color="text-secondary">
             {formatVnd(item.price)} × {item.qty}
           </Typography>

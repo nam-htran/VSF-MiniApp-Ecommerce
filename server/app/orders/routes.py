@@ -24,6 +24,9 @@ Session = Annotated[AsyncSession, Depends(get_session)]
 
 class CheckoutItem(BaseModel):
     productId: str
+    # Which option was chosen. Required for a product that has options —
+    # the server refuses the line otherwise rather than guessing a size.
+    variantId: str | None = None
     qty: int = Field(ge=1, le=99)
 
 
@@ -44,6 +47,8 @@ def _serialise_item(item: OrderItem) -> dict:
         "price": float(item.price),
         "qty": item.qty,
         "imageUrl": item.image_url,
+        "variantId": item.variant_id,
+        "variantLabel": item.variant_label,
     }
 
 
@@ -88,7 +93,10 @@ async def place_order(
         order = await orders.place_order(
             session,
             buyer_id=user.id,
-            requested=[(item.productId, item.qty) for item in body.items],
+            requested=[
+                (item.productId, item.variantId, item.qty)
+                for item in body.items
+            ],
             address=body.address,
             chosen=body.voucherCodes,
         )
@@ -139,7 +147,7 @@ async def quote_order(body: QuoteRequest, session: Session) -> dict:
     """
     return await orders.quote(
         session,
-        [(item.productId, item.qty) for item in body.items],
+        [(item.productId, item.variantId, item.qty) for item in body.items],
         chosen=body.voucherCodes,
     )
 

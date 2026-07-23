@@ -1,5 +1,6 @@
 """Products belonging to a shop."""
 
+import json
 import uuid
 from decimal import Decimal
 from typing import Literal
@@ -66,8 +67,111 @@ class Product(Base):
     status: Mapped[str] = mapped_column(default="ACTIVE")
 
 
+class ProductVariant(Base):
+    """One buyable combination — "Đen / Size L" — with its own stock.
+
+    A product either has no variants (stock lives on the product, as
+    before) or has them, and then stock lives *only* here. Keeping a second
+    running total on the product would be two sources of truth for the one
+    number this shop must never get wrong, so `products.stock` is simply
+    ignored once variants exist, and the storefront shows the sum.
+    """
+
+    __tablename__ = "product_variants"
+    __table_args__ = (
+        # Same last line of defence as products.stock: checkout decrements
+        # under a row lock, and the database refuses to go negative even if
+        # that logic is wrong.
+        CheckConstraint("stock >= 0", name="ck_variants_stock_non_negative"),
+        CheckConstraint(
+            "price IS NULL OR price >= 0", name="ck_variants_price_non_negative"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"), index=True
+    )
+    # {"Màu sắc": "Đen", "Size": "L"} — the seller names the groups, so a
+    # shop selling shoes can say "Size" and one selling paint can say "Dung
+    # tích" without a schema change.
+    options: Mapped[dict] = mapped_column(JSON)
+    # Null = sell at the product's price. Set only when one combination
+    # genuinely costs more (a 2XL, a 512GB).
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
+    stock: Mapped[int] = mapped_column(default=0)
+    # The swatch shown on the colour chip, when the seller uploads one.
+    image_url: Mapped[str | None] = mapped_column(default=None)
+    # The seller's own order. Sorting by id would scramble uuids and show
+    # sizes as 39, 41, 42, 43, 40; sorting by label would put 2XL before S.
+    # Only the person who typed the list knows the right order.
+    position: Mapped[int] = mapped_column(default=0, server_default="0")
+
+
+def variant_label(variant: ProductVariant) -> str:
+    """"Đen / L" — what a receipt and a cart line show."""
+    return " / ".join(str(value) for value in (variant.options or {}).values())
+
+
 async def find_by_id(session: AsyncSession, product_id: str) -> Product | None:
     return await session.get(Product, product_id)
+
+
+async def variants_for(
+    session: AsyncSession, product_ids: list[str]
+) -> dict[str, list[ProductVariant]]:
+    """Variants of the given products, grouped by product id."""
+    if not product_ids:
+        return {}
+    rows = await session.scalars(
+        select(ProductVariant)
+        .where(ProductVariant.product_id.in_(product_ids))
+        .order_by(ProductVariant.position, ProductVariant.id)
+    )
+    grouped: dict[str, list[ProductVariant]] = {}
+    for variant in rows:
+        grouped.setdefault(variant.product_id, []).append(variant)
+    return grouped
+
+
+async def replace_variants(
+    session: AsyncSession, product: Product, variants: list[dict]
+) -> list[ProductVariant]:
+    """Rewrite a product's variants to exactly what the seller submitted.
+
+    Rows are matched by their options, so editing quantities keeps the same
+    variant ids — orders already placed still point at a row that exists,
+    and a stock number is not silently reset by an unrelated edit.
+    """
+    existing = {
+        json.dumps(v.options, sort_keys=True, ensure_ascii=False): v
+        for v in (await variants_for(session, [product.id])).get(product.id, [])
+    }
+
+    kept: list[ProductVariant] = []
+    for position, incoming in enumerate(variants):
+        key = json.dumps(incoming["options"], sort_keys=True, ensure_ascii=False)
+        variant = existing.pop(key, None)
+        if variant is None:
+            variant = ProductVariant(
+                id=str(uuid.uuid4()),
+                product_id=product.id,
+                options=incoming["options"],
+            )
+            session.add(variant)
+        variant.stock = incoming["stock"]
+        variant.price = incoming.get("price")
+        variant.image_url = incoming.get("image_url")
+        variant.position = position
+        kept.append(variant)
+
+    # Whatever the seller removed goes; past order items snapshot their own
+    # name and price, so a deleted variant cannot damage a receipt.
+    for orphan in existing.values():
+        await session.delete(orphan)
+
+    await session.commit()
+    return kept
 
 
 def _escape_like(text: str) -> str:

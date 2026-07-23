@@ -11,6 +11,9 @@ export type OrderItemView = {
   productId: string;
   name: string;
   unit: string | null;
+  /** Which option was bought, snapshotted at purchase — "Đen / L". */
+  variantId: string | null;
+  variantLabel: string | null;
   price: number;
   qty: number;
   imageUrl: string | null;
@@ -41,7 +44,13 @@ export type OrderView = {
   shopOrders: ShopOrderView[];
 };
 
-export type CheckoutItem = { productId: string; qty: number };
+export type CheckoutItem = {
+  productId: string;
+  /** Required for a product that has options; the server refuses the line
+   *  otherwise rather than guessing a size. */
+  variantId?: string;
+  qty: number;
+};
 
 /**
  * Flat per-shop shipping, mirroring server/app/orders/store.py for the

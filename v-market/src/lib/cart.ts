@@ -12,13 +12,39 @@ import type { ProductCardData } from './product-card';
  * A module store rather than React context: app-level Layouts wrap each
  * page separately, so a context provider there would give every page its
  * own instance. One module, one state, every page sees the same cart.
+ *
+ * A line is a product *and* the option chosen, so "Áo thun / L" and
+ * "Áo thun / XL" are two lines with two quantities — they are two rows of
+ * stock on the server, and merging them here would ship the wrong size.
  */
+export type CartVariant = {
+  id: string;
+  /** "Đen / L" — what the cart row and the receipt show. */
+  label: string;
+  /** Set only when this option costs more than the product's price. */
+  price?: number;
+  imageUrl?: string | null;
+};
+
 export type CartLine = {
   product: ProductCardData;
+  variant?: CartVariant;
   qty: number;
 };
 
-const STORAGE_KEY = 'cart.v1';
+/** Identity of a cart row. Two sizes of one shirt are different rows. */
+export const lineKey = (line: CartLine): string =>
+  `${line.product.id}::${line.variant?.id ?? ''}`;
+
+/** What one unit of this line costs, the option's price winning. */
+export const linePrice = (line: CartLine): number =>
+  line.variant?.price ?? line.product.price;
+
+// v2: lines gained a variant. A cart saved before options existed could
+// hold a product that now requires one, and checkout would reject it with
+// "chọn phân loại" that the buyer cannot act on — so those carts are
+// dropped rather than silently broken.
+const STORAGE_KEY = 'cart.v2';
 
 let lines: CartLine[] = [];
 let hydrated = false;
@@ -38,32 +64,35 @@ void loadJson<CartLine[]>(STORAGE_KEY).then(stored => {
   }
 });
 
-export function addToCart(product: ProductCardData, qty = 1): void {
-  const existing = lines.find(line => line.product.id === product.id);
+export function addToCart(
+  product: ProductCardData,
+  variant?: CartVariant,
+  qty = 1
+): void {
+  const key = `${product.id}::${variant?.id ?? ''}`;
+  const existing = lines.find(line => lineKey(line) === key);
   lines = existing
     ? lines.map(line =>
-        line.product.id === product.id
+        lineKey(line) === key
           ? // Refresh the snapshot too: the price shown in the cart should
             // be the one the buyer just saw on the product page.
-            { product, qty: line.qty + qty }
+            { product, variant, qty: line.qty + qty }
           : line
       )
-    : [...lines, { product, qty }];
+    : [...lines, { product, variant, qty }];
   emit();
 }
 
-export function setQty(productId: string, qty: number): void {
+export function setQty(key: string, qty: number): void {
   lines =
     qty <= 0
-      ? lines.filter(line => line.product.id !== productId)
-      : lines.map(line =>
-          line.product.id === productId ? { ...line, qty } : line
-        );
+      ? lines.filter(line => lineKey(line) !== key)
+      : lines.map(line => (lineKey(line) === key ? { ...line, qty } : line));
   emit();
 }
 
-export function removeLine(productId: string): void {
-  lines = lines.filter(line => line.product.id !== productId);
+export function removeLine(key: string): void {
+  lines = lines.filter(line => lineKey(line) !== key);
   emit();
 }
 
@@ -91,4 +120,4 @@ export const cartCount = (all: CartLine[]) =>
   all.reduce((sum, line) => sum + line.qty, 0);
 
 export const cartSubtotal = (all: CartLine[]) =>
-  all.reduce((sum, line) => sum + line.product.price * line.qty, 0);
+  all.reduce((sum, line) => sum + linePrice(line) * line.qty, 0);

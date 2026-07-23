@@ -32,6 +32,28 @@ export type ApiProduct = {
    */
   effectivePrice: number;
   voucher: ProductVoucher | null;
+  /** Empty = no options; `stock` above is then the product's own. When
+   *  options exist, `stock` is their total. */
+  variants: ApiVariant[];
+};
+
+/**
+ * One buyable combination — "Đen / L" — with its own stock.
+ *
+ * Empty list = a plain product, stock lives on the product itself. When
+ * options exist the buyer must pick one; the server refuses a line that
+ * doesn't, rather than guessing a size.
+ */
+export type ApiVariant = {
+  id: string;
+  /** {"Màu sắc": "Đen", "Size": "L"} — the seller names the groups. */
+  options: Record<string, string>;
+  /** "Đen / L", already joined server-side. */
+  label: string;
+  /** null = sells at the product's price. */
+  price: number | null;
+  stock: number;
+  imageUrl: string | null;
 };
 
 export type ProductVoucher = {
@@ -113,6 +135,17 @@ export type NewProduct = {
   category?: string | null;
   imageUrl?: string | null;
   imageUrls?: string[];
+  /** Omitted = a plain product, stock stays on the product. Sent on update
+   *  it replaces the whole set, so an empty list removes the options. */
+  variants?: DraftVariantPayload[];
+};
+
+/** What the seller's form sends for one combination. */
+export type DraftVariantPayload = {
+  options: Record<string, string>;
+  stock: number;
+  price?: number | null;
+  imageUrl?: string | null;
 };
 
 /** The seller's own products, hidden ones included. */
@@ -143,6 +176,9 @@ export function updateProduct(
     imageUrl: string | null;
     imageUrls: string[];
     status: 'ACTIVE' | 'HIDDEN';
+    /** Sent = replace the whole set; an empty list removes the options and
+     *  hands stock back to the product's own figure. Omit to leave alone. */
+    variants: DraftVariantPayload[];
   }>
 ) {
   return apiRequest<ApiProduct>(`/products/${id}`, {

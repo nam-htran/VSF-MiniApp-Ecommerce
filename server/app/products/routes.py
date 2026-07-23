@@ -26,6 +26,19 @@ router = APIRouter(tags=["Products"])
 Session = Annotated[AsyncSession, Depends(get_session)]
 
 
+class VariantRequest(BaseModel):
+    """One combination the seller offers, with its own quantity.
+
+    `options` is free-form on purpose — {"Màu sắc": "Đen", "Size": "L"} —
+    so a shop selling paint can say "Dung tích" without a schema change.
+    """
+
+    options: dict[str, str] = Field(min_length=1)
+    stock: int = Field(ge=0)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    imageUrl: str | None = None
+
+
 class CreateProductRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=4000)
@@ -41,6 +54,8 @@ class CreateProductRequest(BaseModel):
     category: str | None = Field(default=None, max_length=40)
     imageUrl: str | None = None
     imageUrls: list[str] | None = Field(default=None, max_length=8)
+    # Omitted or empty = a plain product; stock stays on the product itself.
+    variants: list[VariantRequest] | None = Field(default=None, max_length=60)
 
     @model_validator(mode="after")
     def sale_must_be_a_discount(self):
@@ -58,6 +73,8 @@ class UpdateProductRequest(BaseModel):
     imageUrl: str | None = None
     imageUrls: list[str] | None = Field(default=None, max_length=8)
     status: str | None = Field(default=None, pattern="^(ACTIVE|HIDDEN)$")
+    # Sent = replace the whole set. Omitted = leave the options alone.
+    variants: list[VariantRequest] | None = Field(default=None, max_length=60)
 
 
 def _serialise(product: Product) -> dict:
@@ -82,6 +99,33 @@ def _serialise(product: Product) -> dict:
         "imageUrls": product.image_urls
         or ([product.image_url] if product.image_url else []),
         "status": product.status,
+    }
+
+
+def _serialise_variant(variant) -> dict:
+    return {
+        "id": variant.id,
+        "options": variant.options,
+        "label": products.variant_label(variant),
+        # Null = sells at the product's price; the client falls back to it.
+        "price": float(variant.price) if variant.price is not None else None,
+        "stock": variant.stock,
+        "imageUrl": variant.image_url,
+    }
+
+
+def _with_variants(view: dict, variants: list) -> dict:
+    """Fold a product's options into its view.
+
+    When options exist, stock lives on them, so the product-level number
+    would be stale — the total is recomputed here rather than stored twice.
+    """
+    if not variants:
+        return {**view, "variants": []}
+    return {
+        **view,
+        "variants": [_serialise_variant(v) for v in variants],
+        "stock": sum(v.stock for v in variants),
     }
 
 
@@ -118,12 +162,14 @@ def _voucher_view(product: Product, live: list) -> dict:
     }
 
 
-def _list_item(row: dict, live: list) -> dict:
+def _list_item(row: dict, live: list, variants: dict | None = None) -> dict:
     """A storefront row: the product plus the card's extra data — shop name
     and province, average rating, units sold, and the best live voucher."""
     product = row["product"]
     return {
-        **_serialise(product),
+        **_with_variants(
+            _serialise(product), (variants or {}).get(product.id, [])
+        ),
         **_voucher_view(product, live),
         "shopName": row["shopName"],
         "shopProvince": row["shopProvince"],
@@ -158,8 +204,11 @@ async def list_shop_products(
         session, shop_id, limit=limit, offset=offset
     )
     live = await vouchers.list_live(session, shop_id=shop_id)
+    options = await products.variants_for(
+        session, [row["product"].id for row in page]
+    )
     return {
-        "items": [_list_item(row, live) for row in page],
+        "items": [_list_item(row, live, options) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -183,8 +232,11 @@ async def list_products(
         session, limit=limit, offset=offset, on_sale=onSale, q=q
     )
     live = await vouchers.list_live(session)
+    options = await products.variants_for(
+        session, [row["product"].id for row in page]
+    )
     return {
-        "items": [_list_item(row, live) for row in page],
+        "items": [_list_item(row, live, options) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -202,8 +254,11 @@ async def list_my_products(
         session, shop.id, limit=limit, offset=offset, include_hidden=True
     )
     live = await vouchers.list_live(session, shop_id=shop.id)
+    options = await products.variants_for(
+        session, [row["product"].id for row in page]
+    )
     return {
-        "items": [_list_item(row, live) for row in page],
+        "items": [_list_item(row, live, options) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -229,7 +284,22 @@ async def create_product(
         image_urls=body.imageUrls,
         category=body.category,
     )
-    return _serialise(product)
+    saved = []
+    if body.variants:
+        saved = await products.replace_variants(
+            session,
+            product,
+            [
+                {
+                    "options": v.options,
+                    "stock": v.stock,
+                    "price": v.price,
+                    "image_url": v.imageUrl,
+                }
+                for v in body.variants
+            ],
+        )
+    return _with_variants(_serialise(product), saved)
 
 
 @router.patch("/products/{product_id}")
@@ -261,7 +331,24 @@ async def update_product(
         image_urls=body.imageUrls,
         category=body.category,
     )
-    return _serialise(updated)
+    if body.variants is not None:
+        await products.replace_variants(
+            session,
+            updated,
+            [
+                {
+                    "options": v.options,
+                    "stock": v.stock,
+                    "price": v.price,
+                    "image_url": v.imageUrl,
+                }
+                for v in body.variants
+            ],
+        )
+    current = (await products.variants_for(session, [updated.id])).get(
+        updated.id, []
+    )
+    return _with_variants(_serialise(updated), current)
 
 
 @router.get("/products/{product_id}")
@@ -277,8 +364,11 @@ async def get_product(product_id: str, session: Session) -> dict:
     shop = await shops.find_by_id(session, product.shop_id)
     average, count = await reviews.summary(session, product_id)
     live = await vouchers.list_live(session, shop_id=product.shop_id)
+    variants = (await products.variants_for(session, [product_id])).get(
+        product_id, []
+    )
     return {
-        **_serialise(product),
+        **_with_variants(_serialise(product), variants),
         **_voucher_view(product, live),
         "shopName": shop.name if shop else None,
         "shopAddress": shop.address if shop else None,
