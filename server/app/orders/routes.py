@@ -7,13 +7,22 @@ a stale or tampered cart cannot buy at yesterday's numbers.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentSeller, CurrentUser
 from app.db import get_session
+from app.rate_limit import limit
 from app.orders import store as orders
 from app.orders.store import Order, OrderError, OrderItem, ShopOrder
 from app.shops import store as shops
@@ -95,6 +104,7 @@ def _serialise_order(order: Order, shop_views) -> dict:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def place_order(
+    request: Request,
     body: CheckoutRequest,
     user: CurrentUser,
     session: Session,
@@ -104,6 +114,11 @@ async def place_order(
     Idempotency-Key: the same key returns the same order instead of buying
     twice. Scoped to the caller, so one buyer's key cannot claim another's
     order."""
+    # Placing orders is the most expensive thing an anonymous burst can do
+    # here — it writes rows and locks stock — so it is the one endpoint that
+    # gets a ceiling.
+    limit(request, "orders.create", times=20, seconds=60)
+
     # Sweep first: the unit this buyer wants may be held by a checkout
     # somebody abandoned, and the hold has just run out.
     await orders.release_expired(session)
@@ -282,6 +297,31 @@ async def advance_shop_order(
         )
 
     return _serialise_seller_shop_order(shop_order, order, items)
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_order(order_id: str, user: CurrentUser, session: Session) -> dict:
+    """Buyer-initiated cancellation, allowed until a shop starts shipping."""
+    order, result = await orders.cancel_by_buyer(session, order_id, user.id)
+
+    if result == "NOT_FOUND":
+        # 404 for missing and for someone else's alike.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
+    if result != "CANCELLED" and result != "ALREADY_CANCELLED":
+        messages = {
+            "ALREADY_SHIPPING": "Đơn đã được giao đi, không huỷ được",
+            "NOT_CANCELLABLE": "Đơn này không thể huỷ",
+        }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=messages.get(result, "Không huỷ được đơn"),
+        )
+
+    assert order is not None
+    view = await orders.shop_orders_view(session, [order.id])
+    return _serialise_order(order, view.get(order.id, []))
 
 
 @router.get("/{order_id}")

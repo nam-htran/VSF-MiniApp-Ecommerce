@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.auth.routes import router as auth_router
 from app.config import settings
 from app.db import create_tables, engine
+from app.json_response import SafeJSONResponse
 from app.addresses.routes import router as addresses_router
 from app.geo.routes import router as geo_router
 from app.orders.routes import router as orders_router
@@ -36,7 +37,14 @@ async def lifespan(_: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="V-Market Backend", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="V-Market Backend",
+        version="0.1.0",
+        lifespan=lifespan,
+        # Sellers author product text, so no response body may be readable
+        # as markup — see app/json_response.py.
+        default_response_class=SafeJSONResponse,
+    )
 
     # For the Simulator only. Its bridge refuses plain-http URLs, so in dev
     # the MiniApp falls back to the browser's own fetch — a cross-origin

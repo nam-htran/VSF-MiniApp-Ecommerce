@@ -67,6 +67,18 @@ async def ipn(body: IpnRequest, session: Session) -> dict:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Amount mismatch"
         )
+    if result == "NOT_PAYABLE":
+        # The order is no longer PENDING and was not already paid — it was
+        # cancelled, most likely because its stock hold lapsed while the
+        # buyer was still at the gateway. Acking this with 200 would tell
+        # the gateway everything is fine while the buyer's money has moved
+        # against an order that no longer exists and stock that has already
+        # gone back on sale. Refuse loudly so it is reconciled, not lost.
+        assert order is not None
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Order is {order.status}, cannot be paid",
+        )
 
     # PAID or ALREADY_PAID: 200 either way — the retry-until-acked gateway
     # relies on a repeated notification being a success.

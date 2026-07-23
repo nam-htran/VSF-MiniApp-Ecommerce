@@ -95,7 +95,13 @@ async def clean_db(prepare_db):
     Truncating rather than rolling back: the app runs in another thread with
     its own sessions, so a test-side transaction would not isolate it.
     CASCADE because shops reference users.
+
+    The rate limiter is cleared too — it counts per process, so without this
+    a test that places a lot of orders would hand the next test a 429.
     """
+    from app.rate_limit import reset as reset_rate_limit
+
+    reset_rate_limit()
     engine = _throwaway_engine()
     async with engine.begin() as conn:
         await conn.execute(

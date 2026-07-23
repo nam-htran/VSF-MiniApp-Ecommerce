@@ -3,3 +3,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-v"
+markers = [
+    # The load rows of the test matrix. They are slower and prove
+    # correctness under concurrency, not throughput — skip with
+    # `pytest -m "not slow"` while iterating.
+    "slow: concurrency and load scenarios",
+]

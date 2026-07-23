@@ -10,6 +10,7 @@ from sqlalchemy import (
     CheckConstraint,
     ForeignKey,
     Numeric,
+    UniqueConstraint,
     func,
     or_,
     select,
@@ -36,10 +37,16 @@ class Product(Base):
             "original_price IS NULL OR original_price > price",
             name="ck_products_original_price_above_price",
         ),
+        UniqueConstraint("shop_id", "sku", name="uq_products_shop_sku"),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True)
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
+    # The seller's own article number. Optional — plenty of small shops
+    # don't use one — but unique inside a shop when given, so a stock count
+    # can be reconciled against the seller's own books. Unique per shop, not
+    # globally: two shops may both sell an "AO-001".
+    sku: Mapped[str | None] = mapped_column(default=None)
     name: Mapped[str]
     description: Mapped[str]
     # "Hũ 300g", "Túi 5kg" — the pack-size line on the card.
@@ -341,11 +348,13 @@ async def create_product(
     original_price: Decimal | None = None,
     image_urls: list[str] | None = None,
     category: str | None = None,
+    sku: str | None = None,
 ) -> Product:
     gallery = image_urls or ([image_url] if image_url else None)
     product = Product(
         id=str(uuid.uuid4()),
         shop_id=shop_id,
+        sku=(sku or None),
         name=name,
         description=description,
         unit=unit,
@@ -374,7 +383,12 @@ async def update_product(
     status: str | None = None,
     image_urls: list[str] | None = None,
     category: str | None = None,
+    sku: str | None = None,
 ) -> Product:
+    # Empty string means "clear it"; None means "leave it alone", so a
+    # PATCH that doesn't mention the SKU cannot wipe it.
+    if sku is not None:
+        product.sku = sku or None
     if category is not None:
         product.category = category
     if name is not None:

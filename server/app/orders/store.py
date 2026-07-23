@@ -766,3 +766,67 @@ async def find_by_idempotency_key(
             Order.buyer_id == buyer_id, Order.idempotency_key == key
         )
     )
+
+
+async def cancel_by_buyer(
+    session: AsyncSession, order_id: str, buyer_id: str
+) -> tuple[Order | None, str]:
+    """Let a buyer call off an order, while that is still fair to the shop.
+
+    Allowed until a shop starts working on it: every slice must still be
+    CONFIRMED. Once anything is SHIPPING the goods are moving and calling it
+    off is a returns problem, not a cancellation — so it is refused rather
+    than quietly accepted.
+
+    The stock goes back the same way the expiry sweep returns it, and the
+    order's status is again the guard against crediting twice.
+    """
+    from app.products.store import Product as ProductRow
+    from app.products.store import ProductVariant
+
+    order = await session.get(
+        Order, order_id, with_for_update=True, populate_existing=True
+    )
+    if order is None or order.buyer_id != buyer_id:
+        return None, "NOT_FOUND"
+    if order.status == "CANCELLED":
+        return order, "ALREADY_CANCELLED"
+    if order.status not in ("PENDING", "PAID"):
+        return order, "NOT_CANCELLABLE"
+
+    shop_orders = list(
+        await session.scalars(
+            select(ShopOrder).where(ShopOrder.order_id == order.id)
+        )
+    )
+    if any(so.status != "CONFIRMED" for so in shop_orders):
+        return order, "ALREADY_SHIPPING"
+
+    items = list(
+        await session.scalars(
+            select(OrderItem).where(
+                OrderItem.shop_order_id.in_([so.id for so in shop_orders])
+            )
+        )
+    )
+    for item in items:
+        if item.variant_id:
+            variant = await session.get(
+                ProductVariant, item.variant_id, with_for_update=True
+            )
+            if variant is not None:
+                variant.stock += item.qty
+        else:
+            product = await session.get(
+                ProductRow, item.product_id, with_for_update=True
+            )
+            if product is not None:
+                product.stock += item.qty
+
+    for shop_order in shop_orders:
+        shop_order.status = "CANCELLED"
+    order.status = "CANCELLED"
+
+    await session.commit()
+    await session.refresh(order)
+    return order, "CANCELLED"

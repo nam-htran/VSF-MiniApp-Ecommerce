@@ -10,11 +10,13 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentSeller
 from app.db import get_session
 from app.products import store as products
+from app.products.moderation import banned_terms_in
 from app.products.store import Product
 from app.reviews import store as reviews
 from app.shops import store as shops
@@ -41,6 +43,8 @@ class VariantRequest(BaseModel):
 
 class CreateProductRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    # The seller's article number; unique inside their shop when given.
+    sku: str | None = Field(default=None, max_length=64)
     description: str = Field(min_length=1, max_length=4000)
     unit: str | None = Field(default=None, max_length=60)
     price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
@@ -66,6 +70,7 @@ class CreateProductRequest(BaseModel):
 
 class UpdateProductRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    sku: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, min_length=1, max_length=4000)
     price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     stock: int | None = Field(default=None, ge=0)
@@ -81,6 +86,7 @@ def _serialise(product: Product) -> dict:
     return {
         "id": product.id,
         "shopId": product.shop_id,
+        "sku": product.sku,
         "name": product.name,
         "description": product.description,
         "unit": product.unit,
@@ -179,6 +185,16 @@ def _list_item(row: dict, live: list, variants: dict | None = None) -> dict:
     }
 
 
+def _refuse_banned(*fields: str | None) -> None:
+    """Reject a listing that names prohibited goods, saying which word."""
+    found = banned_terms_in(*fields)
+    if found:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Sản phẩm chứa từ khoá bị cấm: {', '.join(found)}",
+        )
+
+
 async def _my_shop(session: AsyncSession, seller: MarketUser):
     shop = await shops.find_by_owner(session, seller.id)
     if shop is None:
@@ -270,20 +286,32 @@ async def create_product(
     # The shop comes from who is calling, never from the request body —
     # otherwise a seller could post products into someone else's shop.
     shop = await _my_shop(session, seller)
+    _refuse_banned(body.name, body.description)
 
-    product = await products.create_product(
-        session,
-        shop_id=shop.id,
-        name=body.name,
-        description=body.description,
-        unit=body.unit,
-        price=body.price,
-        original_price=body.originalPrice,
-        stock=body.stock,
-        image_url=body.imageUrl,
-        image_urls=body.imageUrls,
-        category=body.category,
-    )
+    try:
+        product = await products.create_product(
+            session,
+            shop_id=shop.id,
+            sku=body.sku,
+            name=body.name,
+            description=body.description,
+            unit=body.unit,
+            price=body.price,
+            original_price=body.originalPrice,
+            stock=body.stock,
+            image_url=body.imageUrl,
+            image_urls=body.imageUrls,
+            category=body.category,
+        )
+    except IntegrityError:
+        # The (shop_id, sku) index rejected it. Catching the constraint
+        # rather than pre-checking closes the race between two concurrent
+        # creates using the same code.
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Mã SKU '{body.sku}' đã tồn tại trong shop",
+        ) from None
     saved = []
     if body.variants:
         saved = await products.replace_variants(
@@ -319,18 +347,28 @@ async def update_product(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
 
-    updated = await products.update_product(
-        session,
-        product,
-        name=body.name,
-        description=body.description,
-        price=body.price,
-        stock=body.stock,
-        image_url=body.imageUrl,
-        status=body.status,
-        image_urls=body.imageUrls,
-        category=body.category,
-    )
+    _refuse_banned(body.name, body.description)
+
+    try:
+        updated = await products.update_product(
+            session,
+            product,
+            sku=body.sku,
+            name=body.name,
+            description=body.description,
+            price=body.price,
+            stock=body.stock,
+            image_url=body.imageUrl,
+            status=body.status,
+            image_urls=body.imageUrls,
+            category=body.category,
+        )
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Mã SKU '{body.sku}' đã tồn tại trong shop",
+        ) from None
     if body.variants is not None:
         await products.replace_variants(
             session,
