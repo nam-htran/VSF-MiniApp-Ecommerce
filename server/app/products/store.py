@@ -4,7 +4,15 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Numeric, or_, select
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    ForeignKey,
+    Numeric,
+    func,
+    or_,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -64,28 +72,77 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _metric_subqueries():
+    """Per-product average rating and units sold, as subqueries to left-join
+    onto a listing — so the cards can show stars and "đã bán" without an
+    N+1. Imported locally to sidestep the products↔orders/reviews cycle."""
+    from app.orders.store import Order, OrderItem, ShopOrder
+    from app.reviews.store import Review
+
+    rating = (
+        select(
+            Review.product_id.label("pid"),
+            func.avg(Review.rating).label("avg"),
+            func.count().label("cnt"),
+        )
+        .group_by(Review.product_id)
+        .subquery()
+    )
+    # Sold = quantity in orders that actually paid.
+    sold = (
+        select(
+            OrderItem.product_id.label("pid"),
+            func.sum(OrderItem.qty).label("sold"),
+        )
+        .join(ShopOrder, ShopOrder.id == OrderItem.shop_order_id)
+        .join(Order, Order.id == ShopOrder.order_id)
+        .where(Order.status == "PAID")
+        .group_by(OrderItem.product_id)
+        .subquery()
+    )
+    return rating, sold
+
+
+def _metrics(avg, cnt, sold) -> dict:
+    return {
+        "ratingAverage": round(float(avg), 1) if avg is not None else 0.0,
+        "ratingCount": cnt or 0,
+        "sold": int(sold) if sold is not None else 0,
+    }
+
+
 async def list_active(
     session: AsyncSession,
     limit: int,
     offset: int,
     on_sale: bool = False,
     q: str | None = None,
-) -> list[tuple[Product, str]]:
-    """The marketplace storefront: active products across all shops,
-    each with its shop's name — the card on the home screen shows both.
+) -> list[dict]:
+    """The marketplace storefront: active products across all shops, each
+    with the card's data — shop name and province (for the delivery
+    estimate), average rating, and units sold.
 
-    Joined here rather than fetched per product: N cards must not cost
-    N+1 queries, and the response budget is under a second.
+    Joined here rather than fetched per product: N cards must not cost N+1
+    queries, and the response budget is under a second.
 
     `q` filters by product name or shop name, case-insensitively — the
-    search box. It moves the substring match from the client to Postgres,
-    so search covers the whole catalogue, not just the first page.
+    search box, moved off the client so it covers the whole catalogue.
     """
     from app.shops.store import Shop
 
+    rating, sold = _metric_subqueries()
     query = (
-        select(Product, Shop.name)
+        select(
+            Product,
+            Shop.name,
+            Shop.province,
+            rating.c.avg,
+            rating.c.cnt,
+            sold.c.sold,
+        )
         .join(Shop, Shop.id == Product.shop_id)
+        .outerjoin(rating, rating.c.pid == Product.id)
+        .outerjoin(sold, sold.c.pid == Product.id)
         .where(Product.status == "ACTIVE", Shop.status == "ACTIVE")
     )
     if on_sale:
@@ -105,7 +162,15 @@ async def list_active(
         # rows in any order and one product can appear on two pages.
         query.order_by(Product.name, Product.id).limit(limit).offset(offset)
     )
-    return [(product, shop_name) for product, shop_name in rows.all()]
+    return [
+        {
+            "product": product,
+            "shopName": shop_name,
+            "shopProvince": province,
+            **_metrics(avg, cnt, sold_qty),
+        }
+        for product, shop_name, province, avg, cnt, sold_qty in rows.all()
+    ]
 
 
 async def list_for_shop(
@@ -114,22 +179,47 @@ async def list_for_shop(
     limit: int,
     offset: int,
     include_hidden: bool = False,
-) -> list[Product]:
-    """Products of one shop.
+) -> list[dict]:
+    """Products of one shop, carrying the same card data as the storefront
+    (province, rating, sold) so the "more from this shop" strip matches.
 
     `include_hidden` is for the seller looking at their own shop; buyers
     must never see it set.
     """
-    query = select(Product).where(Product.shop_id == shop_id)
+    from app.shops.store import Shop
+
+    rating, sold = _metric_subqueries()
+    query = (
+        select(
+            Product,
+            Shop.name,
+            Shop.province,
+            rating.c.avg,
+            rating.c.cnt,
+            sold.c.sold,
+        )
+        .join(Shop, Shop.id == Product.shop_id)
+        .outerjoin(rating, rating.c.pid == Product.id)
+        .outerjoin(sold, sold.c.pid == Product.id)
+        .where(Product.shop_id == shop_id)
+    )
     if not include_hidden:
         query = query.where(Product.status == "ACTIVE")
 
-    rows = await session.scalars(
+    rows = await session.execute(
         # Ordered so paging is stable — without it Postgres may return rows
         # in any order and one product can appear on two pages.
         query.order_by(Product.name, Product.id).limit(limit).offset(offset)
     )
-    return list(rows)
+    return [
+        {
+            "product": product,
+            "shopName": shop_name,
+            "shopProvince": province,
+            **_metrics(avg, cnt, sold_qty),
+        }
+        for product, shop_name, province, avg, cnt, sold_qty in rows.all()
+    ]
 
 
 async def create_product(

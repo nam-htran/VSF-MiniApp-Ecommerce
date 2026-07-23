@@ -81,6 +81,19 @@ def _serialise(product: Product) -> dict:
     }
 
 
+def _list_item(row: dict) -> dict:
+    """A storefront row: the product plus the card's extra data — shop name
+    and province, average rating, and units sold."""
+    return {
+        **_serialise(row["product"]),
+        "shopName": row["shopName"],
+        "shopProvince": row["shopProvince"],
+        "ratingAverage": row["ratingAverage"],
+        "ratingCount": row["ratingCount"],
+        "sold": row["sold"],
+    }
+
+
 async def _my_shop(session: AsyncSession, seller: MarketUser):
     shop = await shops.find_by_owner(session, seller.id)
     if shop is None:
@@ -106,7 +119,7 @@ async def list_shop_products(
         session, shop_id, limit=limit, offset=offset
     )
     return {
-        "items": [_serialise(product) for product in page],
+        "items": [_list_item(row) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -130,10 +143,7 @@ async def list_products(
         session, limit=limit, offset=offset, on_sale=onSale, q=q
     )
     return {
-        "items": [
-            {**_serialise(product), "shopName": shop_name}
-            for product, shop_name in page
-        ],
+        "items": [_list_item(row) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -151,7 +161,7 @@ async def list_my_products(
         session, shop.id, limit=limit, offset=offset, include_hidden=True
     )
     return {
-        "items": [_serialise(product) for product in page],
+        "items": [_list_item(row) for row in page],
         "hasMore": len(page) == limit,
     }
 

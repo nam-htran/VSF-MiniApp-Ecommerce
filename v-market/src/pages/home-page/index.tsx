@@ -16,6 +16,10 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
   image: item.imageUrl ?? undefined,
   shopId: item.shopId,
   shopName: item.shopName,
+  shopProvince: item.shopProvince,
+  ratingAverage: item.ratingAverage,
+  ratingCount: item.ratingCount,
+  sold: item.sold,
   emoji: '🛒',
   tint: 'bg-global-neutral-neutral-10',
 });

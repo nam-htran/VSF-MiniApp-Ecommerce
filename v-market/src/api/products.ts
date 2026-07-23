@@ -40,17 +40,27 @@ export function getProduct(id: string) {
   return apiRequest<ApiProductDetail>(`/products/${id}`);
 }
 
-/** Items in the marketplace feed also name their shop. */
-export type ApiProductListItem = ApiProduct & { shopName: string };
+/**
+ * A storefront card carries more than the bare product: its shop's name and
+ * province (for the delivery estimate), the average rating, and units sold.
+ */
+export type ApiProductListItem = ApiProduct & {
+  shopName: string;
+  shopProvince: string | null;
+  ratingAverage: number;
+  ratingCount: number;
+  sold: number;
+};
 
 export type ProductPage = {
   items: ApiProductListItem[];
   hasMore: boolean;
 };
 
-/** Public — one shop's active products, for the "more from this shop" strip. */
+/** Public — one shop's active products, for the "more from this shop" strip.
+ *  Same enriched card data as the storefront feed. */
 export function listShopProducts(shopId: string, limit = 10) {
-  return apiRequest<{ items: ApiProduct[]; hasMore: boolean }>(
+  return apiRequest<{ items: ApiProductListItem[]; hasMore: boolean }>(
     `/shops/${shopId}/products?limit=${limit}`
   );
 }

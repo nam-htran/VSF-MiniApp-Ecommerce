@@ -13,8 +13,8 @@ import {
   getProduct,
   listProducts,
   listShopProducts,
-  type ApiProduct,
   type ApiProductDetail,
+  type ApiProductListItem,
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
 import { ProductStrip } from '@/components/product-strip';
@@ -24,10 +24,9 @@ import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
 
-/** API product → the compact card the suggestion strips render. */
-const suggestionCard = (
-  p: ApiProduct & { shopName?: string }
-): ProductCardData => ({
+/** API list item → the card the suggestion strips render, with the same
+ *  rating / sold / delivery data as the storefront cards. */
+const suggestionCard = (p: ApiProductListItem): ProductCardData => ({
   id: p.id,
   name: p.name,
   price: p.price,
@@ -38,6 +37,10 @@ const suggestionCard = (
   tint: 'bg-global-neutral-neutral-10',
   shopId: p.shopId,
   shopName: p.shopName,
+  shopProvince: p.shopProvince,
+  ratingAverage: p.ratingAverage,
+  ratingCount: p.ratingCount,
+  sold: p.sold,
 });
 
 /**

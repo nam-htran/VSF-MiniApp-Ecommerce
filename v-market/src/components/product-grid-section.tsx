@@ -1,5 +1,6 @@
 import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
+import { estimateDelivery } from '@/lib/delivery';
 import type { ProductCardData } from '@/lib/product-card';
 import { Skeleton } from '@v-miniapp/ui-react';
 
@@ -62,6 +63,15 @@ export const ProductGridSection = ({
 /** Exported for reuse — the search results render the same card. */
 export const GridProductCard = ({ product }: { product: ProductCardData }) => {
   const navigate = useNavigate();
+  // The card's delivery line comes from the shop's province when known
+  // (real products); demo cards may still carry a hand-set shipDays.
+  const eta = product.shipDays
+    ? `Giao ${product.shipDays}`
+    : product.shopProvince
+      ? `Giao ${estimateDelivery(product.shopProvince).days}`
+      : null;
+  const hasRating = (product.ratingCount ?? 0) > 0;
+  const hasSold = (product.sold ?? 0) > 0;
   return (
   <button
     type="button"
@@ -70,7 +80,7 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
     onClick={() =>
       navigate('/product', { params: { id: product.id }, state: { product } })
     }
-    className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
+    className="flex w-full flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
     <Image
       src={product.image}
       alt={product.name}
@@ -117,22 +127,35 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
     </div>
 
     <div className="mt-auto flex flex-col gap-0.5">
-      {(product.shipDays || product.sold !== undefined) && (
-        <div className="flex items-center justify-between gap-1">
-          {product.shipDays && (
-            <span className="flex min-w-0 items-center gap-1">
-              <Icon name="scooter-front" size={12} className="shrink-0 text-global-teal-teal-60" />
-              <Typography size="2x-small" color="text-secondary" className="truncate">
-                Giao {product.shipDays}
+      {(hasRating || hasSold) && (
+        <div className="flex items-center gap-1">
+          {hasRating && (
+            <span className="flex items-center gap-0.5">
+              <Icon name="star" type="fill" size={11} className="shrink-0 text-global-amber-amber-50" />
+              <Typography size="2x-small" color="text-secondary">
+                {(product.ratingAverage ?? 0).toFixed(1)}
               </Typography>
             </span>
           )}
-          {product.sold !== undefined && (
-            <Typography size="2x-small" color="text-tertiary" className="shrink-0">
-              Đã bán {formatSold(product.sold)}
+          {hasRating && hasSold && (
+            <Typography size="2x-small" color="text-tertiary">
+              ·
+            </Typography>
+          )}
+          {hasSold && (
+            <Typography size="2x-small" color="text-tertiary">
+              Đã bán {formatSold(product.sold ?? 0)}
             </Typography>
           )}
         </div>
+      )}
+      {eta && (
+        <span className="flex min-w-0 items-center gap-1">
+          <Icon name="scooter-front" size={12} className="shrink-0 text-global-teal-teal-60" />
+          <Typography size="2x-small" color="text-secondary" className="truncate">
+            {eta}
+          </Typography>
+        </span>
       )}
       {/* Demo rows carry a warehouse; real items name their shop. */}
       {(product.warehouse || product.shopName) && (

@@ -20,5 +20,8 @@ export type ProductCardData = {
   sold?: number;
   shopId?: string;
   shopName?: string;
+  shopProvince?: string | null;
+  ratingAverage?: number;
+  ratingCount?: number;
   description?: string;
 };
