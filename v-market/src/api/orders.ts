@@ -71,3 +71,7 @@ export function listOrders(limit = 20, offset = 0) {
     { headers: bearer() }
   );
 }
+
+export function getOrder(id: string) {
+  return apiRequest<OrderView>(`/orders/${id}`, { headers: bearer() });
+}

@@ -6,6 +6,7 @@ import HomePage from './pages/home-page';
 import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
 import CheckoutPage from './pages/checkout-page';
+import OrderDetailPage from './pages/order-detail-page';
 import LoginPage from './pages/login-page';
 import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
@@ -80,6 +81,13 @@ export const getAppConfig = (): IAppConfig => ({
       Component: OrdersPage,
       navigationBar: { title: 'Đơn hàng', hidden: true },
       bottomTabBarId: 'orders',
+    },
+    {
+      // One order at /order?id=… — reached from the orders list. Not a tab
+      // root, so the floating back button appears.
+      pathname: '/order',
+      Component: OrderDetailPage,
+      navigationBar: { hidden: true },
     },
     {
       pathname: '/account',

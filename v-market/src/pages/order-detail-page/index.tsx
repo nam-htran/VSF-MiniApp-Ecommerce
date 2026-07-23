@@ -1,0 +1,193 @@
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import {
+  Button,
+  Icon,
+  Skeleton,
+  Toast,
+  Typography,
+  useLocation,
+  useNavigate,
+} from '@v-miniapp/ui-react';
+import { getOrder, type OrderView } from '@/api/orders';
+import { initPayment } from '@/api/payments';
+import {
+  ORDER_STATUS,
+  ShopBlock,
+  StatusChip,
+  formatDate,
+} from '@/components/order-bits';
+import { OrderTrackingMap } from '@/components/order-tracking-map';
+import { PaymentSheet } from '@/components/payment-sheet';
+import { formatVnd } from '@/lib/format';
+
+/**
+ * One order at /order?id=… — the buyer's view after checkout. A paid order
+ * shows the (simulated) delivery tracker; an unpaid one offers to pay
+ * again. Behind the session guard, and GET /orders/{id} is owner-only, so
+ * this can only ever be your own order.
+ */
+type State =
+  | { status: 'loading' }
+  | { status: 'ready'; order: OrderView }
+  | { status: 'missing' };
+
+const OrderDetailPage = () => {
+  const location = useLocation();
+  const id = location?.params?.id;
+
+  const [state, setState] = useState<State>({ status: 'loading' });
+  const [payment, setPayment] = useState<{
+    paymentId: string;
+    amount: number;
+  } | null>(null);
+  const [paying, setPaying] = useState(false);
+
+  const load = useCallback(() => {
+    if (!id) {
+      setState({ status: 'missing' });
+      return;
+    }
+    setState({ status: 'loading' });
+    getOrder(id)
+      .then(order => setState({ status: 'ready', order }))
+      .catch(() => setState({ status: 'missing' }));
+  }, [id]);
+
+  useEffect(load, [load]);
+
+  if (state.status === 'loading') return <DetailSkeleton />;
+  if (state.status === 'missing') return <NotFound />;
+
+  const { order } = state;
+
+  const payNow = async () => {
+    setPaying(true);
+    try {
+      const session = await initPayment(order.id, Math.round(order.total));
+      setPayment({ paymentId: session.paymentId, amount: order.total });
+    } catch {
+      Toast.show({
+        type: 'negative',
+        message: 'Không mở được thanh toán, thử lại nhé',
+        position: 'bottom',
+      });
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  return (
+    <div className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01 pb-8">
+      <div className="flex items-center justify-between px-4 pb-1">
+        <div className="flex flex-col">
+          <Typography size="large" weight="bold">
+            Đơn #{order.id.slice(0, 8)}
+          </Typography>
+          <Typography size="2x-small" color="text-tertiary">
+            {formatDate(order.createdAt)}
+          </Typography>
+        </div>
+        <StatusChip label={ORDER_STATUS[order.status]} status={order.status} />
+      </div>
+
+      {order.status === 'PAID' ? (
+        <Card>
+          <OrderTrackingMap createdAt={order.createdAt} />
+        </Card>
+      ) : order.status === 'PENDING' ? (
+        <Card>
+          <span className="flex items-center gap-2">
+            <Icon name="clock" size={18} className="text-global-amber-amber-60" />
+            <Typography size="small" weight="semibold">
+              Đơn chưa thanh toán
+            </Typography>
+          </span>
+          <Typography size="x-small" color="text-secondary">
+            Hoàn tất thanh toán để cửa hàng bắt đầu chuẩn bị và giao hàng.
+          </Typography>
+          <Button
+            type="solid"
+            theme="brand"
+            block
+            loading={paying}
+            onClick={payNow}>
+            Thanh toán {formatVnd(order.total)}
+          </Button>
+        </Card>
+      ) : null}
+
+      <Card>
+        <span className="flex items-center gap-2">
+          <Icon name="pin" size={16} className="shrink-0 text-brand" />
+          <Typography size="small" weight="semibold">
+            Địa chỉ nhận hàng
+          </Typography>
+        </span>
+        <Typography size="x-small" color="text-secondary" className="whitespace-pre-line">
+          {order.address}
+        </Typography>
+      </Card>
+
+      <div className="mx-3 flex flex-col gap-3 rounded-2xl bg-alias-background p-3 shadow-sm">
+        {order.shopOrders.map(shopOrder => (
+          <ShopBlock key={shopOrder.id} shopOrder={shopOrder} />
+        ))}
+        <div className="flex items-center justify-between border-t border-alias-border-subtle-01 pt-2">
+          <Typography size="small" color="text-secondary">
+            Tổng cộng
+          </Typography>
+          <Typography size="large" weight="bold" className="text-brand">
+            {formatVnd(order.total)}
+          </Typography>
+        </div>
+      </div>
+
+      {payment && (
+        <PaymentSheet
+          paymentId={payment.paymentId}
+          amount={payment.amount}
+          onClose={result => {
+            setPayment(null);
+            // Paid: reload so the tracker replaces the pay prompt. Cancelled:
+            // the order stays PENDING, nothing to refetch.
+            if (result === 'paid') load();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const Card = ({ children }: { children: ReactNode }) => (
+  <div className="mx-3 flex flex-col gap-3 rounded-2xl bg-alias-background p-3.5 shadow-sm">
+    {children}
+  </div>
+);
+
+const DetailSkeleton = () => (
+  <div className="pt-chrome flex flex-col gap-2 bg-alias-layer-01 px-3 pb-8">
+    <Skeleton className="h-8 w-40" />
+    <Skeleton className="h-48 w-full rounded-2xl" />
+    <Skeleton className="h-24 w-full rounded-2xl" />
+  </div>
+);
+
+const NotFound = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="pt-chrome-hero flex flex-col items-center gap-3 px-8 text-center">
+      <Icon name="circle-question" size={48} color="text-tertiary" />
+      <Typography size="large" weight="semibold">
+        Không tìm thấy đơn hàng
+      </Typography>
+      <Typography size="small" color="text-secondary">
+        Đơn có thể không tồn tại hoặc không thuộc về bạn.
+      </Typography>
+      <Button type="outline" onClick={() => navigate('/orders')}>
+        Về danh sách đơn
+      </Button>
+    </div>
+  );
+};
+
+export default OrderDetailPage;
