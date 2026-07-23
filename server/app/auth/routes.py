@@ -79,5 +79,10 @@ def _authenticated(user: users.MarketUser) -> dict:
     return {
         "status": "AUTHENTICATED",
         "token": issue_session_token(user),
-        "user": {"id": user.id, "role": user.role, "name": user.name},
+        "user": {
+            "id": user.id,
+            "role": user.role,
+            "name": user.name,
+            "phone": user.phone_number,
+        },
     }

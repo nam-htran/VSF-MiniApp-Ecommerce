@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     vapp_client_id: str = "v-market-dev"
     vapp_client_secret: str = "dev-secret"
 
+    # Reverse geocoding runs server-side: the MiniApp cannot reach a
+    # third-party host (domain whitelist), but the server can. Swap the
+    # base URL to point at a self-hosted Nominatim later if needed.
+    nominatim_base_url: str = "https://nominatim.openstreetmap.org"
+
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12
 
