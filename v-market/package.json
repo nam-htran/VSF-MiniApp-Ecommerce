@@ -6,10 +6,11 @@
   "scripts": {
     "preview:ui": "vite preview --port 4002 --outDir node_modules/@v-miniapp/ui-react/dist-storybook --open",
     "login": "v-miniapp-cli login",
-    "dev": "v-miniapp-cli dev",
+    "dev": "node scripts/dev-all.mjs",
     "build": "v-miniapp-cli build",
     "deploy": "v-miniapp-cli deploy",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "dev:app": "v-miniapp-cli dev"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",

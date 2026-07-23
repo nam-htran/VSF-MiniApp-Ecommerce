@@ -1,10 +1,12 @@
 import { IAppConfig, Icon } from '@v-miniapp/ui-react';
-import { BackButtonLayout } from './components/back-button-layout';
+import { SessionGuardLayout } from './components/session-guard-layout';
+import { TopChromeLayout } from './components/top-chrome-layout';
 import { CartTabIcon } from './components/cart-tab-icon';
 import HomePage from './pages/home-page';
 import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
 import LoginPage from './pages/login-page';
+import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
 import AccountPage from './pages/account-page';
 
@@ -17,9 +19,10 @@ import AccountPage from './pages/account-page';
  * See docs/day3/platform-constraints.md §3.
  */
 export const getAppConfig = (): IAppConfig => ({
-  // Wraps every page: one fixed back button in the same spot everywhere,
-  // hidden on tab roots where there is nothing to go back to.
-  Layouts: [BackButtonLayout],
+  // Every page passes through these, outermost first: the session guard
+  // (route middleware — auth checks live there, not in pages), then the
+  // top chrome (back button + search pill).
+  Layouts: [SessionGuardLayout, TopChromeLayout],
   pages: [
     {
       pathname: '/',
@@ -46,6 +49,15 @@ export const getAppConfig = (): IAppConfig => ({
       Component: CartPage,
       navigationBar: { hidden: true },
       bottomTabBarId: 'cart',
+    },
+    {
+      pathname: '/search',
+      Component: SearchPage,
+      navigationBar: { hidden: true },
+      // The tab bar only shows on pages whose bottomTabBarId matches one
+      // of its items. Search is not a tab, but the bar should stay put —
+      // borrowing 'home' keeps it visible (with Home highlighted).
+      bottomTabBarId: 'home',
     },
     {
       // Dev-only stand-in for V-App's own sign-in; not a tab root, so the

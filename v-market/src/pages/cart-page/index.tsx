@@ -20,9 +20,8 @@ const CartPage = () => {
 
   return (
     <div
-      className="flex min-h-full flex-col"
+      className="pt-chrome flex min-h-full flex-col"
       style={{
-        paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 8px)',
         // Room for the fixed checkout bar above the tab bar.
         paddingBottom: 'calc(var(--vsf-current-bottom-tab-bar-height, 56px) + 88px)',
       }}>

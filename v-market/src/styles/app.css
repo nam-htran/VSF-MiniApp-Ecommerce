@@ -2,6 +2,30 @@
 @import '@v-miniapp/ui-react/tailwind/styles.css';
 @import '@v-miniapp/ui-react/tailwind/colors.css';
 
+/* The one place the brand red is defined — bg-brand / text-brand
+ * everywhere else. */
+@theme {
+  --color-brand: #e31c23;
+}
+
+/*
+ * Top-chrome geometry, defined once. Every page used to repeat the same
+ * calc() inline; now the chrome layout and the pages share these.
+ *
+ *   --chrome-h    the chrome band: status bar + the pill row
+ *   .pt-chrome    content starts 8px below the band (normal pages)
+ *   .pt-chrome-hero  roomier start for empty states
+ */
+:root {
+  --chrome-h: calc(var(--safe-area-inset-top, 44px) + 52px);
+}
+.pt-chrome {
+  padding-top: calc(var(--chrome-h) + 8px);
+}
+.pt-chrome-hero {
+  padding-top: calc(var(--chrome-h) + 44px);
+}
+
 /*
  * Top toasts assume a visible navigation bar: the library places them at
  * --vsf-current-navigation-bar-height + 16px, which is 16px from the top

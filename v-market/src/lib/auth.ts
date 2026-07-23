@@ -17,6 +17,9 @@ export type Session = { token: string; user: SessionUser };
 const STORAGE_KEY = 'session.v1';
 
 let session: Session | null = null;
+// The stored session loads asynchronously; until it has, "no session"
+// means "don't know yet" — route guards must wait, not redirect.
+let hydrated = false;
 const listeners = new Set<() => void>();
 
 const emit = () => {
@@ -24,10 +27,9 @@ const emit = () => {
 };
 
 void loadJson<Session>(STORAGE_KEY).then(stored => {
-  if (stored?.token) {
-    session = stored;
-    emit();
-  }
+  if (stored?.token) session = stored;
+  hydrated = true;
+  emit();
 });
 
 export function signIn(next: Session): void {
@@ -52,6 +54,15 @@ export function useSession(): Session | null {
     subscribe,
     () => session,
     () => session
+  );
+}
+
+/** For route guards: whether the stored session has been read yet. */
+export function useSessionHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => hydrated,
+    () => hydrated
   );
 }
 

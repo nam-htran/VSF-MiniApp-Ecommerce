@@ -1,106 +1,8 @@
 import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
-import imgSpeaker from '@/assets/products/speaker.jpg';
-import imgTshirt from '@/assets/products/tshirt.jpg';
-import imgBackpack from '@/assets/products/backpack.jpg';
-import imgLamp from '@/assets/products/lamp.jpg';
-import imgBottle from '@/assets/products/bottle.jpg';
-import imgCamera from '@/assets/products/camera.jpg';
+import { Skeleton } from '@v-miniapp/ui-react';
 
-/**
- * TEMPORARY demo content, like the flash-sale strip — replace with a real
- * cross-shop product endpoint when one exists. Shipping days, warehouse
- * and sold counts are invented until orders and inventory carry them.
- *
- * Photos are bundled, not hotlinked (external hosts cannot be
- * whitelisted). Names follow the photos, not the other way round, and
- * carry no brand names — review rule 1.2.4 bans third-party trademarks.
- */
-/** Grid items always carry the Shopee rows, so those are required here. */
-type DemoProduct = ProductCardData & {
-  shipDays: string;
-  warehouse: string;
-  sold: number;
-};
-
-const DEMO_PRODUCTS: DemoProduct[] = [
-  {
-    id: '1',
-    name: 'Loa Bluetooth chống nước',
-    unit: 'Công suất 20W',
-    price: 1290000,
-    oldPrice: 1690000,
-    shipDays: '1–2 ngày',
-    warehouse: 'Long Biên, Hà Nội',
-    sold: 1243,
-    image: imgSpeaker,
-    emoji: '🔊',
-    tint: 'bg-global-zinc-zinc-10',
-  },
-  {
-    id: '2',
-    name: 'Áo thun cotton trơn',
-    unit: 'Size S–XXL',
-    price: 129000,
-    shipDays: 'trong ngày',
-    warehouse: 'Gia Lâm, Hà Nội',
-    sold: 5934,
-    image: imgTshirt,
-    emoji: '👕',
-    tint: 'bg-global-sky-sky-10',
-  },
-  {
-    id: '3',
-    name: 'Balo laptop chống sốc',
-    unit: 'Ngăn 15.6 inch',
-    price: 450000,
-    oldPrice: 590000,
-    shipDays: '1–2 ngày',
-    warehouse: 'Thủ Đức, TP.HCM',
-    sold: 862,
-    image: imgBackpack,
-    emoji: '🎒',
-    tint: 'bg-global-indigo-indigo-10',
-  },
-  {
-    id: '4',
-    name: 'Đèn làm việc kim loại',
-    unit: 'Bóng E27, dây 1.8m',
-    price: 350000,
-    shipDays: '2–3 ngày',
-    warehouse: 'Cầu Giấy, Hà Nội',
-    sold: 428,
-    image: imgLamp,
-    emoji: '💡',
-    tint: 'bg-global-neutral-neutral-10',
-  },
-  {
-    id: '5',
-    name: 'Bình giữ nhiệt 500ml',
-    unit: 'Inox 304',
-    price: 220000,
-    oldPrice: 280000,
-    shipDays: 'trong ngày',
-    warehouse: 'Hoàn Kiếm, Hà Nội',
-    sold: 2107,
-    image: imgBottle,
-    emoji: '🥤',
-    tint: 'bg-global-emerald-emerald-10',
-  },
-  {
-    id: '6',
-    name: 'Máy ảnh đã qua sử dụng',
-    unit: 'Kèm 2 ống kính',
-    price: 6490000,
-    shipDays: '2–3 ngày',
-    warehouse: 'Bình Thạnh, TP.HCM',
-    sold: 57,
-    image: imgCamera,
-    emoji: '📷',
-    tint: 'bg-global-stone-stone-10',
-  },
-];
 
 /** 1234 -> "1,2k", Shopee-style. */
 const formatSold = (sold: number) =>
@@ -115,17 +17,50 @@ const formatSold = (sold: number) =>
 export const ProductGridSection = ({
   products,
 }: {
-  /** Real items from the backend; the demo array fills in until they load. */
+  /** undefined = loading (skeletons); [] = the marketplace is empty. */
   products?: ProductCardData[];
-}) => (
-  <section className="grid grid-cols-2 gap-2 p-3">
-    {(products ?? DEMO_PRODUCTS).map(product => (
-      <ProductCard key={product.id} product={product} />
-    ))}
-  </section>
-);
+}) => {
+  if (products === undefined) {
+    return (
+      <section className="grid grid-cols-2 gap-2 p-3">
+        {[0, 1, 2, 3].map(i => (
+          <div
+            key={i}
+            className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 shadow-sm">
+            <Skeleton className="h-36 w-full rounded-lg" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        ))}
+      </section>
+    );
+  }
 
-const ProductCard = ({ product }: { product: ProductCardData }) => {
+  if (products.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 px-8 py-16 text-center">
+        <span className="text-5xl">🏪</span>
+        <Typography size="large" weight="semibold">
+          Sàn chưa có sản phẩm nào
+        </Typography>
+        <Typography size="small" color="text-secondary">
+          Hãy quay lại sau, hoặc mở shop và đăng món hàng đầu tiên.
+        </Typography>
+      </div>
+    );
+  }
+
+  return (
+    <section className="grid grid-cols-2 gap-2 p-3">
+      {products.map(product => (
+        <GridProductCard key={product.id} product={product} />
+      ))}
+    </section>
+  );
+};
+
+/** Exported for reuse — the search results render the same card. */
+export const GridProductCard = ({ product }: { product: ProductCardData }) => {
   const navigate = useNavigate();
   return (
   <button

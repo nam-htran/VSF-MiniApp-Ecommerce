@@ -23,8 +23,7 @@ const SignedIn = () => {
 
   return (
     <div
-      className="flex flex-col gap-4 px-4"
-      style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 56px)' }}>
+      className="pt-chrome flex flex-col gap-4 px-4">
       <div className="flex items-center gap-3 rounded-xl bg-alias-background p-4 shadow-sm">
         <Avatar size={56} shape="circle" label={(user.name ?? '?').charAt(0)} />
         <div className="flex min-w-0 flex-col">
@@ -54,7 +53,8 @@ const SignedIn = () => {
 const Guest = () => {
   const navigate = useNavigate();
   return (
-    <div className="flex flex-col items-center gap-3 px-8 pt-24 text-center">
+    <div
+      className="pt-chrome-hero flex flex-col items-center gap-3 px-8 text-center">
       <Avatar size={64} shape="circle" label="?" />
       <Typography size="large" weight="semibold">
         Bạn đang xem với tư cách khách

@@ -132,10 +132,7 @@ const LoginPage = () => {
 
   return (
     <div
-      className="flex min-h-full flex-col gap-4 px-4 pb-8"
-      style={{
-        paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 56px)',
-      }}>
+      className="pt-chrome flex min-h-full flex-col gap-4 px-4 pb-8">
       <div>
         <Typography size="2x-large" weight="bold" component="h1">
           Đăng nhập

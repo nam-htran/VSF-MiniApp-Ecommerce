@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Alert, Button } from '@v-miniapp/ui-react';
 import { listProducts, type ApiProductListItem } from '@/api/products';
 import { FlashSaleSection } from '@/components/flash-sale-section';
 import { ProductGridSection } from '@/components/product-grid-section';
@@ -18,32 +19,57 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
   tint: 'bg-global-neutral-neutral-10',
 });
 
+type Feed =
+  | { status: 'loading' }
+  | { status: 'ready'; products: ProductCardData[] }
+  | { status: 'failed'; message: string };
+
 /**
- * One fetch feeds both sections: the grid gets everything, the flash
- * strip gets the discounted items (originalPrice set). The demo arrays
- * only fill in while loading or when the backend is unreachable — a home
- * screen with content beats an empty one in a demo.
+ * The database is the only source: one fetch of GET /products feeds the
+ * grid with everything and the flash strip with the discounted items.
+ * While loading the sections show skeletons; on failure the page says so
+ * and offers a retry instead of pretending with fake content.
  */
 const HomePage = () => {
-  const [products, setProducts] = useState<ProductCardData[]>();
+  const [feed, setFeed] = useState<Feed>({ status: 'loading' });
 
-  useEffect(() => {
+  const load = () => {
+    setFeed({ status: 'loading' });
     listProducts()
-      .then(page => {
-        if (page.items.length) setProducts(page.items.map(toCard));
-      })
-      .catch(error => {
-        console.warn('[home] product feed unavailable, keeping demo:', error);
-      });
-  }, []);
+      .then(page =>
+        setFeed({ status: 'ready', products: page.items.map(toCard) })
+      )
+      .catch(error =>
+        setFeed({
+          status: 'failed',
+          message: error instanceof Error ? error.message : String(error),
+        })
+      );
+  };
 
-  const onSale = products?.filter(product => product.oldPrice !== undefined);
+  useEffect(load, []);
+
+  const products =
+    feed.status === 'ready' ? feed.products : undefined;
 
   return (
     <div className="flex flex-col">
       <PromoSection />
-      <FlashSaleSection products={onSale} />
-      <ProductGridSection products={products} />
+      {feed.status === 'failed' ? (
+        <div className="p-4">
+          <Alert
+            type="negative"
+            title="Không tải được sản phẩm"
+            message={feed.message}
+            action={<Button onClick={load}>Thử lại</Button>}
+          />
+        </div>
+      ) : (
+        <>
+          <FlashSaleSection products={products} />
+          <ProductGridSection products={products} />
+        </>
+      )}
     </div>
   );
 };

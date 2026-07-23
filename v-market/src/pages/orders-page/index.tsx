@@ -4,7 +4,8 @@ const OrdersPage = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex flex-col items-center gap-3 px-8 pt-24 text-center">
+    <div
+      className="pt-chrome-hero flex flex-col items-center gap-3 px-8 text-center">
       <Icon name="receipt" size={48} color="text-tertiary" />
       <Typography size="large" weight="semibold">
         Chưa có đơn hàng nào

@@ -1,5 +1,4 @@
 import { Carousel, CarouselItem, Typography } from '@v-miniapp/ui-react';
-import { AddressLine } from './address-line';
 
 /**
  * Rotating promo header: mint block bleeding to the top edge, an address
@@ -31,15 +30,7 @@ const PROMOS = [
 
 export const PromoSection = () => (
   <section
-    className="flex flex-col gap-2 bg-[#e31c23] px-4 pb-3"
-    style={{
-      // Text starts just below the status bar, in the empty space left of
-      // V-App's ⋯ ✕ pill. The 44px fallback stands in for the Simulator's
-      // fake status bar; a real device injects the true inset.
-      paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 8px)',
-    }}>
-    <AddressLine />
-
+    className="pt-chrome flex flex-col gap-2 bg-brand px-4 pb-3">
     {/* align 'start', not the default 'center' — centred slides sit off
         the left edge and let the next slide peek in on the right, so the
         text never lines up with the address line above it. */}
