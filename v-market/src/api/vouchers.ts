@@ -50,6 +50,8 @@ export function listMyVouchers() {
 export type NewVoucher = {
   code: string;
   description: string;
+  /** null = everything the shop sells. */
+  category?: string | null;
   discountType: 'PERCENT' | 'AMOUNT';
   discountValue: number;
   maxDiscount?: number | null;

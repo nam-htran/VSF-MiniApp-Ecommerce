@@ -24,6 +24,7 @@ import { ProductGridSection } from '@/components/product-grid-section';
 import { ProductFormSheet } from '@/components/product-form-sheet';
 import { ShopForm } from '@/components/shop-form';
 import { SellerOrders } from '@/components/seller-orders';
+import { SellerVouchers } from '@/components/seller-vouchers';
 import { Stars } from '@/components/reviews-section';
 import { CATEGORIES } from '@/lib/categories';
 import { formatVnd } from '@/lib/format';
@@ -68,7 +69,9 @@ const ShopPage = () => {
   const [editingShop, setEditingShop] = useState(false);
   // The owner's view splits in two: manage the catalogue, or work the
   // fulfilment queue. Buyers never see this toggle.
-  const [ownerTab, setOwnerTab] = useState<'products' | 'orders'>('products');
+  const [ownerTab, setOwnerTab] = useState<
+    'products' | 'orders' | 'vouchers'
+  >('products');
   // Public catalogue filter: 'all' shows a strip per category, a key shows
   // just that category as a grid.
   const [catFilter, setCatFilter] = useState<string>('all');
@@ -208,6 +211,7 @@ const ShopPage = () => {
               [
                 ['products', 'Sản phẩm'],
                 ['orders', 'Đơn hàng'],
+                ['vouchers', 'Mã giảm'],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -235,8 +239,10 @@ const ShopPage = () => {
               onAdd={() => setProductForm(null)}
               onEdit={p => setProductForm(p)}
             />
-          ) : (
+          ) : ownerTab === 'orders' ? (
             <SellerOrders />
+          ) : (
+            <SellerVouchers />
           )}
         </>
       ) : products.length === 0 ? (
