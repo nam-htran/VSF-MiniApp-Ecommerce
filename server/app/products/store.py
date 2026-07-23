@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, or_, select
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Numeric, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,7 +45,11 @@ class Product(Base):
         Numeric(12, 2), default=None
     )
     stock: Mapped[int]
+    # image_url is the cover (kept for the cards); image_urls is the full
+    # gallery the detail page swipes through. The cover is always the first
+    # of the gallery, so the two never disagree.
     image_url: Mapped[str | None] = mapped_column(default=None)
+    image_urls: Mapped[list | None] = mapped_column(JSON, default=None)
     # HIDDEN keeps a product out of the storefront without deleting it —
     # past orders still reference it.
     status: Mapped[str] = mapped_column(default="ACTIVE")
@@ -138,7 +142,9 @@ async def create_product(
     image_url: str | None,
     unit: str | None = None,
     original_price: Decimal | None = None,
+    image_urls: list[str] | None = None,
 ) -> Product:
+    gallery = image_urls or ([image_url] if image_url else None)
     product = Product(
         id=str(uuid.uuid4()),
         shop_id=shop_id,
@@ -148,7 +154,9 @@ async def create_product(
         price=price,
         original_price=original_price,
         stock=stock,
-        image_url=image_url,
+        # The cover is the first of the gallery.
+        image_url=gallery[0] if gallery else None,
+        image_urls=gallery,
     )
     session.add(product)
     await session.commit()
@@ -165,6 +173,7 @@ async def update_product(
     stock: int | None = None,
     image_url: str | None = None,
     status: str | None = None,
+    image_urls: list[str] | None = None,
 ) -> Product:
     if name is not None:
         product.name = name
@@ -174,7 +183,11 @@ async def update_product(
         product.price = price
     if stock is not None:
         product.stock = stock
-    if image_url is not None:
+    if image_urls is not None:
+        # Replace the whole gallery; the cover follows the first image.
+        product.image_urls = image_urls or None
+        product.image_url = image_urls[0] if image_urls else None
+    elif image_url is not None:
         product.image_url = image_url
     if status is not None:
         product.status = status

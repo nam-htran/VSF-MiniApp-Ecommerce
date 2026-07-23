@@ -55,6 +55,7 @@ type View = {
   price: number;
   oldPrice?: number;
   image?: string;
+  images?: string[];
   unit?: string;
   description?: string;
   emoji: string;
@@ -75,6 +76,7 @@ const fromDetail = (p: ApiProductDetail): View => ({
   price: p.price,
   oldPrice: p.originalPrice ?? undefined,
   image: p.imageUrl ?? undefined,
+  images: p.imageUrls?.length ? p.imageUrls : p.imageUrl ? [p.imageUrl] : [],
   unit: p.unit ?? undefined,
   description: p.description,
   emoji: '🛒',
@@ -124,7 +126,12 @@ const ProductPage = () => {
   const view: View | null = detail
     ? fromDetail(detail)
     : passed
-      ? { ...passed, shopId: passed.shopId, shopName: passed.shopName }
+      ? {
+          ...passed,
+          shopId: passed.shopId,
+          shopName: passed.shopName,
+          images: passed.image ? [passed.image] : [],
+        }
       : null;
 
   if (!view) return <DetailSkeleton />;
@@ -172,17 +179,11 @@ const Detail = ({
         paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 72px)',
       }}>
       <div className="bg-alias-background">
-        <Image
-          src={view.image}
+        <ImageCarousel
+          images={view.images ?? []}
+          emoji={view.emoji}
+          tint={view.tint}
           alt={view.name}
-          fit="cover"
-          className="h-72 w-full"
-          fallback={
-            <div
-              className={`flex h-72 w-full items-center justify-center text-7xl ${view.tint}`}>
-              {view.emoji}
-            </div>
-          }
         />
       </div>
 
@@ -285,6 +286,63 @@ const Detail = ({
       <ProductStrip title="Sản phẩm tương tự" products={similar} />
 
       <BuyBar view={view} />
+    </div>
+  );
+};
+
+/** Swipeable image gallery with dots. One image shows plainly; none falls
+ *  back to the emoji tile. Scroll-snap so each swipe lands on one photo. */
+const ImageCarousel = ({
+  images,
+  emoji,
+  tint,
+  alt,
+}: {
+  images: string[];
+  emoji: string;
+  tint: string;
+  alt: string;
+}) => {
+  const [active, setActive] = useState(0);
+
+  if (images.length === 0) {
+    return (
+      <div className={`flex h-72 w-full items-center justify-center text-7xl ${tint}`}>
+        {emoji}
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <div
+        className="flex snap-x snap-mandatory overflow-x-auto"
+        onScroll={event => {
+          const el = event.currentTarget;
+          setActive(Math.round(el.scrollLeft / el.clientWidth));
+        }}>
+        {images.map((url, i) => (
+          <Image
+            key={i}
+            src={url}
+            alt={alt}
+            fit="cover"
+            className="h-72 w-full shrink-0 snap-center"
+          />
+        ))}
+      </div>
+      {images.length > 1 && (
+        <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+          {images.map((_, i) => (
+            <span
+              key={i}
+              className={`size-1.5 rounded-full ${
+                i === active ? 'bg-brand' : 'bg-alias-background/70'
+              }`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

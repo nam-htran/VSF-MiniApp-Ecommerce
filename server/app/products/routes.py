@@ -38,6 +38,7 @@ class CreateProductRequest(BaseModel):
     )
     stock: int = Field(ge=0)
     imageUrl: str | None = None
+    imageUrls: list[str] | None = Field(default=None, max_length=8)
 
     @model_validator(mode="after")
     def sale_must_be_a_discount(self):
@@ -52,6 +53,7 @@ class UpdateProductRequest(BaseModel):
     price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     stock: int | None = Field(default=None, ge=0)
     imageUrl: str | None = None
+    imageUrls: list[str] | None = Field(default=None, max_length=8)
     status: str | None = Field(default=None, pattern="^(ACTIVE|HIDDEN)$")
 
 
@@ -73,6 +75,8 @@ def _serialise(product: Product) -> dict:
         ),
         "stock": product.stock,
         "imageUrl": product.image_url,
+        "imageUrls": product.image_urls
+        or ([product.image_url] if product.image_url else []),
         "status": product.status,
     }
 
@@ -170,6 +174,7 @@ async def create_product(
         original_price=body.originalPrice,
         stock=body.stock,
         image_url=body.imageUrl,
+        image_urls=body.imageUrls,
     )
     return _serialise(product)
 
@@ -200,6 +205,7 @@ async def update_product(
         stock=body.stock,
         image_url=body.imageUrl,
         status=body.status,
+        image_urls=body.imageUrls,
     )
     return _serialise(updated)
 

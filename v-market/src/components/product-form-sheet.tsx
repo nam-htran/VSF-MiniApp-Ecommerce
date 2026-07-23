@@ -48,8 +48,8 @@ export const ProductFormSheet = ({
     product?.originalPrice != null ? String(product.originalPrice) : ''
   );
   const [stock, setStock] = useState(product ? String(product.stock) : '');
-  const [imageUrl, setImageUrl] = useState<string | null>(
-    product?.imageUrl ?? null
+  const [images, setImages] = useState<string[]>(
+    product?.imageUrls ?? (product?.imageUrl ? [product.imageUrl] : [])
   );
   const [hidden, setHidden] = useState(product?.status === 'HIDDEN');
 
@@ -74,7 +74,8 @@ export const ProductFormSheet = ({
   const pickImage = async (file: File) => {
     setUploading(true);
     try {
-      setImageUrl(await uploadImage(file));
+      const url = await uploadImage(file);
+      setImages(prev => [...prev, url].slice(0, 8));
     } catch (error) {
       Toast.show({
         type: 'negative',
@@ -96,7 +97,7 @@ export const ProductFormSheet = ({
           description: description.trim(),
           price: priceNum,
           stock: stockNum,
-          imageUrl,
+          imageUrls: images,
           status: hidden ? 'HIDDEN' : 'ACTIVE',
         });
       } else {
@@ -107,7 +108,7 @@ export const ProductFormSheet = ({
           price: priceNum,
           originalPrice: originalNum,
           stock: stockNum,
-          imageUrl,
+          imageUrls: images,
         });
       }
       Toast.show({
@@ -132,33 +133,51 @@ export const ProductFormSheet = ({
       <SheetHeader title={editing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'} />
       <SheetBody>
         <div className="flex flex-col gap-3 pb-2">
-          {/* image */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={uploading}
-              className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01">
-              {uploading ? (
-                <Icon name="loader" size={20} animation="spin" />
-              ) : imageUrl ? (
-                <Image src={imageUrl} alt="" fit="cover" className="size-20" />
-              ) : (
-                <Icon name="image" size={22} color="text-tertiary" />
-              )}
-            </button>
-            <div className="flex flex-col gap-1">
-              <Typography size="small" weight="semibold">
-                Ảnh sản phẩm
-              </Typography>
-              <Typography size="2x-small" color="text-tertiary">
-                JPEG, PNG hoặc WebP, tối đa 5MB.
-              </Typography>
-              {imageUrl && (
-                <button type="button" onClick={() => setImageUrl(null)}>
-                  <Typography size="x-small" className="text-brand">
-                    Xoá ảnh
-                  </Typography>
+          {/* gallery: thumbnails + an add tile, up to 8. The first is the
+              cover shown on cards. */}
+          <div className="flex flex-col gap-1">
+            <Typography size="small" weight="semibold">
+              Ảnh sản phẩm
+            </Typography>
+            <Typography size="2x-small" color="text-tertiary">
+              Tối đa 8 ảnh. Ảnh đầu tiên là ảnh bìa. JPEG/PNG/WebP, ≤5MB.
+            </Typography>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {images.map((url, i) => (
+                <div key={url} className="relative size-20">
+                  <Image src={url} alt="" fit="cover" className="size-20 rounded-xl" />
+                  {i === 0 && (
+                    <span className="absolute bottom-0 left-0 rounded-tr-lg rounded-bl-xl bg-brand px-1.5 py-0.5">
+                      <Typography size="2x-small" weight="semibold" className="text-alias-background">
+                        Bìa
+                      </Typography>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label="Xoá ảnh"
+                    onClick={() => setImages(prev => prev.filter(u => u !== url))}
+                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-alias-background shadow">
+                    <Icon name="xmark" size={12} color="text-tertiary" />
+                  </button>
+                </div>
+              ))}
+              {images.length < 8 && (
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={uploading}
+                  className="flex size-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01">
+                  {uploading ? (
+                    <Icon name="loader" size={20} animation="spin" />
+                  ) : (
+                    <>
+                      <Icon name="plus" size={18} color="text-tertiary" />
+                      <Typography size="2x-small" color="text-tertiary">
+                        Thêm ảnh
+                      </Typography>
+                    </>
+                  )}
                 </button>
               )}
             </div>

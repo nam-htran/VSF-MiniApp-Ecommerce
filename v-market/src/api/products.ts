@@ -17,7 +17,10 @@ export type ApiProduct = {
   /** Set = on sale at `price`; this is the struck-through price. */
   originalPrice: number | null;
   stock: number;
+  /** Cover image (first of the gallery), for the cards. */
   imageUrl: string | null;
+  /** The full gallery the detail page swipes through. */
+  imageUrls: string[];
   status: 'ACTIVE' | 'HIDDEN';
 };
 
@@ -76,6 +79,7 @@ export type NewProduct = {
   originalPrice?: number | null;
   stock: number;
   imageUrl?: string | null;
+  imageUrls?: string[];
 };
 
 /** The seller's own products, hidden ones included. */
@@ -103,6 +107,7 @@ export function updateProduct(
     price: number;
     stock: number;
     imageUrl: string | null;
+    imageUrls: string[];
     status: 'ACTIVE' | 'HIDDEN';
   }>
 ) {
