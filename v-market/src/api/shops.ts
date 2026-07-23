@@ -6,7 +6,10 @@ export type Shop = {
   ownerId: string;
   name: string;
   description: string;
+  /** Storefront banner. */
   imageUrl: string | null;
+  /** Round shop badge. */
+  logoUrl: string | null;
   address: string | null;
   phone: string | null;
   province: string | null;
@@ -19,6 +22,8 @@ export type ShopContact = {
   province?: string | null;
   address?: string | null;
   phone?: string | null;
+  imageUrl?: string | null;
+  logoUrl?: string | null;
 };
 
 const bearer = (): Record<string, string> | undefined => {

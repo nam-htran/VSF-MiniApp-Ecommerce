@@ -148,6 +148,7 @@ const Detail = ({
   view: View;
   buyerAddress?: string;
 }) => {
+  const navigate = useNavigate();
   const eta = estimateDelivery(view.shopProvince ?? null, buyerAddress);
 
   const [sameShop, setSameShop] = useState<ProductCardData[]>([]);
@@ -251,9 +252,31 @@ const Detail = ({
               }
             />
           )}
-          {view.shopName && (
-            <InfoRow icon="office" title="Cửa hàng" value={view.shopName} />
-          )}
+          {view.shopName &&
+            (view.shopId ? (
+              <button
+                type="button"
+                onClick={() => navigate('/shop', { params: { id: view.shopId! } })}
+                className="flex items-center gap-2 text-left">
+                <Icon name="office" size={16} className="shrink-0 text-global-teal-teal-60" />
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <Typography size="2x-small" color="text-tertiary">
+                    Cửa hàng
+                  </Typography>
+                  <Typography size="small" className="truncate">
+                    {view.shopName}
+                  </Typography>
+                </div>
+                <span className="flex shrink-0 items-center">
+                  <Typography size="x-small" className="text-brand">
+                    Xem shop
+                  </Typography>
+                  <Icon name="chevron-right" size={14} color="text-tertiary" />
+                </span>
+              </button>
+            ) : (
+              <InfoRow icon="office" title="Cửa hàng" value={view.shopName} />
+            ))}
           {view.shopPhone && (
             <InfoRow icon="phone" title="Liên hệ" value={view.shopPhone} />
           )}

@@ -1,12 +1,21 @@
-import { useEffect, useState } from 'react';
-import { Button, Dropdown, TextField, Toast } from '@v-miniapp/ui-react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Button,
+  Dropdown,
+  Icon,
+  Image,
+  TextField,
+  Toast,
+  Typography,
+} from '@v-miniapp/ui-react';
 import { openShop, updateShop, type Shop, type ShopContact } from '@/api/shops';
 import { listProvinces, type AdminUnit } from '@/api/geo';
+import { uploadImage } from '@/api/uploads';
 
 /**
- * Open or edit a shop. Same fields either way — name, description, and the
- * contact/origin (province, address, phone) that the product page uses to
- * show where an item ships from and estimate delivery time. Province is a
+ * Open or edit a shop. Same fields either way — a banner and a logo the
+ * seller uploads, then name, description, and the contact/origin (province,
+ * address, phone) the product page uses to estimate delivery. Province is a
  * picker, kept structured so the estimate doesn't have to parse a string.
  */
 export const ShopForm = ({
@@ -25,8 +34,14 @@ export const ShopForm = ({
   );
   const [address, setAddress] = useState(shop?.address ?? '');
   const [phone, setPhone] = useState(shop?.phone ?? '');
+  const [banner, setBanner] = useState<string | null>(shop?.imageUrl ?? null);
+  const [logo, setLogo] = useState<string | null>(shop?.logoUrl ?? null);
+  const [uploading, setUploading] = useState<'banner' | 'logo' | null>(null);
   const [provinces, setProvinces] = useState<AdminUnit[]>([]);
   const [saving, setSaving] = useState(false);
+
+  const bannerInput = useRef<HTMLInputElement>(null);
+  const logoInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listProvinces()
@@ -35,6 +50,25 @@ export const ShopForm = ({
   }, []);
 
   const valid = name.trim().length >= 1 && description.trim().length >= 1;
+
+  const pick = async (
+    file: File,
+    which: 'banner' | 'logo',
+    set: (url: string) => void
+  ) => {
+    setUploading(which);
+    try {
+      set(await uploadImage(file));
+    } catch (error) {
+      Toast.show({
+        type: 'negative',
+        message: error instanceof Error ? error.message : 'Tải ảnh thất bại',
+        position: 'bottom',
+      });
+    } finally {
+      setUploading(null);
+    }
+  };
 
   const save = async () => {
     if (!valid || saving) return;
@@ -45,6 +79,8 @@ export const ShopForm = ({
       province: province ?? null,
       address: address.trim() || null,
       phone: phone.trim() || null,
+      imageUrl: banner,
+      logoUrl: logo,
     };
     try {
       if (editing) await updateShop(shop.id, body);
@@ -68,6 +104,68 @@ export const ShopForm = ({
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Banner with the logo overlapping its corner — as it looks on the
+          shop page. Both uploaded by the seller. */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => bannerInput.current?.click()}
+          disabled={uploading !== null}
+          className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01">
+          {uploading === 'banner' ? (
+            <Icon name="loader" size={22} animation="spin" />
+          ) : banner ? (
+            <Image src={banner} alt="" fit="cover" className="h-28 w-full" />
+          ) : (
+            <span className="flex flex-col items-center gap-1">
+              <Icon name="image" size={22} color="text-tertiary" />
+              <Typography size="2x-small" color="text-tertiary">
+                Ảnh nền cửa hàng
+              </Typography>
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => logoInput.current?.click()}
+          disabled={uploading !== null}
+          className="absolute -bottom-2 left-3 flex size-16 items-center justify-center overflow-hidden rounded-2xl border-2 border-alias-background bg-alias-layer-01 shadow">
+          {uploading === 'logo' ? (
+            <Icon name="loader" size={18} animation="spin" />
+          ) : logo ? (
+            <Image src={logo} alt="" fit="cover" className="size-16" />
+          ) : (
+            <Icon name="office" size={20} color="text-tertiary" />
+          )}
+        </button>
+      </div>
+      <Typography size="2x-small" color="text-tertiary" className="pl-1">
+        Bấm để tải ảnh nền và logo. JPEG/PNG/WebP, ≤5MB.
+      </Typography>
+
+      <input
+        ref={bannerInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          if (file) void pick(file, 'banner', setBanner);
+          event.target.value = '';
+        }}
+      />
+      <input
+        ref={logoInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={event => {
+          const file = event.target.files?.[0];
+          if (file) void pick(file, 'logo', setLogo);
+          event.target.value = '';
+        }}
+      />
+
       <TextField value={name} onChange={setName} placeholder="Tên cửa hàng" />
       <TextField
         value={description}
@@ -99,7 +197,7 @@ export const ShopForm = ({
         theme="brand"
         block
         loading={saving}
-        disabled={!valid}
+        disabled={!valid || uploading !== null}
         onClick={save}>
         {editing ? 'Lưu thay đổi' : 'Mở cửa hàng'}
       </Button>

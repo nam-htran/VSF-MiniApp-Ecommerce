@@ -39,7 +39,12 @@ import { formatVnd } from '@/lib/format';
  *  shipping fee counts once per shop — matching the server's split. Uses
  *  shopId when known, falling back to the name for demo items added from
  *  the detail page (which don't carry a shop id). */
-type ShopGroup = { key: string; shopName: string; lines: CartLine[] };
+type ShopGroup = {
+  key: string;
+  shopId?: string;
+  shopName: string;
+  lines: CartLine[];
+};
 
 const groupByShop = (lines: CartLine[]): ShopGroup[] => {
   const groups = new Map<string, ShopGroup>();
@@ -50,6 +55,7 @@ const groupByShop = (lines: CartLine[]): ShopGroup[] => {
     else
       groups.set(key, {
         key,
+        shopId: line.product.shopId,
         shopName: line.product.shopName ?? 'Cửa hàng',
         lines: [line],
       });
@@ -302,14 +308,29 @@ const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
   </div>
 );
 
-const ShopGroupCard = ({ group }: { group: ShopGroup }) => (
+const ShopGroupCard = ({ group }: { group: ShopGroup }) => {
+  const navigate = useNavigate();
+  return (
   <Card>
-    <span className="flex items-center gap-1.5">
-      <Icon name="office" size={15} className="shrink-0 text-global-teal-teal-60" />
-      <Typography size="small" weight="semibold" className="truncate">
-        {group.shopName}
-      </Typography>
-    </span>
+    {group.shopId ? (
+      <button
+        type="button"
+        onClick={() => navigate('/shop', { params: { id: group.shopId! } })}
+        className="flex items-center gap-1.5 text-left">
+        <Icon name="office" size={15} className="shrink-0 text-global-teal-teal-60" />
+        <Typography size="small" weight="semibold" className="truncate">
+          {group.shopName}
+        </Typography>
+        <Icon name="chevron-right" size={12} color="text-tertiary" />
+      </button>
+    ) : (
+      <span className="flex items-center gap-1.5">
+        <Icon name="office" size={15} className="shrink-0 text-global-teal-teal-60" />
+        <Typography size="small" weight="semibold" className="truncate">
+          {group.shopName}
+        </Typography>
+      </span>
+    )}
 
     {group.lines.map(({ product, qty }) => (
       <div key={product.id} className="flex gap-3">
@@ -349,7 +370,8 @@ const ShopGroupCard = ({ group }: { group: ShopGroup }) => (
       <Typography size="small">{formatVnd(SHIPPING_FEE_PER_SHOP)}</Typography>
     </div>
   </Card>
-);
+  );
+};
 
 const PaymentCard = () => (
   <Card>

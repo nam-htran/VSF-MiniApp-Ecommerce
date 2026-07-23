@@ -51,15 +51,36 @@ export const StatusChip = ({
   );
 };
 
-export const ShopBlock = ({ shopOrder }: { shopOrder: ShopOrderView }) => (
+export const ShopBlock = ({
+  shopOrder,
+  onShopClick,
+}: {
+  shopOrder: ShopOrderView;
+  /** Given only where the block is not already inside a clickable card
+   *  (the order detail, not the list) — makes the shop name a link. */
+  onShopClick?: (shopId: string) => void;
+}) => (
   <div className="flex flex-col gap-2 rounded-xl bg-alias-layer-01 p-2.5">
     <div className="flex items-center justify-between gap-2">
-      <span className="flex min-w-0 items-center gap-1.5">
-        <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
-        <Typography size="small" weight="semibold" className="truncate">
-          {shopOrder.shopName}
-        </Typography>
-      </span>
+      {onShopClick ? (
+        <button
+          type="button"
+          onClick={() => onShopClick(shopOrder.shopId)}
+          className="flex min-w-0 items-center gap-1.5 text-left">
+          <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
+          <Typography size="small" weight="semibold" className="truncate">
+            {shopOrder.shopName}
+          </Typography>
+          <Icon name="chevron-right" size={12} color="text-tertiary" />
+        </button>
+      ) : (
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
+          <Typography size="small" weight="semibold" className="truncate">
+            {shopOrder.shopName}
+          </Typography>
+        </span>
+      )}
       <StatusChip label={SHOP_STATUS[shopOrder.status]} status={shopOrder.status} />
     </div>
 

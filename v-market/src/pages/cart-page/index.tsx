@@ -17,6 +17,7 @@ import { formatVnd } from '@/lib/format';
 
 const CartPage = () => {
   const { lines } = useCart();
+  const navigate = useNavigate();
 
   return (
     <div
@@ -40,12 +41,27 @@ const CartPage = () => {
               <div
                 key={group.key}
                 className="mx-4 flex flex-col gap-2 rounded-2xl bg-alias-background p-3 shadow-sm">
-                <span className="flex items-center gap-1.5">
-                  <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
-                  <Typography size="small" weight="semibold" className="truncate">
-                    {group.shopName}
-                  </Typography>
-                </span>
+                {group.shopId ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate('/shop', { params: { id: group.shopId! } })
+                    }
+                    className="flex items-center gap-1.5 text-left">
+                    <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
+                    <Typography size="small" weight="semibold" className="truncate">
+                      {group.shopName}
+                    </Typography>
+                    <Icon name="chevron-right" size={12} color="text-tertiary" />
+                  </button>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Icon name="office" size={14} className="shrink-0 text-global-teal-teal-60" />
+                    <Typography size="small" weight="semibold" className="truncate">
+                      {group.shopName}
+                    </Typography>
+                  </span>
+                )}
                 {group.lines.map((line, i) => (
                   <div
                     key={line.product.id}
@@ -64,7 +80,12 @@ const CartPage = () => {
 };
 
 /** Group cart lines by shop — one card per shop, like checkout. */
-type CartGroup = { key: string; shopName: string; lines: CartLine[] };
+type CartGroup = {
+  key: string;
+  shopId?: string;
+  shopName: string;
+  lines: CartLine[];
+};
 
 const groupByShop = (lines: CartLine[]): CartGroup[] => {
   const groups = new Map<string, CartGroup>();
@@ -75,6 +96,7 @@ const groupByShop = (lines: CartLine[]): CartGroup[] => {
     else
       groups.set(key, {
         key,
+        shopId: line.product.shopId,
         shopName: line.product.shopName ?? 'Cửa hàng',
         lines: [line],
       });

@@ -33,6 +33,7 @@ type State =
 
 const OrderDetailPage = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const id = location?.params?.id;
 
   const [state, setState] = useState<State>({ status: 'loading' });
@@ -130,7 +131,11 @@ const OrderDetailPage = () => {
 
       <div className="mx-3 flex flex-col gap-3 rounded-2xl bg-alias-background p-3 shadow-sm">
         {order.shopOrders.map(shopOrder => (
-          <ShopBlock key={shopOrder.id} shopOrder={shopOrder} />
+          <ShopBlock
+            key={shopOrder.id}
+            shopOrder={shopOrder}
+            onShopClick={shopId => navigate('/shop', { params: { id: shopId } })}
+          />
         ))}
         <div className="flex items-center justify-between border-t border-alias-border-subtle-01 pt-2">
           <Typography size="small" color="text-secondary">

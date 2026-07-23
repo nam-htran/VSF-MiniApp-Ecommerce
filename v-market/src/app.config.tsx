@@ -9,6 +9,7 @@ import CheckoutPage from './pages/checkout-page';
 import OrderDetailPage from './pages/order-detail-page';
 import SellerPage from './pages/seller-page';
 import FlashSalePage from './pages/flash-sale-page';
+import ShopPage from './pages/shop-page';
 import LoginPage from './pages/login-page';
 import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
@@ -61,6 +62,14 @@ export const getAppConfig = (): IAppConfig => ({
       // bottomTabBarId so the tab bar hides for its own place-order bar.
       pathname: '/checkout',
       Component: CheckoutPage,
+      navigationBar: { hidden: true },
+    },
+    {
+      // A shop's storefront at /shop?id=… — reached from any shop name.
+      // Public; the hero bleeds under the floating chrome like the home
+      // promo, so no title bar here.
+      pathname: '/shop',
+      Component: ShopPage,
       navigationBar: { hidden: true },
     },
     {

@@ -22,7 +22,10 @@ class Shop(Base):
     )
     name: Mapped[str]
     description: Mapped[str]
+    # image_url is the storefront banner; logo_url the round shop badge.
+    # Both uploaded by the seller — no auto stand-in.
     image_url: Mapped[str | None] = mapped_column(default=None)
+    logo_url: Mapped[str | None] = mapped_column(default=None)
     # Contact and origin. `province` is kept apart from the free-text
     # address so delivery time can be estimated from it (see the product
     # page) without parsing a string.
@@ -67,6 +70,7 @@ async def create_shop(
     address: str | None = None,
     phone: str | None = None,
     province: str | None = None,
+    logo_url: str | None = None,
 ) -> Shop:
     shop = Shop(
         id=str(uuid.uuid4()),
@@ -74,6 +78,7 @@ async def create_shop(
         name=name,
         description=description,
         image_url=image_url,
+        logo_url=logo_url,
         address=address,
         phone=phone,
         province=province,
@@ -93,6 +98,7 @@ async def update_shop(
     address: str | None = None,
     phone: str | None = None,
     province: str | None = None,
+    logo_url: str | None = None,
 ) -> Shop:
     if name is not None:
         shop.name = name
@@ -100,6 +106,8 @@ async def update_shop(
         shop.description = description
     if image_url is not None:
         shop.image_url = image_url
+    if logo_url is not None:
+        shop.logo_url = logo_url
     if address is not None:
         shop.address = address
     if phone is not None:

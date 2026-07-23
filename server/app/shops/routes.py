@@ -32,6 +32,7 @@ class CreateShopRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=2000)
     imageUrl: str | None = None
+    logoUrl: str | None = None
     address: str | None = Field(default=None, max_length=500)
     phone: str | None = Field(default=None, max_length=20)
     province: str | None = Field(default=None, max_length=120)
@@ -41,6 +42,7 @@ class UpdateShopRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, min_length=1, max_length=2000)
     imageUrl: str | None = None
+    logoUrl: str | None = None
     address: str | None = Field(default=None, max_length=500)
     phone: str | None = Field(default=None, max_length=20)
     province: str | None = Field(default=None, max_length=120)
@@ -53,6 +55,7 @@ def _serialise(shop: Shop) -> dict:
         "name": shop.name,
         "description": shop.description,
         "imageUrl": shop.image_url,
+        "logoUrl": shop.logo_url,
         "address": shop.address,
         "phone": shop.phone,
         "province": shop.province,
@@ -71,6 +74,7 @@ async def create_shop(
             name=body.name,
             description=body.description,
             image_url=body.imageUrl,
+            logo_url=body.logoUrl,
             address=body.address,
             phone=body.phone,
             province=body.province,
@@ -139,6 +143,7 @@ async def update_shop(
         name=body.name,
         description=body.description,
         image_url=body.imageUrl,
+        logo_url=body.logoUrl,
         address=body.address,
         phone=body.phone,
         province=body.province,
