@@ -124,6 +124,12 @@ def base_url(require_vapp):
     """Run the V-Market backend for tests that call its own endpoints."""
     from app.main import create_app
 
+    # The background jobs would cancel orders underneath tests that move
+    # the hold window by hand, so the app under test runs without them.
+    from app.config import settings as app_settings
+
+    app_settings.scheduler_enabled = False
+
     config = uvicorn.Config(
         create_app(), host="127.0.0.1", port=SERVER_PORT, log_level="warning"
     )

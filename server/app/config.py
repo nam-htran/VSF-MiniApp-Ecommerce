@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # payment session. Longer than the plain hold because a bank app, an OTP
     # and poor signal are all slower than browsing.
     payment_grace_minutes: int = 30
+    # Background jobs: release expired stock holds, and ask the gateway
+    # about payments whose webhook never arrived. Off in tests, which move
+    # the clock by hand and must not race a loop doing the same work.
+    scheduler_enabled: bool = True
+    scheduler_interval_seconds: int = 60
 
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12
