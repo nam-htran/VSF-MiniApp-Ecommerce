@@ -41,6 +41,10 @@ export type OrderView = {
   address: string;
   total: number;
   createdAt: string;
+  /** When this order's stock goes back on sale. Placing an order holds the
+   *  stock; leaving it unpaid past this returns it and cancels the order.
+   *  null once it is paid or cancelled — nothing is held then. */
+  expiresAt: string | null;
   shopOrders: ShopOrderView[];
 };
 

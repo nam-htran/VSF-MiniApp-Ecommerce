@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # debugging. Keep the secret equal to the mock's PAYMENT_IPN_SECRET.
     payment_ipn_secret: str = "dev-ipn-secret"
     payment_verify_hash: bool = True
+    # How long an unpaid order holds its stock. Placing an order decrements
+    # stock immediately — that is the hold — and this is how long before it
+    # is handed back. Deliberately short so the behaviour is demonstrable in
+    # a sitting; a real shop would use hours.
+    order_hold_minutes: int = 15
 
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12

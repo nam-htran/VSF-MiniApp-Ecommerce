@@ -13,6 +13,7 @@ import {
   ShopBlock,
   StatusChip,
   formatDate,
+  holdLeft,
 } from '@/components/order-bits';
 import { formatVnd } from '@/lib/format';
 
@@ -139,6 +140,13 @@ const OrderCard = ({ order }: { order: OrderView }) => {
           <Typography size="2x-small" color="text-tertiary">
             {formatDate(order.createdAt)}
           </Typography>
+          {/* An unpaid order is holding stock; say how long that lasts, so
+              the cancellation isn't a surprise. */}
+          {holdLeft(order.expiresAt) && (
+            <Typography size="2x-small" className="text-global-amber-amber-70">
+              {holdLeft(order.expiresAt)}
+            </Typography>
+          )}
         </div>
         <StatusChip label={ORDER_STATUS[order.status]} status={order.status} />
       </div>

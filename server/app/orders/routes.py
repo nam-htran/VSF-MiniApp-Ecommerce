@@ -78,6 +78,13 @@ def _serialise_order(order: Order, shop_views) -> dict:
         "address": order.address,
         "total": float(order.total),
         "createdAt": order.created_at.isoformat(),
+        # When the stock this order holds goes back on sale; null once it is
+        # paid or cancelled and nothing is being held.
+        "expiresAt": (
+            expires.isoformat()
+            if (expires := orders.hold_expires_at(order)) is not None
+            else None
+        ),
         "shopOrders": [
             _serialise_shop_order(shop_order, shop_name, items)
             for shop_order, shop_name, items in shop_views
@@ -89,6 +96,10 @@ def _serialise_order(order: Order, shop_views) -> dict:
 async def place_order(
     body: CheckoutRequest, user: CurrentUser, session: Session
 ) -> dict:
+    # Sweep first: the unit this buyer wants may be held by a checkout
+    # somebody abandoned, and the hold has just run out.
+    await orders.release_expired(session)
+
     try:
         order = await orders.place_order(
             session,
@@ -117,6 +128,9 @@ async def my_orders(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> dict:
+    # So a buyer who left an order unpaid sees it turn CANCELLED here
+    # rather than finding out at the payment screen.
+    await orders.release_expired(session)
     page = await orders.list_for_buyer(
         session, user.id, limit=limit, offset=offset
     )

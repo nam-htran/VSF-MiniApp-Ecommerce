@@ -15,7 +15,7 @@ constraint on products.stock stays as the last line of defence.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -447,6 +447,89 @@ async def quote(
         "total": float(total),
         "shops": shops_view,
     }
+
+
+def hold_expires_at(order: Order) -> datetime | None:
+    """When this order's stock goes back on sale, or None once it can't.
+
+    Only a PENDING order holds anything: paying it makes the hold
+    permanent, cancelling already gave the stock back.
+    """
+    if order.status != "PENDING":
+        return None
+    from app.config import settings
+
+    return order.created_at + timedelta(minutes=settings.order_hold_minutes)
+
+
+async def release_expired(session: AsyncSession) -> int:
+    """Hand back the stock of orders that were never paid for.
+
+    Placing an order decrements stock straight away, which is what stops
+    two buyers claiming the last unit — but it also means an abandoned
+    checkout would hold that unit for ever. This is the other half: after
+    the hold window a PENDING order is cancelled and every line it took is
+    returned to the row it came from.
+
+    Rows are locked before being touched, and the order's own status is the
+    guard against giving the same stock back twice — a cancelled order is
+    no longer PENDING, so a second sweep skips it. `skip_locked` lets two
+    concurrent sweeps share the work instead of blocking on each other.
+    """
+    from app.config import settings
+    from app.products.store import Product as ProductRow
+    from app.products.store import ProductVariant
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.order_hold_minutes
+    )
+
+    stale = list(
+        await session.scalars(
+            select(Order)
+            .where(Order.status == "PENDING", Order.created_at < cutoff)
+            .order_by(Order.created_at)
+            .with_for_update(skip_locked=True)
+        )
+    )
+    if not stale:
+        return 0
+
+    order_ids = [order.id for order in stale]
+    shop_order_ids = list(
+        await session.scalars(
+            select(ShopOrder.id).where(ShopOrder.order_id.in_(order_ids))
+        )
+    )
+    items = list(
+        await session.scalars(
+            select(OrderItem).where(OrderItem.shop_order_id.in_(shop_order_ids))
+        )
+    )
+
+    # Give each line back to the row it was taken from: the variant when one
+    # was chosen, the product otherwise. A row the seller has since deleted
+    # is skipped — there is nowhere to return it to, and inventing one would
+    # be worse than losing it.
+    for item in items:
+        if item.variant_id:
+            variant = await session.get(
+                ProductVariant, item.variant_id, with_for_update=True
+            )
+            if variant is not None:
+                variant.stock += item.qty
+        else:
+            product = await session.get(
+                ProductRow, item.product_id, with_for_update=True
+            )
+            if product is not None:
+                product.stock += item.qty
+
+    for order in stale:
+        order.status = "CANCELLED"
+
+    await session.commit()
+    return len(stale)
 
 
 async def find_by_id(session: AsyncSession, order_id: str) -> Order | None:

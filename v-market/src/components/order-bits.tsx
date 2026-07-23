@@ -21,6 +21,19 @@ export const SHOP_STATUS: Record<ShopOrderView['status'], string> = {
   CANCELLED: 'Đã huỷ',
 };
 
+/** "còn 12 phút" — the time left before an unpaid order releases its
+ *  stock. Returns null once the moment has passed, since the next request
+ *  to the server will cancel it anyway. */
+export const holdLeft = (expiresAt: string | null): string | null => {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const minutes = Math.ceil(ms / 60_000);
+  return minutes >= 60
+    ? `còn ${Math.floor(minutes / 60)} giờ để thanh toán`
+    : `còn ${minutes} phút để thanh toán`;
+};
+
 export const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('vi-VN', {
     day: '2-digit',
