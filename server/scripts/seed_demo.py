@@ -36,30 +36,30 @@ BACKEND = "http://127.0.0.1:4000"
 SHOPS = [
     (
         "Điện máy Bình Minh",
-        "Tivi, tủ lạnh, máy giặt chính hãng, bảo hành 24 tháng",
+        "Thiết bị điện tử, âm thanh chính hãng, bảo hành 12 tháng",
         [
-            ("Ức gà đông lạnh", "Cấp đông ngay sau giết mổ.", "450–500g /gói", 56000, 80000, 40, "chicken"),
-            ("Trứng gà ta", "Thu hoạch trong tuần.", "Hộp 12 quả", 32500, 50000, 60, "eggs"),
-            ("Thịt bò nấu súp", "Cắt khối sẵn.", "450–500g /gói", 75000, 93000, 25, "beef"),
+            ("Tai nghe chụp tai không dây", "Chống ồn chủ động, kết nối 2 thiết bị.", "Pin 30 giờ", 890000, 1290000, 25, "headphones"),
+            ("Đồng hồ thông minh", "Theo dõi nhịp tim, chống nước 5ATM.", "Dây silicone", 990000, 1490000, 30, "watch"),
+            ("Bàn phím không dây", "Gõ êm, kết nối 3 thiết bị.", "Bluetooth, pin sạc", 690000, 850000, 40, "keyboard"),
+            ("Loa Bluetooth chống nước", "IPX7, pin 12 giờ.", "Công suất 20W", 1290000, 1690000, 20, "speaker"),
+            ("Máy ảnh đã qua sử dụng", "Ngoại hình 95%, đủ phụ kiện.", "Kèm 2 ống kính", 6490000, None, 3, "camera"),
         ],
     ),
     (
-        "Tạp hoá Cô Chi",
-        "Đồ khô, gia vị, hàng thiết yếu giao trong ngày",
+        "Thời trang An Nhiên",
+        "Quần áo, giày và phụ kiện — đổi size trong 7 ngày",
         [
-            ("Gạo ST25", "Vụ mới.", "Túi 5kg", 166500, 185000, 30, "rice"),
-            ("Sốt cà chua", "Không chất bảo quản.", "Hũ 300g", 42000, 52000, 50, "sauce"),
-            ("Sữa tươi nguyên chất", "Tiệt trùng.", "Chai 1 lít", 38000, None, 45, "milk"),
-            ("Bánh mì nguyên cám", "Nướng mỗi sáng.", "Ổ 400g", 45000, None, 20, "bread"),
+            ("Giày chạy bộ nam", "Đế đàn hồi, thoáng khí.", "Size 39–44", 1150000, 1590000, 50, "sneakers"),
+            ("Áo thun cotton trơn", "100% cotton, form regular.", "Size S–XXL", 129000, None, 200, "tshirt"),
+            ("Balo laptop chống sốc", "Kháng nước, cổng sạc USB.", "Ngăn 15.6 inch", 450000, 590000, 35, "backpack"),
         ],
     ),
     (
-        "Sách cũ Hà Nội",
-        "Sách văn học và giáo trình đã qua sử dụng, giá mềm",
+        "Gia dụng Nhà Mình",
+        "Đồ dùng nhà cửa thiết yếu, giao nhanh nội thành",
         [
-            ("Salad rau củ tươi", "Rửa sẵn.", "Hộp 400g", 35000, None, 35, "greens"),
-            ("Cá hồi phi lê", "Hàng tươi.", "200–250g /khay", 129000, 155000, 15, "salmon"),
-            ("Táo đỏ nhập khẩu", "Size 70.", "Túi 1kg", 89000, None, 55, "apple"),
+            ("Đèn làm việc kim loại", "Tay đèn xoay 180°.", "Bóng E27, dây 1.8m", 350000, None, 45, "lamp"),
+            ("Bình giữ nhiệt 500ml", "Giữ nóng 12h, giữ lạnh 24h.", "Inox 304", 220000, 280000, 80, "bottle"),
         ],
     ),
 ]

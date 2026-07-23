@@ -31,7 +31,7 @@ const PROMOS = [
 
 export const PromoSection = () => (
   <section
-    className="flex flex-col gap-2 bg-global-teal-teal-10 px-4 pb-3"
+    className="flex flex-col gap-2 bg-[#e31c23] px-4 pb-3"
     style={{
       // Text starts just below the status bar, in the empty space left of
       // V-App's ⋯ ✕ pill. The 44px fallback stands in for the Simulator's
@@ -53,13 +53,17 @@ export const PromoSection = () => (
             <Typography
               size="x-small"
               weight="bold"
-              className="text-global-teal-teal-60">
+              className="text-white/85">
               {promo.eyebrow}
             </Typography>
-            <Typography size="2x-large" weight="bold" component="h2">
+            <Typography
+              size="2x-large"
+              weight="bold"
+              component="h2"
+              className="text-global-basic-white">
               {promo.title}
             </Typography>
-            <Typography size="small" color="text-secondary">
+            <Typography size="small" className="text-white/80">
               {promo.sub}
             </Typography>
           </div>

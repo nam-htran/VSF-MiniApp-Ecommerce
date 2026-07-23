@@ -40,11 +40,14 @@ export const AddressLine = () => {
           setDraft(address);
           setOpen(true);
         }}>
-        <Icon name="pin" size={14} className="shrink-0 text-global-teal-teal-60" />
-        <Typography size="x-small" weight="semibold" className="truncate">
+        <Icon name="pin" size={14} className="shrink-0 text-global-basic-white" />
+        <Typography
+          size="x-small"
+          weight="semibold"
+          className="truncate text-global-basic-white">
           Giao đến: {address}
         </Typography>
-        <Icon name="chevron-down" size={14} className="shrink-0" />
+        <Icon name="chevron-down" size={14} className="shrink-0 text-global-basic-white" />
       </button>
 
       <Sheet open={open} onBackdropClick={() => setOpen(false)}>

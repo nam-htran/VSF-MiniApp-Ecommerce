@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react';
 import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
-import imgChicken from '@/assets/products/chicken.jpg';
-import imgEggs from '@/assets/products/eggs.jpg';
-import imgBeef from '@/assets/products/beef.jpg';
-import imgRice from '@/assets/products/rice.jpg';
+import imgHeadphones from '@/assets/products/headphones.jpg';
+import imgWatch from '@/assets/products/watch.jpg';
+import imgSneakers from '@/assets/products/sneakers.jpg';
+import imgKeyboard from '@/assets/products/keyboard.jpg';
 
 /**
  * TEMPORARY demo content. There is no endpoint that lists products across
@@ -22,43 +22,43 @@ type DemoProduct = ProductCardData & { oldPrice: number };
 const DEMO_PRODUCTS: DemoProduct[] = [
   {
     id: '1',
-    name: 'Ức gà đông lạnh',
-    unit: '450–500g /gói',
-    price: 56000,
-    oldPrice: 80000,
-    image: imgChicken,
-    emoji: '🍗',
-    tint: 'bg-global-orange-orange-10',
+    name: 'Tai nghe chụp tai không dây',
+    unit: 'Pin 30 giờ',
+    price: 890000,
+    oldPrice: 1290000,
+    image: imgHeadphones,
+    emoji: '🎧',
+    tint: 'bg-global-amber-amber-10',
   },
   {
     id: '2',
-    name: 'Trứng gà ta',
-    unit: 'Hộp 12 quả',
-    price: 32500,
-    oldPrice: 50000,
-    image: imgEggs,
-    emoji: '🥚',
-    tint: 'bg-global-stone-stone-10',
+    name: 'Đồng hồ thông minh',
+    unit: 'Dây silicone',
+    price: 990000,
+    oldPrice: 1490000,
+    image: imgWatch,
+    emoji: '⌚',
+    tint: 'bg-global-slate-slate-10',
   },
   {
     id: '3',
-    name: 'Thịt bò nấu súp',
-    unit: '450–500g /gói',
-    price: 75000,
-    oldPrice: 93000,
-    image: imgBeef,
-    emoji: '🥩',
-    tint: 'bg-global-rose-rose-10',
+    name: 'Giày chạy bộ nam',
+    unit: 'Size 39–44',
+    price: 1150000,
+    oldPrice: 1590000,
+    image: imgSneakers,
+    emoji: '👟',
+    tint: 'bg-global-red-red-10',
   },
   {
     id: '4',
-    name: 'Gạo ST25',
-    unit: 'Túi 5kg',
-    price: 166500,
-    oldPrice: 185000,
-    image: imgRice,
-    emoji: '🌾',
-    tint: 'bg-global-emerald-emerald-10',
+    name: 'Bàn phím không dây',
+    unit: 'Bluetooth, pin sạc',
+    price: 690000,
+    oldPrice: 850000,
+    image: imgKeyboard,
+    emoji: '⌨️',
+    tint: 'bg-global-stone-stone-10',
   },
 ];
 
@@ -107,19 +107,23 @@ export const FlashSaleSection = ({
     : DEMO_PRODUCTS;
 
   return (
-    <section className="flex flex-col gap-3 bg-global-teal-teal-10 px-4 pb-4">
+    <section className="flex flex-col gap-3 bg-[#e31c23] px-4 pb-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Typography size="large" weight="bold" component="h2">
+          <Typography
+            size="large"
+            weight="bold"
+            component="h2"
+            className="text-global-basic-white">
             Flash sale <span className="animate-pulse">🔥</span>
           </Typography>
           {/* The ticking clock is what makes the screen feel alive. */}
-          <span className="flex items-center gap-1 rounded-lg bg-global-red-red-60 px-2 py-0.5">
-            <Icon name="clock" size={12} className="text-global-basic-white" />
+          <span className="flex items-center gap-1 rounded-lg bg-global-basic-white px-2 py-0.5">
+            <Icon name="clock" size={12} className="text-[#e31c23]" />
             <Typography
               size="x-small"
               weight="bold"
-              className="text-global-basic-white tabular-nums">
+              className="text-[#e31c23] tabular-nums">
               {countdown}
             </Typography>
           </span>
@@ -128,10 +132,10 @@ export const FlashSaleSection = ({
           <Typography
             size="small"
             weight="semibold"
-            className="text-global-teal-teal-60">
+            className="text-global-basic-white">
             Xem tất cả
           </Typography>
-          <Icon name="chevron-right" size={16} className="text-global-teal-teal-60" />
+          <Icon name="chevron-right" size={16} className="text-global-basic-white" />
         </button>
       </div>
 

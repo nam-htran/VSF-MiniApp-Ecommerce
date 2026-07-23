@@ -1,12 +1,12 @@
 import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
-import imgSauce from '@/assets/products/sauce.jpg';
-import imgGreens from '@/assets/products/greens.jpg';
-import imgMilk from '@/assets/products/milk.jpg';
-import imgSalmon from '@/assets/products/salmon.jpg';
-import imgBread from '@/assets/products/bread.jpg';
-import imgApple from '@/assets/products/apple.jpg';
+import imgSpeaker from '@/assets/products/speaker.jpg';
+import imgTshirt from '@/assets/products/tshirt.jpg';
+import imgBackpack from '@/assets/products/backpack.jpg';
+import imgLamp from '@/assets/products/lamp.jpg';
+import imgBottle from '@/assets/products/bottle.jpg';
+import imgCamera from '@/assets/products/camera.jpg';
 
 /**
  * TEMPORARY demo content, like the flash-sale strip — replace with a real
@@ -27,79 +27,78 @@ type DemoProduct = ProductCardData & {
 const DEMO_PRODUCTS: DemoProduct[] = [
   {
     id: '1',
-    name: 'Sốt cà chua',
-    unit: 'Hũ 300g',
-    price: 42000,
-    oldPrice: 52000,
+    name: 'Loa Bluetooth chống nước',
+    unit: 'Công suất 20W',
+    price: 1290000,
+    oldPrice: 1690000,
     shipDays: '1–2 ngày',
     warehouse: 'Long Biên, Hà Nội',
     sold: 1243,
-    image: imgSauce,
-    emoji: '🍅',
-    tint: 'bg-global-red-red-10',
+    image: imgSpeaker,
+    emoji: '🔊',
+    tint: 'bg-global-zinc-zinc-10',
   },
   {
     id: '2',
-    name: 'Salad rau củ tươi',
-    unit: 'Hộp 400g',
-    price: 35000,
+    name: 'Áo thun cotton trơn',
+    unit: 'Size S–XXL',
+    price: 129000,
     shipDays: 'trong ngày',
     warehouse: 'Gia Lâm, Hà Nội',
-    sold: 862,
-    image: imgGreens,
-    emoji: '🥬',
-    tint: 'bg-global-lime-lime-10',
-  },
-  {
-    id: '3',
-    name: 'Sữa tươi nguyên chất',
-    unit: 'Chai 1 lít',
-    price: 38000,
-    oldPrice: 45000,
-    shipDays: '1–2 ngày',
-    warehouse: 'Thủ Đức, TP.HCM',
-    sold: 3521,
-    image: imgMilk,
-    emoji: '🥛',
+    sold: 5934,
+    image: imgTshirt,
+    emoji: '👕',
     tint: 'bg-global-sky-sky-10',
   },
   {
+    id: '3',
+    name: 'Balo laptop chống sốc',
+    unit: 'Ngăn 15.6 inch',
+    price: 450000,
+    oldPrice: 590000,
+    shipDays: '1–2 ngày',
+    warehouse: 'Thủ Đức, TP.HCM',
+    sold: 862,
+    image: imgBackpack,
+    emoji: '🎒',
+    tint: 'bg-global-indigo-indigo-10',
+  },
+  {
     id: '4',
-    name: 'Cá hồi phi lê',
-    unit: '200–250g /khay',
-    price: 129000,
-    oldPrice: 155000,
-    shipDays: 'trong ngày',
+    name: 'Đèn làm việc kim loại',
+    unit: 'Bóng E27, dây 1.8m',
+    price: 350000,
+    shipDays: '2–3 ngày',
     warehouse: 'Cầu Giấy, Hà Nội',
     sold: 428,
-    image: imgSalmon,
-    emoji: '🐟',
-    tint: 'bg-global-rose-rose-10',
+    image: imgLamp,
+    emoji: '💡',
+    tint: 'bg-global-neutral-neutral-10',
   },
   {
     id: '5',
-    name: 'Bánh mì nguyên cám',
-    unit: 'Ổ 400g',
-    price: 45000,
+    name: 'Bình giữ nhiệt 500ml',
+    unit: 'Inox 304',
+    price: 220000,
+    oldPrice: 280000,
     shipDays: 'trong ngày',
     warehouse: 'Hoàn Kiếm, Hà Nội',
     sold: 2107,
-    image: imgBread,
-    emoji: '🍞',
-    tint: 'bg-global-orange-orange-10',
+    image: imgBottle,
+    emoji: '🥤',
+    tint: 'bg-global-emerald-emerald-10',
   },
   {
     id: '6',
-    name: 'Táo đỏ nhập khẩu',
-    unit: 'Túi 1kg',
-    price: 89000,
-    oldPrice: 105000,
+    name: 'Máy ảnh đã qua sử dụng',
+    unit: 'Kèm 2 ống kính',
+    price: 6490000,
     shipDays: '2–3 ngày',
     warehouse: 'Bình Thạnh, TP.HCM',
-    sold: 5934,
-    image: imgApple,
-    emoji: '🍎',
-    tint: 'bg-global-red-red-10',
+    sold: 57,
+    image: imgCamera,
+    emoji: '📷',
+    tint: 'bg-global-stone-stone-10',
   },
 ];
 

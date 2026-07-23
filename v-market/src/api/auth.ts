@@ -16,7 +16,7 @@ const VAPP = import.meta.env.VITE_VAPP_BASE ?? 'http://127.0.0.1:4001';
 /** The mock wraps everything in the Open API envelope; code 0 = success. */
 type Envelope<T> = { code: number; message: string; data: T };
 
-async function unwrap<T>(promise: Promise<Envelope<T>>): Promise<T> {
+async function unwrap<T>(promise: Promise<  Envelope<T>>): Promise<T> {
   const envelope = await promise;
   if (envelope.code !== 0) throw new Error(envelope.message);
   return envelope.data;
