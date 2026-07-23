@@ -12,41 +12,23 @@ import {
 import {
   getProduct,
   listProducts,
-  listShopProducts,
   type ApiProductDetail,
-  type ApiProductListItem,
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
 import { ProductStrip } from '@/components/product-strip';
+import { ShopPreview } from '@/components/shop-preview';
 import { ReviewsSection, Stars } from '@/components/reviews-section';
 import { addToCart } from '@/lib/cart';
 import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
-import type { ProductCardData } from '@/lib/product-card';
-
-/** API list item → the card the suggestion strips render, with the same
- *  rating / sold / delivery data as the storefront cards. */
-const suggestionCard = (p: ApiProductListItem): ProductCardData => ({
-  id: p.id,
-  name: p.name,
-  price: p.price,
-  oldPrice: p.originalPrice ?? undefined,
-  image: p.imageUrl ?? undefined,
-  unit: p.unit ?? undefined,
-  emoji: '🛒',
-  tint: 'bg-global-neutral-neutral-10',
-  shopId: p.shopId,
-  shopName: p.shopName,
-  shopProvince: p.shopProvince,
-  ratingAverage: p.ratingAverage,
-  ratingCount: p.ratingCount,
-  sold: p.sold,
-});
+import { listItemToCard, type ProductCardData } from '@/lib/product-card';
 
 /**
  * Product detail at /product?id=… (single-level path, id in the query).
- * Rendered under the platform navigation bar — the app's floating chrome is
- * suppressed here (see TopChromeLayout NO_CHROME).
+ * No bar of any kind at the top: the platform navigation bar is hidden in
+ * app.config, and the app's own chrome — band and search pill — is off here
+ * (TopChromeLayout NO_SEARCH). The photo runs to the top edge with only the
+ * floating back button over it, the way a storefront detail page reads.
  *
  * The card that was tapped arrives in navigation state for an instant first
  * paint; the full detail — shop origin, contact, real stock — is always
@@ -148,29 +130,20 @@ const Detail = ({
   view: View;
   buyerAddress?: string;
 }) => {
-  const navigate = useNavigate();
   const eta = estimateDelivery(view.shopProvince ?? null, buyerAddress);
 
-  const [sameShop, setSameShop] = useState<ProductCardData[]>([]);
+  // "More from this shop" moved into ShopPreview, which fetches its own —
+  // only the cross-shop suggestions are the page's business now.
   const [similar, setSimilar] = useState<ProductCardData[]>([]);
 
   useEffect(() => {
-    if (view.shopId) {
-      listShopProducts(view.shopId, 12)
-        .then(page =>
-          setSameShop(
-            page.items.filter(p => p.id !== view.id).map(suggestionCard)
-          )
-        )
-        .catch(() => setSameShop([]));
-    }
     listProducts(16)
       .then(page =>
         setSimilar(
           page.items
             .filter(p => p.id !== view.id && p.shopId !== view.shopId)
             .slice(0, 10)
-            .map(suggestionCard)
+            .map(listItemToCard)
         )
       )
       .catch(() => setSimilar([]));
@@ -178,11 +151,16 @@ const Detail = ({
 
   return (
     <div
-      className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01"
+      className="flex min-h-full flex-col gap-2 bg-alias-layer-01"
       style={{
         paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 72px)',
       }}>
-      <div className="bg-alias-background">
+      {/* Padded by exactly the notch so the photo starts clear of it, with
+          the white behind the status bar. The floating back button still
+          sits over the top-left of the image. */}
+      <div
+        className="bg-alias-background"
+        style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 8px)' }}>
         <ImageCarousel
           images={view.images ?? []}
           emoji={view.emoji}
@@ -252,35 +230,23 @@ const Detail = ({
               }
             />
           )}
-          {view.shopName &&
-            (view.shopId ? (
-              <button
-                type="button"
-                onClick={() => navigate('/shop', { params: { id: view.shopId! } })}
-                className="flex items-center gap-2 text-left">
-                <Icon name="office" size={16} className="shrink-0 text-global-teal-teal-60" />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <Typography size="2x-small" color="text-tertiary">
-                    Cửa hàng
-                  </Typography>
-                  <Typography size="small" className="truncate">
-                    {view.shopName}
-                  </Typography>
-                </div>
-                <span className="flex shrink-0 items-center">
-                  <Typography size="x-small" className="text-brand">
-                    Xem shop
-                  </Typography>
-                  <Icon name="chevron-right" size={14} color="text-tertiary" />
-                </span>
-              </button>
-            ) : (
-              <InfoRow icon="office" title="Cửa hàng" value={view.shopName} />
-            ))}
+          {/* The shop itself is no longer a row here — it gets its own
+              storefront card below. Only what ships stays. */}
+          {!view.shopId && view.shopName && (
+            <InfoRow icon="office" title="Cửa hàng" value={view.shopName} />
+          )}
           {view.shopPhone && (
             <InfoRow icon="phone" title="Liên hệ" value={view.shopPhone} />
           )}
         </Card>
+      )}
+
+      {view.shopId && (
+        <ShopPreview
+          shopId={view.shopId}
+          fallbackName={view.shopName}
+          excludeProductId={view.id}
+        />
       )}
 
       <Card>
@@ -303,12 +269,6 @@ const Detail = ({
 
       <ReviewsSection productId={view.id} />
 
-      {view.shopName && (
-        <ProductStrip
-          title={`Sản phẩm khác của ${view.shopName}`}
-          products={sameShop}
-        />
-      )}
       <ProductStrip title="Sản phẩm tương tự" products={similar} />
 
       <BuyBar view={view} />
@@ -333,7 +293,7 @@ const ImageCarousel = ({
 
   if (images.length === 0) {
     return (
-      <div className={`flex h-72 w-full items-center justify-center text-7xl ${tint}`}>
+      <div className={`flex h-[50vh] w-full items-center justify-center text-7xl ${tint}`}>
         {emoji}
       </div>
     );
@@ -353,7 +313,9 @@ const ImageCarousel = ({
             src={url}
             alt={alt}
             fit="cover"
-            className="h-72 w-full shrink-0 snap-center"
+            // Half the viewport — the photo is what sells the item, so it
+            // gets the most room the page can spare.
+            className="h-[50vh] w-full shrink-0 snap-center"
           />
         ))}
       </div>
@@ -456,8 +418,14 @@ const BuyBar = ({ view }: { view: View }) => {
 };
 
 const DetailSkeleton = () => (
-  <div className="pt-chrome flex flex-col gap-2 bg-alias-layer-01">
-    <Skeleton className="h-72 w-full" />
+  // Matches the real page: same notch padding and image height, so nothing
+  // jumps when the photo lands.
+  <div className="flex flex-col gap-2 bg-alias-layer-01">
+    <div
+      className="bg-alias-background"
+      style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 8px)' }}>
+      <Skeleton className="h-[50vh] w-full" />
+    </div>
     <div className="mx-3 flex flex-col gap-2 rounded-2xl bg-alias-background p-3.5">
       <Skeleton className="h-8 w-1/3" />
       <Skeleton className="h-6 w-2/3" />

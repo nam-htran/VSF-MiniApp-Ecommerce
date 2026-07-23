@@ -233,6 +233,98 @@ async def list_for_buyer(
     return list(rows)
 
 
+# The forward-only fulfilment ladder a seller may walk a shop order up.
+# CANCELLED is deliberately absent: a cancel after payment means a refund,
+# which the mock gateway doesn't model yet, so it isn't offered.
+_FULFILMENT_NEXT: dict[str, str] = {
+    "CONFIRMED": "SHIPPING",
+    "SHIPPING": "DELIVERED",
+}
+
+
+async def _items_for_shop_orders(
+    session: AsyncSession, shop_order_ids: list[str]
+) -> dict[str, list[OrderItem]]:
+    if not shop_order_ids:
+        return {}
+    rows = await session.scalars(
+        select(OrderItem).where(OrderItem.shop_order_id.in_(shop_order_ids))
+    )
+    grouped: dict[str, list[OrderItem]] = {}
+    for item in rows:
+        grouped.setdefault(item.shop_order_id, []).append(item)
+    return grouped
+
+
+async def list_for_shop(
+    session: AsyncSession,
+    shop_id: str,
+    status_filter: str | None,
+    limit: int,
+    offset: int,
+) -> list[tuple[ShopOrder, Order, list[OrderItem]]]:
+    """A seller's incoming work: their shop's slices of PAID orders.
+
+    Only PAID parents show — a seller has nothing to fulfil until the
+    buyer has actually paid. Each row carries its parent order (for the
+    delivery address and date the seller needs) and its items.
+    """
+    conditions = [ShopOrder.shop_id == shop_id, Order.status == "PAID"]
+    if status_filter is not None:
+        conditions.append(ShopOrder.status == status_filter)
+
+    rows = (
+        await session.execute(
+            select(ShopOrder, Order)
+            .join(Order, Order.id == ShopOrder.order_id)
+            .where(*conditions)
+            .order_by(Order.created_at.desc(), ShopOrder.id)
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+
+    items_by = await _items_for_shop_orders(session, [so.id for so, _ in rows])
+    return [(so, order, items_by.get(so.id, [])) for so, order in rows]
+
+
+async def advance_fulfilment(
+    session: AsyncSession, shop_order_id: str, shop_id: str, target: str
+) -> tuple[ShopOrder | None, Order | None, list[OrderItem], str]:
+    """Walk one shop's slice one step forward, scoped to its owner.
+
+    shop_id pins it to the calling seller's shop (AUTH-05); only the one
+    legal next step is accepted, so a double-tap or a stale button can't
+    skip a stage or move it backwards. Returns (shop_order, order, items,
+    code).
+    """
+    shop_order = await session.get(
+        ShopOrder, shop_order_id, with_for_update=True
+    )
+    if shop_order is None or shop_order.shop_id != shop_id:
+        return None, None, [], "NOT_FOUND"
+
+    order = await session.get(Order, shop_order.order_id)
+    if order is None or order.status != "PAID":
+        # Nothing to fulfil on an unpaid (or vanished) order.
+        return shop_order, order, [], "NOT_PAYABLE"
+
+    expected = _FULFILMENT_NEXT.get(shop_order.status)
+    if expected is None:
+        return shop_order, order, [], "TERMINAL"
+    if target != expected:
+        return shop_order, order, [], "INVALID_TRANSITION"
+
+    shop_order.status = target
+    await session.commit()
+    await session.refresh(shop_order)
+
+    items = (await _items_for_shop_orders(session, [shop_order.id])).get(
+        shop_order.id, []
+    )
+    return shop_order, order, items, "OK"
+
+
 async def shop_orders_view(
     session: AsyncSession, order_ids: list[str]
 ) -> dict[str, list[tuple[ShopOrder, str, list[OrderItem]]]]:

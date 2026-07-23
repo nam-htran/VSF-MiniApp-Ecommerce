@@ -75,3 +75,50 @@ export function listOrders(limit = 20, offset = 0) {
 export function getOrder(id: string) {
   return apiRequest<OrderView>(`/orders/${id}`, { headers: bearer() });
 }
+
+// --- Seller side: fulfilment. Only the owner of the shop sees these; the
+// server scopes every call to the caller's own shop (AUTH-05). ---
+
+/** One incoming slice as the seller sees it — its own fulfilment status
+ *  plus the buyer's delivery address and date, which shipping needs. */
+export type SellerShopOrder = {
+  id: string;
+  orderId: string;
+  status: ShopOrderView['status'];
+  subtotal: number;
+  shippingFee: number;
+  address: string;
+  createdAt: string;
+  items: OrderItemView[];
+};
+
+export type FulfilStatus = 'CONFIRMED' | 'SHIPPING' | 'DELIVERED';
+
+export function listShopOrders(
+  status?: ShopOrderView['status'],
+  limit = 20,
+  offset = 0
+) {
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (status) query.set('status', status);
+  return apiRequest<{ items: SellerShopOrder[]; hasMore: boolean }>(
+    `/orders/shop?${query.toString()}`,
+    { headers: bearer() }
+  );
+}
+
+/** Walk one slice forward: CONFIRMED→SHIPPING→DELIVERED. The server
+ *  accepts only the one legal next step. */
+export function advanceShopOrder(
+  shopOrderId: string,
+  status: 'SHIPPING' | 'DELIVERED'
+) {
+  return apiRequest<SellerShopOrder>(`/orders/shop/${shopOrderId}`, {
+    method: 'PATCH',
+    data: { status },
+    headers: bearer(),
+  });
+}

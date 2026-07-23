@@ -6,6 +6,8 @@
  * Optional fields exist only on demo data so far; they become real when
  * orders and inventory can back them.
  */
+import type { ApiProductListItem } from '@/api/products';
+
 export type ProductCardData = {
   id: string;
   name: string;
@@ -26,3 +28,27 @@ export type ProductCardData = {
   ratingCount?: number;
   description?: string;
 };
+
+/**
+ * API list item → card. Every strip and grid in the app renders the same
+ * card, so they all map the same way; this is that mapping, in one place.
+ * The emoji/tint pair is the fallback tile shown when a photo fails.
+ */
+export const listItemToCard = (p: ApiProductListItem): ProductCardData => ({
+  id: p.id,
+  name: p.name,
+  description: p.description,
+  unit: p.unit ?? undefined,
+  price: p.price,
+  oldPrice: p.originalPrice ?? undefined,
+  image: p.imageUrl ?? undefined,
+  emoji: '🛒',
+  tint: 'bg-global-neutral-neutral-10',
+  shopId: p.shopId,
+  shopName: p.shopName,
+  shopProvince: p.shopProvince,
+  ratingAverage: p.ratingAverage,
+  ratingCount: p.ratingCount,
+  sold: p.sold,
+  category: p.category,
+});

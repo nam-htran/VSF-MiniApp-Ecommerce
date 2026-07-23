@@ -5,16 +5,17 @@ from the database inside the same transaction that locks the stock, so
 a stale or tampered cart cannot buy at yesterday's numbers.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import CurrentUser
+from app.auth.deps import CurrentSeller, CurrentUser
 from app.db import get_session
 from app.orders import store as orders
 from app.orders.store import Order, OrderError, OrderItem, ShopOrder
+from app.shops import store as shops
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
 
@@ -110,6 +111,101 @@ async def my_orders(
         ],
         "hasMore": len(page) == limit,
     }
+
+
+def _serialise_seller_shop_order(
+    shop_order: ShopOrder, order: Order, items: list[OrderItem]
+) -> dict:
+    """A seller's view of one incoming slice: its own fulfilment status
+    plus the parent's delivery address and date, which the seller needs to
+    ship but the buyer-facing serialiser doesn't repeat per shop."""
+    return {
+        "id": shop_order.id,
+        "orderId": order.id,
+        "status": shop_order.status,
+        "subtotal": float(shop_order.subtotal),
+        "shippingFee": float(shop_order.shipping_fee),
+        "address": order.address,
+        "createdAt": order.created_at.isoformat(),
+        "items": [_serialise_item(item) for item in items],
+    }
+
+
+async def _seller_shop_id(seller, session: Session) -> str:
+    """The calling seller's shop id, or 404 — the scope every seller order
+    endpoint runs inside."""
+    shop = await shops.find_by_owner(session, seller.id)
+    if shop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No shop yet"
+        )
+    return shop.id
+
+
+# These two sit above GET /{order_id} on purpose: registered first, they
+# match /orders/shop before the catch-all id route can swallow "shop".
+@router.get("/shop")
+async def shop_incoming_orders(
+    seller: CurrentSeller,
+    session: Session,
+    order_status: Annotated[
+        Literal["CONFIRMED", "SHIPPING", "DELIVERED", "CANCELLED"] | None,
+        Query(alias="status"),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict:
+    """The seller's fulfilment queue: their shop's slices of paid orders,
+    optionally filtered to one fulfilment status."""
+    shop_id = await _seller_shop_id(seller, session)
+    rows = await orders.list_for_shop(
+        session, shop_id, order_status, limit=limit, offset=offset
+    )
+    return {
+        "items": [
+            _serialise_seller_shop_order(shop_order, order, items)
+            for shop_order, order, items in rows
+        ],
+        "hasMore": len(rows) == limit,
+    }
+
+
+class FulfilRequest(BaseModel):
+    # Only forward steps a seller drives; CANCELLED would mean a refund the
+    # mock gateway doesn't model, so it isn't accepted here.
+    status: Literal["SHIPPING", "DELIVERED"]
+
+
+@router.patch("/shop/{shop_order_id}")
+async def advance_shop_order(
+    shop_order_id: str,
+    body: FulfilRequest,
+    seller: CurrentSeller,
+    session: Session,
+) -> dict:
+    shop_id = await _seller_shop_id(seller, session)
+    shop_order, order, items, code = await orders.advance_fulfilment(
+        session, shop_order_id, shop_id, body.status
+    )
+
+    if code == "NOT_FOUND":
+        # 404 for both missing and not-yours — a seller cannot probe which
+        # shop_order ids belong to other shops (AUTH-05).
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
+    if code != "OK":
+        messages = {
+            "NOT_PAYABLE": "Order is not paid",
+            "TERMINAL": "This delivery is already complete",
+            "INVALID_TRANSITION": "That status change isn't allowed",
+        }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=messages.get(code, "Cannot update this order"),
+        )
+
+    return _serialise_seller_shop_order(shop_order, order, items)
 
 
 @router.get("/{order_id}")

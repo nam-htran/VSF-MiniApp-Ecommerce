@@ -20,6 +20,7 @@ uploaded images once the backend can store them.
 """
 
 import asyncio
+import base64
 import json
 import sys
 import urllib.request
@@ -89,6 +90,55 @@ CATEGORY_BY_NAME = {
 }
 
 
+# A banner and a logo per shop, generated as self-contained SVG data URIs
+# so the seed depends on no image host or bundled asset — they render the
+# same in dev, in tests, and anywhere the whitelist would block a CDN. Real
+# sellers replace both with uploads.
+SHOP_COLORS = [("#e11d48", "#fb7185"), ("#2563eb", "#60a5fa"), ("#0d9488", "#2dd4bf")]
+
+
+def _svg_data_uri(svg: str) -> str:
+    return "data:image/svg+xml;base64," + base64.b64encode(
+        svg.encode("utf-8")
+    ).decode("ascii")
+
+
+def _banner_uri(index: int) -> str:
+    """A gradient with a few soft blobs — deliberately textless.
+
+    The shop's name is always rendered next to the banner, so baking it in
+    would show it twice, and any crop (the small card on a product page)
+    would slice the baked copy in half.
+    """
+    c1, c2 = SHOP_COLORS[index % len(SHOP_COLORS)]
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="240">'
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="{c1}"/>'
+        f'<stop offset="1" stop-color="{c2}"/></linearGradient></defs>'
+        '<rect width="600" height="240" fill="url(#g)"/>'
+        '<circle cx="500" cy="40" r="110" fill="#ffffff" opacity="0.10"/>'
+        '<circle cx="120" cy="210" r="90" fill="#ffffff" opacity="0.08"/>'
+        '<circle cx="330" cy="120" r="60" fill="#ffffff" opacity="0.06"/>'
+        "</svg>"
+    )
+    return _svg_data_uri(svg)
+
+
+def _logo_uri(name: str, index: int) -> str:
+    c1, _ = SHOP_COLORS[index % len(SHOP_COLORS)]
+    letter = name.strip()[0]
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">'
+        '<rect width="120" height="120" rx="28" fill="#ffffff"/>'
+        f'<rect x="8" y="8" width="104" height="104" rx="22" fill="{c1}"/>'
+        '<text x="60" y="80" font-family="sans-serif" font-size="56" '
+        f'font-weight="bold" fill="#ffffff" text-anchor="middle">{letter}</text>'
+        "</svg>"
+    )
+    return _svg_data_uri(svg)
+
+
 def post(base: str, path: str, payload: dict, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -139,6 +189,8 @@ def seed() -> None:
                 "province": province,
                 "address": address,
                 "phone": phone,
+                "imageUrl": _banner_uri(index),
+                "logoUrl": _logo_uri(shop_name, index),
             },
             token,
         )

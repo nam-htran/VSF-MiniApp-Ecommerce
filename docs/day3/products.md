@@ -108,6 +108,9 @@ VND là đồng nguyên, nằm rất xa ngưỡng 2^53 nơi số trong JSON mấ
 
 ## 5. Tiếp theo — đơn hàng
 
+> Đã dựng xong — xem [orders.md](orders.md) cho phần đặt hàng, thanh toán
+> IPN và người bán xử lý giao hàng. Phần dưới là quyết định thiết kế ban đầu.
+
 Đã chốt mô hình **B**: đơn cha, tách thành đơn con mỗi shop một cái.
 
 ```

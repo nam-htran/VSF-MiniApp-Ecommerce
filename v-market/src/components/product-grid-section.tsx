@@ -73,14 +73,22 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
   const hasRating = (product.ratingCount ?? 0) > 0;
   const hasSold = (product.sold ?? 0) > 0;
   return (
-  <button
-    type="button"
-    // The whole card opens the detail page, carrying its data in
-    // navigation state so the detail renders without a request.
-    onClick={() =>
-      navigate('/product', { params: { id: product.id }, state: { product } })
-    }
-    className="flex h-full w-full flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
+  // Stretched-link layout: one button covers the whole card (opens the
+  // product), while the shop name is a second, real button floating above
+  // it. Nesting a <button> inside a <button> is invalid, so the card root
+  // is a plain div and the content layer ignores pointer events except
+  // where a child opts back in.
+  <div className="relative flex h-full w-full flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
+    <button
+      type="button"
+      aria-label={product.name}
+      // Carries its data in navigation state so the detail renders without
+      // a request.
+      onClick={() =>
+        navigate('/product', { params: { id: product.id }, state: { product } })
+      }
+      className="absolute inset-0 z-0 rounded-xl"
+    />
     <Image
       src={product.image}
       alt={product.name}
@@ -157,16 +165,33 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
           </Typography>
         </span>
       )}
-      {/* Demo rows carry a warehouse; real items name their shop. */}
-      {(product.warehouse || product.shopName) && (
-        <span className="flex min-w-0 items-center gap-1">
-          <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
-          <Typography size="2x-small" color="text-secondary" className="truncate">
-            {product.warehouse ? `Kho ${product.warehouse}` : product.shopName}
+      {/* Demo rows carry a warehouse; real items name their shop, which is
+          a link — floated above the stretched card button by z-10 so its
+          tap opens the shop, not the product. */}
+      {product.shopId && product.shopName ? (
+        <button
+          type="button"
+          onClick={event => {
+            event.stopPropagation();
+            navigate('/shop', { params: { id: product.shopId! } });
+          }}
+          className="relative z-10 flex min-w-0 items-center gap-1 self-start">
+          <Icon name="office" size={12} className="shrink-0 text-global-teal-teal-60" />
+          <Typography size="2x-small" color="text-secondary" className="truncate underline-offset-2 hover:underline">
+            {product.shopName}
           </Typography>
-        </span>
+        </button>
+      ) : (
+        (product.warehouse || product.shopName) && (
+          <span className="flex min-w-0 items-center gap-1">
+            <Icon name="pin" size={12} className="shrink-0 text-global-teal-teal-60" />
+            <Typography size="2x-small" color="text-secondary" className="truncate">
+              {product.warehouse ? `Kho ${product.warehouse}` : product.shopName}
+            </Typography>
+          </span>
+        )
       )}
     </div>
-  </button>
+  </div>
   );
 };

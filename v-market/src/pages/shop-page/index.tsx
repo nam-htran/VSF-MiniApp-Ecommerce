@@ -20,8 +20,10 @@ import {
 } from '@/api/products';
 import { useSession } from '@/lib/auth';
 import { ProductStrip } from '@/components/product-strip';
+import { ProductGridSection } from '@/components/product-grid-section';
 import { ProductFormSheet } from '@/components/product-form-sheet';
 import { ShopForm } from '@/components/shop-form';
+import { SellerOrders } from '@/components/seller-orders';
 import { Stars } from '@/components/reviews-section';
 import { CATEGORIES } from '@/lib/categories';
 import { formatVnd } from '@/lib/format';
@@ -64,6 +66,12 @@ const ShopPage = () => {
   const [products, setProducts] = useState<ProductCardData[]>([]);
   const [mine, setMine] = useState<ApiProduct[]>([]);
   const [editingShop, setEditingShop] = useState(false);
+  // The owner's view splits in two: manage the catalogue, or work the
+  // fulfilment queue. Buyers never see this toggle.
+  const [ownerTab, setOwnerTab] = useState<'products' | 'orders'>('products');
+  // Public catalogue filter: 'all' shows a strip per category, a key shows
+  // just that category as a grid.
+  const [catFilter, setCatFilter] = useState<string>('all');
   // undefined = closed; null = adding; a product = editing.
   const [productForm, setProductForm] = useState<
     ApiProduct | null | undefined
@@ -112,14 +120,20 @@ const ShopPage = () => {
   if (shop === undefined) return <ShopSkeleton />;
   if (shop === null) return <NotFound />;
 
-  const sections = CATEGORIES.map(c => ({
+  const catSections = CATEGORIES.map(c => ({
+    key: c.key,
     label: c.label,
     items: products.filter(p => p.category === c.key),
   })).filter(s => s.items.length > 0);
   const other = products.filter(
     p => !p.category || !CATEGORIES.some(c => c.key === p.category)
   );
-  if (other.length > 0) sections.push({ label: 'Sản phẩm khác', items: other });
+  const sections =
+    other.length > 0
+      ? [...catSections, { key: '__other', label: 'Sản phẩm khác', items: other }]
+      : catSections;
+  const shownSections =
+    catFilter === 'all' ? sections : sections.filter(s => s.key === catFilter);
 
   const rated = products.filter(p => (p.ratingCount ?? 0) > 0);
   const rating = rated.length
@@ -188,11 +202,43 @@ const ShopPage = () => {
       </div>
 
       {isOwner ? (
-        <OwnerProducts
-          products={mine}
-          onAdd={() => setProductForm(null)}
-          onEdit={p => setProductForm(p)}
-        />
+        <>
+          <div className="-mx-1 flex gap-2 px-4 pt-1">
+            {(
+              [
+                ['products', 'Sản phẩm'],
+                ['orders', 'Đơn hàng'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setOwnerTab(key)}
+                className={`flex-1 rounded-full py-2 ${
+                  ownerTab === key ? 'bg-brand' : 'bg-alias-layer-01'
+                }`}>
+                <Typography
+                  size="small"
+                  weight={ownerTab === key ? 'semibold' : 'regular'}
+                  className={
+                    ownerTab === key ? 'text-alias-background' : undefined
+                  }
+                  color={ownerTab === key ? undefined : 'text-secondary'}>
+                  {label}
+                </Typography>
+              </button>
+            ))}
+          </div>
+          {ownerTab === 'products' ? (
+            <OwnerProducts
+              products={mine}
+              onAdd={() => setProductForm(null)}
+              onEdit={p => setProductForm(p)}
+            />
+          ) : (
+            <SellerOrders />
+          )}
+        </>
       ) : products.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-8 pt-10 text-center">
           <span className="text-4xl">📦</span>
@@ -201,9 +247,44 @@ const ShopPage = () => {
           </Typography>
         </div>
       ) : (
-        sections.map(section => (
-          <ProductStrip key={section.label} title={section.label} products={section.items} />
-        ))
+        <>
+          {/* One category has nothing to filter; more than one gets a chip
+              row that narrows the storefront to a single category grid. */}
+          {sections.length > 1 && (
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-4 pb-1 pt-1">
+              {[{ key: 'all', label: 'Tất cả' }, ...sections].map(chip => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => setCatFilter(chip.key)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 ${
+                    catFilter === chip.key ? 'bg-brand' : 'bg-alias-layer-01'
+                  }`}>
+                  <Typography
+                    size="small"
+                    weight={catFilter === chip.key ? 'semibold' : 'regular'}
+                    className={
+                      catFilter === chip.key ? 'text-alias-background' : undefined
+                    }
+                    color={catFilter === chip.key ? undefined : 'text-secondary'}>
+                    {chip.label}
+                  </Typography>
+                </button>
+              ))}
+            </div>
+          )}
+          {catFilter === 'all' ? (
+            shownSections.map(section => (
+              <ProductStrip
+                key={section.label}
+                title={section.label}
+                products={section.items}
+              />
+            ))
+          ) : (
+            <ProductGridSection products={shownSections[0]?.items ?? []} />
+          )}
+        </>
       )}
 
       <Sheet open={editingShop} onBackdropClick={() => setEditingShop(false)}>

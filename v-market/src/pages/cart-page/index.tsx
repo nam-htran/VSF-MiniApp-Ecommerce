@@ -106,36 +106,51 @@ const groupByShop = (lines: CartLine[]): CartGroup[] => {
 
 const CartRow = ({ line }: { line: CartLine }) => {
   const { product, qty } = line;
+  const navigate = useNavigate();
+
+  // The photo and the title open the product; the stepper and the bin keep
+  // their own taps. Two sibling buttons rather than one wrapping the row —
+  // a button inside a button is invalid, and the controls must stay live.
+  const open = () =>
+    navigate('/product', { params: { id: product.id }, state: { product } });
+
   return (
     <div className="flex gap-3">
-      <Image
-        src={product.image}
-        alt={product.name}
-        fit="cover"
-        className="size-20 shrink-0 rounded-lg"
-        fallback={
-          <div
-            className={`flex size-20 shrink-0 items-center justify-center rounded-lg text-3xl ${product.tint}`}>
-            {product.emoji}
-          </div>
-        }
-      />
+      <button type="button" aria-label={product.name} onClick={open} className="shrink-0">
+        <Image
+          src={product.image}
+          alt={product.name}
+          fit="cover"
+          className="size-20 shrink-0 rounded-lg"
+          fallback={
+            <div
+              className={`flex size-20 shrink-0 items-center justify-center rounded-lg text-3xl ${product.tint}`}>
+              {product.emoji}
+            </div>
+          }
+        />
+      </button>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Typography size="small" weight="bold" className="line-clamp-1">
-          {product.name}
-        </Typography>
-        {product.unit && (
-          <Typography size="2x-small" color="text-secondary">
-            {product.unit}
+        <button
+          type="button"
+          onClick={open}
+          className="flex min-w-0 flex-col items-start text-left">
+          <Typography size="small" weight="bold" className="line-clamp-1">
+            {product.name}
           </Typography>
-        )}
-        <Typography
-          size="base"
-          weight="bold"
-          className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
-          {formatVnd(product.price)}
-        </Typography>
+          {product.unit && (
+            <Typography size="2x-small" color="text-secondary">
+              {product.unit}
+            </Typography>
+          )}
+          <Typography
+            size="base"
+            weight="bold"
+            className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
+            {formatVnd(product.price)}
+          </Typography>
+        </button>
 
         <div className="mt-auto flex items-center justify-between">
           <QtyStepper id={product.id} qty={qty} />

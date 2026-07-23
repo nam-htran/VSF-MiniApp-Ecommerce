@@ -24,7 +24,10 @@ import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
  * it; the 112px fallback clears the pill the Simulator draws.
  */
 const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
-const NO_SEARCH = ['/login', '/checkout', '/order', '/seller'];
+// No search pill — and, since the band only backs the pill, no band either.
+// /product is here for the second reason: the photo runs to the top edge and
+// a bar over it would only get in the way. The back button still floats.
+const NO_SEARCH = ['/login', '/checkout', '/order', '/seller', '/product'];
 
 /** Pages scroll in an inner container the library owns, not on window —
  * a capturing listener hears them all without naming the element. */
