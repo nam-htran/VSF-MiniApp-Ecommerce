@@ -53,6 +53,9 @@ class Product(Base):
         Numeric(12, 2), default=None
     )
     stock: Mapped[int]
+    # A category key (e.g. "dien-tu"); the labels/emoji live on the client.
+    # Null = uncategorised, still browsable, just not under any chip.
+    category: Mapped[str | None] = mapped_column(default=None, index=True)
     # image_url is the cover (kept for the cards); image_urls is the full
     # gallery the detail page swipes through. The cover is always the first
     # of the gallery, so the two never disagree.
@@ -233,6 +236,7 @@ async def create_product(
     unit: str | None = None,
     original_price: Decimal | None = None,
     image_urls: list[str] | None = None,
+    category: str | None = None,
 ) -> Product:
     gallery = image_urls or ([image_url] if image_url else None)
     product = Product(
@@ -244,6 +248,7 @@ async def create_product(
         price=price,
         original_price=original_price,
         stock=stock,
+        category=category,
         # The cover is the first of the gallery.
         image_url=gallery[0] if gallery else None,
         image_urls=gallery,
@@ -264,7 +269,10 @@ async def update_product(
     image_url: str | None = None,
     status: str | None = None,
     image_urls: list[str] | None = None,
+    category: str | None = None,
 ) -> Product:
+    if category is not None:
+        product.category = category
     if name is not None:
         product.name = name
     if description is not None:

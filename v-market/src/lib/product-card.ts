@@ -18,6 +18,7 @@ export type ProductCardData = {
   shipDays?: string;
   warehouse?: string;
   sold?: number;
+  category?: string | null;
   shopId?: string;
   shopName?: string;
   shopProvince?: string | null;

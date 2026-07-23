@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Button,
+  Dropdown,
   Icon,
   Image,
   Sheet,
@@ -11,6 +12,7 @@ import {
   Toast,
   Typography,
 } from '@v-miniapp/ui-react';
+import { CATEGORIES } from '@/lib/categories';
 import {
   createProduct,
   updateProduct,
@@ -50,6 +52,9 @@ export const ProductFormSheet = ({
   const [stock, setStock] = useState(product ? String(product.stock) : '');
   const [images, setImages] = useState<string[]>(
     product?.imageUrls ?? (product?.imageUrl ? [product.imageUrl] : [])
+  );
+  const [category, setCategory] = useState<string | undefined>(
+    product?.category ?? undefined
   );
   const [hidden, setHidden] = useState(product?.status === 'HIDDEN');
 
@@ -97,6 +102,7 @@ export const ProductFormSheet = ({
           description: description.trim(),
           price: priceNum,
           stock: stockNum,
+          category: category ?? null,
           imageUrls: images,
           status: hidden ? 'HIDDEN' : 'ACTIVE',
         });
@@ -108,6 +114,7 @@ export const ProductFormSheet = ({
           price: priceNum,
           originalPrice: originalNum,
           stock: stockNum,
+          category: category ?? null,
           imageUrls: images,
         });
       }
@@ -199,6 +206,16 @@ export const ProductFormSheet = ({
             value={description}
             onChange={setDescription}
             placeholder="Mô tả"
+          />
+          <Dropdown
+            placeholder="Danh mục"
+            sheetTitle="Chọn danh mục"
+            options={CATEGORIES.map(c => ({
+              value: c.key,
+              label: `${c.emoji}  ${c.label}`,
+            }))}
+            value={category}
+            onChange={setCategory}
           />
           {!editing && (
             <TextField

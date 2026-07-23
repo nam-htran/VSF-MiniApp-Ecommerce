@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Icon, Typography } from '@v-miniapp/ui-react';
 import { listOnSale, type ApiProductListItem } from '@/api/products';
+import { CategoryRow } from '@/components/category-row';
 import { ProductGridSection } from '@/components/product-grid-section';
 import type { ProductCardData } from '@/lib/product-card';
 
@@ -18,6 +19,7 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
   ratingAverage: item.ratingAverage,
   ratingCount: item.ratingCount,
   sold: item.sold,
+  category: item.category,
   emoji: '🛒',
   tint: 'bg-global-neutral-neutral-10',
 });
@@ -29,6 +31,7 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
  */
 const FlashSalePage = () => {
   const [products, setProducts] = useState<ProductCardData[] | undefined>();
+  const [category, setCategory] = useState<string | 'all'>('all');
 
   useEffect(() => {
     listOnSale(50)
@@ -36,8 +39,15 @@ const FlashSalePage = () => {
       .catch(() => setProducts([]));
   }, []);
 
+  const filtered =
+    products === undefined
+      ? undefined
+      : category === 'all'
+        ? products
+        : products.filter(p => p.category === category);
+
   return (
-    <div className="pt-chrome flex min-h-full flex-col bg-alias-layer-01 pb-6">
+    <div className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01 pb-6">
       <div className="flex items-center gap-2 px-4 py-2">
         <Icon name="bolt" size={22} className="text-brand" />
         <Typography size="2x-large" weight="bold" component="h1">
@@ -45,7 +55,19 @@ const FlashSalePage = () => {
         </Typography>
         <span className="animate-pulse text-xl">🔥</span>
       </div>
-      <ProductGridSection products={products} />
+
+      <CategoryRow value={category} onChange={setCategory} />
+
+      {filtered !== undefined && filtered.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-8 pt-12 text-center">
+          <span className="text-4xl">🏷️</span>
+          <Typography size="small" color="text-secondary">
+            Chưa có sản phẩm giảm giá trong danh mục này.
+          </Typography>
+        </div>
+      ) : (
+        <ProductGridSection products={filtered} />
+      )}
     </div>
   );
 };

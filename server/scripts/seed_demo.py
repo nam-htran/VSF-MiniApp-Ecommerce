@@ -74,6 +74,21 @@ SHOPS = [
 ]
 
 
+# Category key per product name — keys match the client's CATEGORIES list.
+CATEGORY_BY_NAME = {
+    "Tai nghe chụp tai không dây": "am-thanh",
+    "Đồng hồ thông minh": "dien-tu",
+    "Bàn phím không dây": "dien-tu",
+    "Loa Bluetooth chống nước": "am-thanh",
+    "Máy ảnh đã qua sử dụng": "dien-tu",
+    "Giày chạy bộ nam": "giay-dep",
+    "Áo thun cotton trơn": "thoi-trang",
+    "Balo laptop chống sốc": "phu-kien",
+    "Đèn làm việc kim loại": "gia-dung",
+    "Bình giữ nhiệt 500ml": "gia-dung",
+}
+
+
 def post(base: str, path: str, payload: dict, token: str | None = None) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -134,6 +149,7 @@ def seed() -> None:
                 "unit": unit,
                 "price": price,
                 "stock": stock,
+                "category": CATEGORY_BY_NAME.get(name),
                 "imageUrl": f"/src/assets/products/{image}.jpg",
             }
             if original is not None:
