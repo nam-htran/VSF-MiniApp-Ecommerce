@@ -15,7 +15,7 @@ import { useSession, useSessionHydrated } from '@/lib/auth';
  * start "no session yet" usually just means "still reading storage",
  * and bouncing a logged-in user to /login would be wrong.
  */
-const AUTH_REQUIRED = ['/orders'];
+const AUTH_REQUIRED = ['/orders', '/checkout'];
 
 export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
   const location = useLocation();

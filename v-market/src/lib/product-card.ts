@@ -18,6 +18,7 @@ export type ProductCardData = {
   shipDays?: string;
   warehouse?: string;
   sold?: number;
+  shopId?: string;
   shopName?: string;
   description?: string;
 };

@@ -54,6 +54,7 @@ const ProductPage = () => {
             price: product.price,
             oldPrice: product.originalPrice ?? undefined,
             image: product.imageUrl ?? undefined,
+            shopId: product.shopId,
             emoji: '🛒',
             tint: 'bg-global-neutral-neutral-10',
           },

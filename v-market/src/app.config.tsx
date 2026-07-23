@@ -5,6 +5,7 @@ import { CartTabIcon } from './components/cart-tab-icon';
 import HomePage from './pages/home-page';
 import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
+import CheckoutPage from './pages/checkout-page';
 import LoginPage from './pages/login-page';
 import SearchPage from './pages/search-page';
 import OrdersPage from './pages/orders-page';
@@ -49,6 +50,14 @@ export const getAppConfig = (): IAppConfig => ({
       Component: CartPage,
       navigationBar: { hidden: true },
       bottomTabBarId: 'cart',
+    },
+    {
+      // Checkout is a full page, not a sheet — reached from the cart. Not
+      // a tab root, so the floating back button appears, and no
+      // bottomTabBarId so the tab bar hides for its own place-order bar.
+      pathname: '/checkout',
+      Component: CheckoutPage,
+      navigationBar: { hidden: true },
     },
     {
       pathname: '/search',

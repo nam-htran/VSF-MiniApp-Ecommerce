@@ -47,7 +47,12 @@ function mintAuthCode(userId: string, scopes: string) {
   );
 }
 
-export type SessionUser = { id: string; role: string; name: string | null };
+export type SessionUser = {
+  id: string;
+  role: string;
+  name: string | null;
+  phone: string | null;
+};
 
 export type SessionResult =
   | { status: 'AUTHENTICATED'; token: string; user: SessionUser }

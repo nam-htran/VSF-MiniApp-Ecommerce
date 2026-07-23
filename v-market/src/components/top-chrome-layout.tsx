@@ -24,7 +24,7 @@ import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
  * it; the 112px fallback clears the pill the Simulator draws.
  */
 const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
-const NO_SEARCH = ['/login'];
+const NO_SEARCH = ['/login', '/checkout'];
 
 /** Pages scroll in an inner container the library owns, not on window —
  * a capturing listener hears them all without naming the element. */
@@ -92,7 +92,14 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
         <button
           type="button"
           aria-label="Quay lại"
-          onClick={() => navigate(-1)}
+          // Leaving /search fades rather than slides: the input collapses
+          // back into the pill in place, so a horizontal shove would fight
+          // that. Everywhere else keeps the default reverse-slide.
+          onClick={() =>
+            isSearchPage
+              ? navigate(-1, { animation: { type: 'fade_in' } })
+              : navigate(-1)
+          }
           className="fixed left-3 z-50 flex size-9 items-center justify-center rounded-full bg-alias-background/90 shadow-md backdrop-blur"
           style={{ top: 'calc(var(--safe-area-inset-top, 44px) + 8px)' }}>
           <Icon name="chevron-left" size={20} />
@@ -131,7 +138,10 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
             // A white pill reads well on every surface it meets: the red
             // header at rest, the red backdrop when scrolled, and product
             // photos on detail pages.
-            onClick={() => navigate('/search')}
+            // Fade into search instead of the global slide_left: a shove
+            // from the right fights the illusion that this pill just opened
+            // into the input. A fade keeps it feeling like the same spot.
+            onClick={() => navigate('/search', { animation: { type: 'fade_in' } })}
             className="fixed z-50 flex h-9 items-center gap-2 rounded-full bg-alias-background/90 px-3 shadow-md backdrop-blur"
             style={{
               top: 'calc(var(--safe-area-inset-top, 44px) + 8px)',

@@ -9,6 +9,26 @@
 }
 
 /*
+ * A short fade-and-rise for content that swaps in place — the address
+ * form's field groups, the address-book views, small chips. Give the
+ * swapping element a changing `key` so React remounts it and the
+ * animation replays. Kept brief so it reads as easing, not delay.
+ */
+@keyframes vm-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: vm-fade-in 0.18s ease-out both;
+}
+
+/*
  * Top-chrome geometry, defined once. Every page used to repeat the same
  * calc() inline; now the chrome layout and the pages share these.
  *

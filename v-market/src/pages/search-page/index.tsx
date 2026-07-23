@@ -13,6 +13,7 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
   price: item.price,
   oldPrice: item.originalPrice ?? undefined,
   image: item.imageUrl ?? undefined,
+  shopId: item.shopId,
   shopName: item.shopName,
   emoji: '🛒',
   tint: 'bg-global-neutral-neutral-10',

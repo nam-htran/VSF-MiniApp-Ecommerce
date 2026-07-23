@@ -2,7 +2,6 @@ import {
   Button,
   Icon,
   Image,
-  Toast,
   Typography,
   useNavigate,
 } from '@v-miniapp/ui-react';
@@ -13,6 +12,7 @@ import {
   useCart,
   type CartLine,
 } from '@/lib/cart';
+import { useSession } from '@/lib/auth';
 import { formatVnd } from '@/lib/format';
 
 const CartPage = () => {
@@ -40,7 +40,7 @@ const CartPage = () => {
               <CartRow key={line.product.id} line={line} />
             ))}
           </div>
-          <CheckoutBar subtotal={cartSubtotal(lines)} />
+          <CheckoutBar lines={lines} />
         </>
       )}
     </div>
@@ -118,34 +118,36 @@ const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
   </div>
 );
 
-const CheckoutBar = ({ subtotal }: { subtotal: number }) => (
-  <div
-    className="fixed inset-x-0 z-40 flex items-center justify-between gap-3 border-t border-alias-border-subtle-01 bg-alias-background px-4 py-2"
-    style={{ bottom: 'var(--vsf-current-bottom-tab-bar-height, 56px)' }}>
-    <div className="flex flex-col">
-      <Typography size="x-small" color="text-secondary">
-        Tạm tính
-      </Typography>
-      <Typography size="large" weight="bold">
-        {formatVnd(subtotal)}
-      </Typography>
+const CheckoutBar = ({ lines }: { lines: CartLine[] }) => {
+  const navigate = useNavigate();
+  const session = useSession();
+
+  const startCheckout = () => {
+    // Ask for the session at the moment of the action, not on the page:
+    // browsing and filling a cart stay anonymous (review rule 3.4.8). On
+    // return from /login the button is tapped again, now with a session.
+    // /checkout is also guarded, so a deep link there is safe too.
+    navigate(session ? '/checkout' : '/login');
+  };
+
+  return (
+    <div
+      className="fixed inset-x-0 z-40 flex items-center justify-between gap-3 border-t border-alias-border-subtle-01 bg-alias-background px-4 py-2"
+      style={{ bottom: 'var(--vsf-current-bottom-tab-bar-height, 56px)' }}>
+      <div className="flex flex-col">
+        <Typography size="x-small" color="text-secondary">
+          Tạm tính
+        </Typography>
+        <Typography size="large" weight="bold">
+          {formatVnd(cartSubtotal(lines))}
+        </Typography>
+      </div>
+      <Button type="solid" theme="brand" onClick={startCheckout}>
+        Đặt hàng
+      </Button>
     </div>
-    <Button
-      type="solid"
-      theme="brand"
-      onClick={() =>
-        // Orders are the next build step; the button exists so the flow
-        // reads complete, and says so instead of doing nothing.
-        Toast.show({
-          type: 'informative',
-          message: 'Đặt hàng là bước tiếp theo của dự án — chưa mở.',
-          position: 'bottom',
-        })
-      }>
-      Đặt hàng
-    </Button>
-  </div>
-);
+  );
+};
 
 const EmptyCart = () => {
   const navigate = useNavigate();
