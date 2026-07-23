@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tokens import issue_session_token
+from app.config import settings
 from app.db import get_session
 from app.users import store as users
 from app.vapp.errors import VAppApiError
@@ -56,7 +57,16 @@ async def create_session(
         )
 
     existing = await users.find_by_vapp_user_id(session, info["user_id"])
+    # Read on every login, so revoking an operator is a config change and a
+    # re-login rather than a database edit.
+    is_operator = info["user_id"] in settings.admin_ids
     if existing is not None:
+        # Apply the operator list to accounts that already exist, so adding
+        # someone to it takes effect on their next login.
+        if is_operator and existing.role != "ADMIN":
+            existing.role = "ADMIN"
+            await session.commit()
+            await session.refresh(existing)
         return JSONResponse(content=_authenticated(existing))
 
     # With scope 'auth' we only know the user_id — not enough to create an
@@ -72,6 +82,10 @@ async def create_session(
         name=info["name"],
         phone_number=info.get("phone_number"),
     )
+    if is_operator:
+        created.role = "ADMIN"
+        await session.commit()
+        await session.refresh(created)
     return JSONResponse(content=_authenticated(created))
 
 

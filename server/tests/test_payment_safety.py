@@ -17,7 +17,7 @@ import pytest_asyncio
 
 from app.config import settings
 from app.payments.security import compute_hash
-from tests.conftest import USER_A_ID, USER_B_ID
+from tests.conftest import USER_A_ID, USER_ADMIN_ID, USER_B_ID
 
 pytestmark = pytest.mark.skipif(
     "127.0.0.1" not in settings.vapp_base_url
@@ -305,8 +305,11 @@ async def test_payment_for_a_cancelled_order_is_recorded_for_refund(
             f"{base_url}/payments/ipn",
             json=await signed_ipn(order["id"], amount, "pay_late_1"),
         )
+        operator = await token_for(base_url, USER_ADMIN_ID)
         open_items = (
-            await client.get(f"{base_url}/payments/exceptions")
+            await client.get(
+                f"{base_url}/payments/exceptions", headers=auth(operator)
+            )
         ).json()["items"]
 
     assert refused.status_code == 409
@@ -328,8 +331,11 @@ async def test_payment_for_an_unknown_order_is_recorded_too(base_url):
             f"{base_url}/payments/ipn",
             json=await signed_ipn("no-such-order", 250_000, "pay_ghost"),
         )
+        operator = await token_for(base_url, USER_ADMIN_ID)
         open_items = (
-            await client.get(f"{base_url}/payments/exceptions")
+            await client.get(
+                f"{base_url}/payments/exceptions", headers=auth(operator)
+            )
         ).json()["items"]
 
     assert response.status_code == 404
@@ -347,9 +353,79 @@ async def test_a_successful_payment_records_no_exception(base_url):
             f"{base_url}/payments/ipn",
             json=await signed_ipn(order["id"], amount, "pay_fine"),
         )
+        operator = await token_for(base_url, USER_ADMIN_ID)
         open_items = (
-            await client.get(f"{base_url}/payments/exceptions")
+            await client.get(
+                f"{base_url}/payments/exceptions", headers=auth(operator)
+            )
         ).json()["items"]
 
     assert ok.status_code == 200
     assert [e for e in open_items if e["gatewayPaymentId"] == "pay_fine"] == []
+
+
+# --- Who may look at the money ---------------------------------------------
+
+
+async def test_only_an_operator_can_read_the_refund_queue(base_url):
+    """The list carries gateway payment ids and amounts across every shop,
+    so it is not for buyers, not for sellers, and not for the internet."""
+    buyer = await token_for(base_url, USER_A_ID)
+    seller = await token_for(base_url, USER_B_ID)
+    operator = await token_for(base_url, USER_ADMIN_ID)
+
+    async with httpx.AsyncClient() as client:
+        anonymous = await client.get(f"{base_url}/payments/exceptions")
+        as_buyer = await client.get(
+            f"{base_url}/payments/exceptions", headers=auth(buyer)
+        )
+        as_seller = await client.get(
+            f"{base_url}/payments/exceptions", headers=auth(seller)
+        )
+        as_operator = await client.get(
+            f"{base_url}/payments/exceptions", headers=auth(operator)
+        )
+
+    assert anonymous.status_code == 401
+    assert as_buyer.status_code == 403
+    assert as_seller.status_code == 403
+    assert as_operator.status_code == 200
+
+
+async def test_resolving_takes_a_debt_off_the_queue(base_url):
+    operator = await token_for(base_url, USER_ADMIN_ID)
+
+    async with httpx.AsyncClient() as client:
+        # Money for an order that never existed: straight onto the queue.
+        await client.post(
+            f"{base_url}/payments/ipn",
+            json=await signed_ipn("ghost-order", 500_000, "pay_to_refund"),
+        )
+        before = (
+            await client.get(
+                f"{base_url}/payments/exceptions", headers=auth(operator)
+            )
+        ).json()["items"]
+        entry = next(
+            e for e in before if e["gatewayPaymentId"] == "pay_to_refund"
+        )
+
+        resolved = await client.post(
+            f"{base_url}/payments/exceptions/{entry['id']}/resolve",
+            headers=auth(operator),
+        )
+        # Resolving twice is not an error — the operator may retry.
+        again = await client.post(
+            f"{base_url}/payments/exceptions/{entry['id']}/resolve",
+            headers=auth(operator),
+        )
+        after = (
+            await client.get(
+                f"{base_url}/payments/exceptions", headers=auth(operator)
+            )
+        ).json()["items"]
+
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "RESOLVED"
+    assert again.status_code == 200
+    assert [e for e in after if e["gatewayPaymentId"] == "pay_to_refund"] == []

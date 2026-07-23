@@ -36,6 +36,21 @@ cd server
 
 Mở http://localhost:3000.
 
+### Đăng nhập bằng vai trò vận hành
+
+Màn hình *Đối soát thanh toán* chỉ mở cho tài khoản có vai trò `ADMIN`. Vai
+trò này đến từ **config, không phải từ database** — không có admin nào để
+cấp quyền cho admin đầu tiên, và một endpoint "cho tôi làm admin" là đúng
+thứ không nên xây.
+
+```bash
+# server/.env
+ADMIN_VAPP_USER_IDS=44444444-4444-4444-8444-444444444444
+```
+
+Tài khoản đó (`Phạm Vận Hành`) có sẵn trong mock. Đăng nhập bằng nó là thấy
+mục *Đối soát thanh toán* trong tab Tài khoản.
+
 ---
 
 ## Vì sao có `mock-openAPI`
@@ -90,7 +105,7 @@ Những thứ dễ làm sai và đã được cân nhắc kỹ:
 
 ```bash
 cd server
-.venv/Scripts/python.exe -m pytest              # 133 ca
+.venv/Scripts/python.exe -m pytest              # 135 ca
 .venv/Scripts/python.exe -m pytest -m "not slow"  # bỏ nhóm tải
 ```
 
@@ -110,8 +125,8 @@ Ghi ra để không ai tưởng là đã có:
 
 - **Chưa deploy** ở đâu cả — chỉ chạy local.
 - **Chưa có hoàn tiền tự động.** Tiền không áp được thì ghi vào
-  `payment_exceptions`; hoàn là thao tác tay.
+  `payment_exceptions` và hiện ở màn hình *Đối soát thanh toán*; việc hoàn
+  vẫn là thao tác tay, màn hình chỉ ghi nhận đã hoàn để không hoàn hai lần.
 - **Rate limit và scheduler chạy in-process** — nhiều worker thì mỗi worker
   một bản. Production cần Redis hoặc leader lock.
-- **Chưa có vai trò admin**, nên `payment_exceptions` chưa có màn hình.
 - Ảnh demo nằm trong bundle; sản phẩm thật sẽ dùng ảnh upload.

@@ -83,3 +83,17 @@ async def list_open(session: AsyncSession) -> list[PaymentException]:
         .order_by(PaymentException.created_at)
     )
     return list(rows)
+
+
+async def resolve(
+    session: AsyncSession, exception_id: str
+) -> PaymentException | None:
+    """Close an open debt. Idempotent: resolving twice is not an error, and
+    must not be, since the operator may retry on a flaky connection."""
+    entry = await session.get(PaymentException, exception_id)
+    if entry is None:
+        return None
+    entry.status = "RESOLVED"
+    await session.commit()
+    await session.refresh(entry)
+    return entry

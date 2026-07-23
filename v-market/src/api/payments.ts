@@ -61,3 +61,34 @@ export function abandonPayment(paymentId: string) {
     })
   );
 }
+
+
+/**
+ * Money the marketplace received but could not apply to an order. Operator
+ * only — it carries gateway payment ids and amounts across every shop.
+ */
+export type PaymentExceptionView = {
+  id: string;
+  /** What a refund is issued against; still meaningful once our own order
+   *  has been cancelled. */
+  gatewayPaymentId: string;
+  orderId: string | null;
+  amount: number;
+  reason: string;
+  status: 'OPEN' | 'RESOLVED';
+  createdAt: string;
+};
+
+export function listPaymentExceptions() {
+  return apiRequest<{ items: PaymentExceptionView[] }>('/payments/exceptions', {
+    headers: bearer(),
+  });
+}
+
+/** Record that a refund was issued. Moves no money — see the ops screen. */
+export function resolvePaymentException(id: string) {
+  return apiRequest<{ id: string; status: string }>(
+    `/payments/exceptions/${id}/resolve`,
+    { method: 'POST', headers: bearer() }
+  );
+}

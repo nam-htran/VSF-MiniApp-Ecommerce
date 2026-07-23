@@ -59,3 +59,17 @@ async def current_seller(user: CurrentUser) -> MarketUser:
 
 
 CurrentSeller = Annotated[MarketUser, Depends(current_seller)]
+
+
+async def current_admin(user: CurrentUser) -> MarketUser:
+    """Marketplace operator. Guards the money-reconciliation screens, which
+    show gateway payment ids and amounts across every shop."""
+    if user.role != "ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+    return user
+
+
+CurrentAdmin = Annotated[MarketUser, Depends(current_admin)]

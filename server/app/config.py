@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     # the clock by hand and must not race a loop doing the same work.
     scheduler_enabled: bool = True
     scheduler_interval_seconds: int = 60
+    # V-App user ids that get the ADMIN role on login, comma separated.
+    # Config rather than a database flag on purpose: there is no admin to
+    # grant the first admin, and a self-service "make me admin" endpoint is
+    # exactly the thing not to build. Empty by default — nobody is an
+    # operator unless deployment says so.
+    admin_vapp_user_ids: str = ""
+
+    @property
+    def admin_ids(self) -> set[str]:
+        return {
+            piece.strip()
+            for piece in self.admin_vapp_user_ids.split(",")
+            if piece.strip()
+        }
 
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12

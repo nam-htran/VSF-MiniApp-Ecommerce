@@ -17,6 +17,9 @@ SERVER_PORT = 4900
 USER_A_ID = "11111111-1111-4111-8111-111111111111"
 USER_B_ID = "22222222-2222-4222-8222-222222222222"
 USER_C_ID = "33333333-3333-4333-8333-333333333333"
+# Marketplace operator. Listed in settings.admin_vapp_user_ids below, so
+# logging in with it yields an ADMIN session.
+USER_ADMIN_ID = "44444444-4444-4444-8444-444444444444"
 
 
 def _reachable(url: str) -> bool:
@@ -129,6 +132,9 @@ def base_url(require_vapp):
     from app.config import settings as app_settings
 
     app_settings.scheduler_enabled = False
+    # One known operator, so the reconciliation screens have someone who
+    # can open them.
+    app_settings.admin_vapp_user_ids = USER_ADMIN_ID
 
     config = uvicorn.Config(
         create_app(), host="127.0.0.1", port=SERVER_PORT, log_level="warning"

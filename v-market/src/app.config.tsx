@@ -8,6 +8,7 @@ import CartPage from './pages/cart-page';
 import CheckoutPage from './pages/checkout-page';
 import OrderDetailPage from './pages/order-detail-page';
 import SellerPage from './pages/seller-page';
+import OpsPage from './pages/ops-page';
 import FlashSalePage from './pages/flash-sale-page';
 import ShopPage from './pages/shop-page';
 import LoginPage from './pages/login-page';
@@ -113,6 +114,13 @@ export const getAppConfig = (): IAppConfig => ({
       Component: AccountPage,
       navigationBar: { title: 'Tài khoản', hidden: true },
       bottomTabBarId: 'account',
+    },
+    {
+      // The refund queue, for marketplace operators. Not a tab root, so the
+      // floating back button shows.
+      pathname: '/ops',
+      Component: OpsPage,
+      navigationBar: { hidden: true },
     },
     {
       // The seller channel: open a shop, then manage products. Reached from

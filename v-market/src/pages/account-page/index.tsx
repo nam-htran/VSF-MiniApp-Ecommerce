@@ -94,6 +94,21 @@ const SignedIn = () => {
           hint={user.role === 'SELLER' ? 'Cửa hàng của tôi' : 'Mở cửa hàng'}
           onClick={() => navigate('/seller')}
         />
+        {/* Only operators see this, and the page checks the role again —
+            hiding a menu row is presentation, not access control. */}
+        {user.role === 'ADMIN' && (
+          <>
+            <Divider />
+            <MenuRow
+              icon={
+                <Icon name="discount-code" size={20} className="shrink-0 text-brand" />
+              }
+              label="Đối soát thanh toán"
+              hint="Tiền chờ hoàn"
+              onClick={() => navigate('/ops')}
+            />
+          </>
+        )}
       </div>
 
       <div className="mx-3 mt-1">

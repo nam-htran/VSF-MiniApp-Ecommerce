@@ -51,6 +51,18 @@ SEED_USERS: tuple[dict, ...] = (
         "avatar_url": "https://placehold.co/128x128?text=A",
     },
     {
+        # A fourth fixed account so V-Market can name one operator in its
+        # own config. V-App still has no notion of roles — this is just
+        # another person as far as the platform is concerned.
+        "user_id": "44444444-4444-4444-8444-444444444444",
+        "name": "Phạm Vận Hành",
+        "date_of_birth": "1988-02-20",
+        "gender": "male",
+        "phone_number": "+84901000004",
+        "email": "vanhanh@example.com",
+        "avatar_url": "https://placehold.co/128x128?text=OPS",
+    },
+    {
         "user_id": "22222222-2222-4222-8222-222222222222",
         "name": "Trần Văn Bình",
         "date_of_birth": "1990-08-03",

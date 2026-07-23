@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.auth.deps import CurrentUser
+from app.auth.deps import CurrentAdmin, CurrentUser
 from app.db import get_session
 from app.orders import store as orders
 from app.payments import gateway
@@ -145,12 +145,12 @@ async def open_payment_session(
 
 
 @router.get("/exceptions")
-async def list_exceptions(session: Session) -> dict:
+async def list_exceptions(_: CurrentAdmin, session: Session) -> dict:
     """Money received that could not be applied, still awaiting a refund.
 
-    Deliberately readable without a session: there is no admin role in this
-    project, and a debt nobody can see is a debt nobody pays. It exposes
-    payment ids and amounts, not buyers.
+    Operator-only: it lists gateway payment ids and amounts across every
+    shop, which is what a refund is issued against and therefore not
+    something to leave open to the internet.
     """
     rows = await exceptions.list_open(session)
     return {
@@ -182,3 +182,21 @@ async def reconcile(
     webhook does.
     """
     return await orders.reconcile_pending(session, older_than_seconds)
+
+
+@router.post("/exceptions/{exception_id}/resolve")
+async def resolve_exception(
+    exception_id: str, _: CurrentAdmin, session: Session
+) -> dict:
+    """Mark a debt settled, once the refund has actually been issued.
+
+    Nothing here moves money — this project has no treasury and the mock
+    gateway has no refund call. It records that a human did, which is what
+    stops the same payment being refunded twice.
+    """
+    entry = await exceptions.resolve(session, exception_id)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+        )
+    return {"id": entry.id, "status": entry.status}
