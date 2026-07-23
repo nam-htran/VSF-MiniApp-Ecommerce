@@ -68,7 +68,7 @@ const SignedIn = () => {
         </div>
       </div>
 
-      <div className="mx-3 flex flex-col overflow-hidden rounded-2xl bg-alias-background shadow-sm">
+      <div className="mx-4 flex flex-col overflow-hidden rounded-2xl bg-alias-background shadow-sm">
         <MenuRow
           icon={<Icon name="receipt" size={20} className="shrink-0 text-brand" />}
           label="Đơn hàng của tôi"

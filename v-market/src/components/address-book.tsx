@@ -169,7 +169,7 @@ const AddressList = ({
                 </span>
               )}
             </span>
-            <Typography size="x-small" color="text-secondary" className="whitespace-pre-line">
+            <Typography size="x-small" color="text-secondary" className="whitespace-pre-line break-words">
               {address.addressLine}
             </Typography>
           </div>

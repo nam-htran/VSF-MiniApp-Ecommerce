@@ -48,7 +48,7 @@ const FlashSalePage = () => {
 
   return (
     <div className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01 pb-6">
-      <div className="flex items-center gap-2 px-4 py-2">
+      <div className="flex items-center gap-2 px-4">
         <Icon name="bolt" size={22} className="text-brand" />
         <Typography size="2x-large" weight="bold" component="h1">
           Flash sale

@@ -13,7 +13,7 @@ export const CategoryRow = ({
   value: string | 'all';
   onChange: (value: string | 'all') => void;
 }) => (
-  <div className="flex gap-3 overflow-x-auto px-4 pb-1">
+  <div className="flex gap-3 overflow-x-auto px-4 pb-1 pt-2.5">
     <Chip emoji="🏷️" label="Tất cả" active={value === 'all'} onClick={() => onChange('all')} />
     {CATEGORIES.map(category => (
       <Chip
@@ -41,9 +41,9 @@ const Chip = ({
   <button
     type="button"
     onClick={onClick}
-    className="flex w-20 shrink-0 flex-col items-center gap-1.5">
+    className="flex w-20 shrink-0 flex-col items-center gap-2">
     <span
-      className={`flex size-[72px] items-center justify-center rounded-full text-4xl transition-colors ${
+      className={`flex size-[50px] items-center justify-center rounded-full text-4xl transition-colors ${
         active ? 'bg-brand/10 ring-2 ring-brand' : 'bg-alias-layer-01'
       }`}>
       {emoji}

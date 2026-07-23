@@ -240,9 +240,9 @@ const AddressPicker = ({
       <button
         type="button"
         onClick={onOpen}
-        className="flex items-center gap-2 text-left">
+        className="flex items-start gap-2 text-left">
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-x-2">
             <Typography size="small" weight="semibold">
               {selected.recipientName}
             </Typography>
@@ -250,11 +250,11 @@ const AddressPicker = ({
               {selected.phone}
             </Typography>
           </span>
-          <Typography size="x-small" color="text-secondary" className="whitespace-pre-line">
+          <Typography size="x-small" color="text-secondary" className="line-clamp-2 break-words">
             {selected.addressLine}
           </Typography>
         </div>
-        <span className="flex shrink-0 items-center">
+        <span className="flex shrink-0 items-center pt-0.5">
           <Typography size="x-small" className="text-brand">
             Thay đổi
           </Typography>

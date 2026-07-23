@@ -80,7 +80,7 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
     onClick={() =>
       navigate('/product', { params: { id: product.id }, state: { product } })
     }
-    className="flex w-full flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
+    className="flex h-full w-full flex-col gap-1.5 rounded-xl bg-alias-background p-2 text-left shadow-sm">
     <Image
       src={product.image}
       alt={product.name}
