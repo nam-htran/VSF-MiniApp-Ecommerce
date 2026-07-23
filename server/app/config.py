@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # is handed back. Deliberately short so the behaviour is demonstrable in
     # a sitting; a real shop would use hours.
     order_hold_minutes: int = 15
+    # Extra time an order keeps its stock once the buyer has opened a
+    # payment session. Longer than the plain hold because a bank app, an OTP
+    # and poor signal are all slower than browsing.
+    payment_grace_minutes: int = 30
 
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12

@@ -253,6 +253,30 @@ async def payment_init(request: Request):
     return ok({"paymentId": payment_id, "amount": amount})
 
 
+@app.post("/simulator/config", tags=["Demo controls"])
+async def simulator_config(request: Request):
+    """Point the gateway's webhook somewhere else, for a run.
+
+    A merchant cannot make a real gateway lose a notification, so it cannot
+    otherwise test what happens when one goes missing — which is exactly
+    the case its reconciliation job exists for. Demo control only.
+    """
+    body = await request.json()
+    url = body.get("merchant_ipn_url")
+    if url:
+        settings.merchant_ipn_url = url
+    return ok({"merchant_ipn_url": settings.merchant_ipn_url})
+
+
+@app.get("/simulator/payment/{payment_id}", tags=["Demo controls"])
+async def payment_status(payment_id: str):
+    """Query a payment. A merchant polls this to catch a lost webhook."""
+    found = payments.status_of(payment_id)
+    if found is None:
+        return fail(404, 404, "Payment not found")
+    return ok(found)
+
+
 @app.post("/simulator/payment/{payment_id}/confirm", tags=["Demo controls"])
 async def payment_confirm(payment_id: str):
     result = await payments.confirm(payment_id)

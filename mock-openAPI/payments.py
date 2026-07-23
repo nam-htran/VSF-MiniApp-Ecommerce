@@ -99,3 +99,21 @@ def abandon(payment_id: str) -> dict | None:
         return None
     payment["status"] = "ABANDONED"
     return {"status": "ABANDONED"}
+
+
+def status_of(payment_id: str) -> dict | None:
+    """What the gateway believes about a payment.
+
+    Every real gateway offers this, and a merchant needs it: webhooks get
+    lost, so the only way to be sure is to ask. This is the endpoint our
+    reconciliation job polls for orders that are still unpaid.
+    """
+    payment = _payments.get(payment_id)
+    if payment is None:
+        return None
+    return {
+        "paymentId": payment_id,
+        "orderId": payment["orderId"],
+        "amount": payment["amount"],
+        "status": payment["status"],
+    }

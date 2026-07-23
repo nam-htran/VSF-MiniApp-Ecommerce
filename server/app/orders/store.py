@@ -62,6 +62,14 @@ class Order(Base):
     # Sent by the client, one per checkout attempt. Replaying the same key
     # returns the order already created rather than making a second one.
     idempotency_key: Mapped[str | None] = mapped_column(default=None)
+    # The gateway session this order is being paid through, opened via our
+    # own server so we know one exists. Without it the expiry sweep cannot
+    # tell "abandoned basket" from "buyer is at the bank right now" — and
+    # cancelling the second takes the money while giving the stock away.
+    payment_id: Mapped[str | None] = mapped_column(default=None)
+    payment_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     # Payment state. Fulfilment state lives on each shop_order — a shop
     # cancelling its part must not touch payment or the other shops.
     status: Mapped[str] = mapped_column(default="PENDING")
@@ -511,7 +519,17 @@ def hold_expires_at(order: Order) -> datetime | None:
         return None
     from app.config import settings
 
-    return order.created_at + timedelta(minutes=settings.order_hold_minutes)
+    expires = order.created_at + timedelta(minutes=settings.order_hold_minutes)
+    if order.payment_started_at is not None:
+        # A buyer at the payment screen gets longer: OTPs, bank apps and bad
+        # signal all take time, and releasing their stock while their money
+        # is moving is the one outcome worth paying to avoid.
+        expires = max(
+            expires,
+            order.payment_started_at
+            + timedelta(minutes=settings.payment_grace_minutes),
+        )
+    return expires
 
 
 async def release_expired(session: AsyncSession) -> int:
@@ -536,7 +554,10 @@ async def release_expired(session: AsyncSession) -> int:
         minutes=settings.order_hold_minutes
     )
 
-    stale = list(
+    payment_cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=settings.payment_grace_minutes
+    )
+    candidates = list(
         await session.scalars(
             select(Order)
             .where(Order.status == "PENDING", Order.created_at < cutoff)
@@ -544,6 +565,14 @@ async def release_expired(session: AsyncSession) -> int:
             .with_for_update(skip_locked=True)
         )
     )
+    # An order with a payment session still inside its grace window is not
+    # abandoned — someone is at the gateway with it.
+    stale = [
+        order
+        for order in candidates
+        if order.payment_started_at is None
+        or order.payment_started_at < payment_cutoff
+    ]
     if not stale:
         return 0
 
@@ -830,3 +859,62 @@ async def cancel_by_buyer(
     await session.commit()
     await session.refresh(order)
     return order, "CANCELLED"
+
+
+async def attach_payment(
+    session: AsyncSession, order_id: str, buyer_id: str, payment_id: str
+) -> Order | None:
+    """Remember which gateway session is paying for this order."""
+    order = await session.get(Order, order_id, with_for_update=True)
+    if order is None or order.buyer_id != buyer_id or order.status != "PENDING":
+        return None
+    order.payment_id = payment_id
+    order.payment_started_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(order)
+    return order
+
+
+async def pending_with_payments(
+    session: AsyncSession, older_than_seconds: int
+) -> list[Order]:
+    """Unpaid orders whose payment session is old enough to be worth asking
+    the gateway about — young ones are simply still in progress."""
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=older_than_seconds)
+    rows = await session.scalars(
+        select(Order).where(
+            Order.status == "PENDING",
+            Order.payment_id.is_not(None),
+            Order.payment_started_at < cutoff,
+        )
+    )
+    return list(rows)
+
+
+async def reconcile_pending(
+    session: AsyncSession, older_than_seconds: int = 60
+) -> dict:
+    """Ask the gateway about payments we never heard back about.
+
+    Webhooks get lost — the merchant's server is down for a minute, a
+    retry budget runs out, a network eats it. The buyer's money still
+    moved. Polling is the only way to find out, and a marketplace that
+    doesn't do it silently keeps money it did not deliver against.
+
+    Returns a small summary so the caller can log or surface it.
+    """
+    from app.payments import gateway
+
+    checked = paid = 0
+    for order in await pending_with_payments(session, older_than_seconds):
+        checked += 1
+        state = await gateway.query(order.payment_id or "")
+        if state is None or state.get("status") != "PAID":
+            continue
+        # Same path a webhook takes, including the amount check, so a
+        # gateway that reports a different figure is refused here too.
+        _, result = await mark_paid(session, order.id, Decimal(state["amount"]))
+        if result == "PAID":
+            paid += 1
+
+    return {"checked": checked, "recovered": paid}

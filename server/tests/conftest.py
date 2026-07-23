@@ -106,7 +106,12 @@ async def clean_db(prepare_db):
     async with engine.begin() as conn:
         await conn.execute(
             text(
+                # payment_exceptions is listed explicitly: it holds no
+                # foreign key on purpose (money can arrive for an order that
+                # never existed), so CASCADE never reaches it and its rows
+                # would leak into the next test.
                 "TRUNCATE TABLE order_items, shop_orders, orders,"
+                " payment_exceptions, product_variants, vouchers,"
                 " products, shops, users CASCADE"
             )
         )

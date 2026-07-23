@@ -26,6 +26,7 @@ from app.products import store as _products  # noqa: F401
 from app.shops import store as _shops  # noqa: F401
 from app.users import store as _users  # noqa: F401
 from app.vouchers import store as _vouchers  # noqa: F401
+from app.payments import store as _payment_exceptions  # noqa: F401
 
 
 @asynccontextmanager
