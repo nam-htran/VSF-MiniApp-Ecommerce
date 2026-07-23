@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Button,
   Icon,
@@ -90,6 +97,12 @@ const CheckoutPage = () => {
     paymentId: string;
     amount: number;
   } | null>(null);
+  // One key for this visit to checkout. A double-tap or a retry after a
+  // failure reuses it, so the server hands back the same order instead of
+  // charging twice; a fresh checkout gets a fresh key by remounting.
+  const attemptKey = useRef(
+    globalThis.crypto?.randomUUID?.() ?? String(Date.now())
+  );
 
   const refresh = useCallback(async () => {
     const list = await listAddresses().catch(() => []);
@@ -184,7 +197,8 @@ const CheckoutPage = () => {
         })),
         // The server re-validates each pick and silently falls back to the
         // best voucher, so a stale choice can never fail the order.
-        picked
+        picked,
+        attemptKey.current
       );
     } catch (error) {
       const detail =

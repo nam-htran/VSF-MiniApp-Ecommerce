@@ -7,8 +7,9 @@ a stale or tampered cart cannot buy at yesterday's numbers.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentSeller, CurrentUser
@@ -94,8 +95,15 @@ def _serialise_order(order: Order, shop_views) -> dict:
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def place_order(
-    body: CheckoutRequest, user: CurrentUser, session: Session
+    body: CheckoutRequest,
+    user: CurrentUser,
+    session: Session,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> dict:
+    """Placing an order is not safe to repeat, so the client may send an
+    Idempotency-Key: the same key returns the same order instead of buying
+    twice. Scoped to the caller, so one buyer's key cannot claim another's
+    order."""
     # Sweep first: the unit this buyer wants may be held by a checkout
     # somebody abandoned, and the hold has just run out.
     await orders.release_expired(session)
@@ -110,12 +118,25 @@ async def place_order(
             ],
             address=body.address,
             chosen=body.voucherCodes,
+            idempotency_key=idempotency_key,
         )
     except OrderError as error:
         await session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=error.message
         ) from None
+    except IntegrityError:
+        # Two identical requests arrived close enough that both passed the
+        # look-up; the unique constraint let exactly one through. The loser
+        # reads back the winner's order, which is what the buyer wanted —
+        # one order, not an error.
+        await session.rollback()
+        existing = await orders.find_by_idempotency_key(
+            session, user.id, idempotency_key
+        )
+        if existing is None:
+            raise
+        order = existing
 
     view = await orders.shop_orders_view(session, [order.id])
     return _serialise_order(order, view.get(order.id, []))

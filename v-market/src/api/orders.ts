@@ -73,15 +73,25 @@ const bearer = (): Record<string, string> | undefined => {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 };
 
+/**
+ * Placing an order is not safe to repeat, so send an idempotency key: the
+ * double-tap, or the retry after a dropped connection, returns the order
+ * that already exists instead of buying twice. One key per checkout
+ * attempt — a genuinely new purchase needs a new key.
+ */
 export function placeOrder(
   address: string,
   items: CheckoutItem[],
-  voucherCodes?: VoucherChoice
+  voucherCodes?: VoucherChoice,
+  idempotencyKey?: string
 ) {
   return apiRequest<OrderView>('/orders', {
     method: 'POST',
     data: { address, items, voucherCodes },
-    headers: bearer(),
+    headers: {
+      ...bearer(),
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+    },
   });
 }
 

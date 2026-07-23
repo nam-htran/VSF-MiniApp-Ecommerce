@@ -19,7 +19,16 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, func, select
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    UniqueConstraint,
+    func,
+    select,
+    text,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,9 +47,21 @@ SHIPPING_FEE_PER_SHOP = Decimal("15000")
 
 class Order(Base):
     __tablename__ = "orders"
+    __table_args__ = (
+        # One key, one order — per buyer, so two people cannot collide on a
+        # guessable key. NULLs are distinct in Postgres, so orders placed
+        # without a key are unaffected. This constraint is the idempotency:
+        # a retry loses the race and is handed the first order back.
+        UniqueConstraint(
+            "buyer_id", "idempotency_key", name="uq_orders_buyer_idempotency"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True)
     buyer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    # Sent by the client, one per checkout attempt. Replaying the same key
+    # returns the order already created rather than making a second one.
+    idempotency_key: Mapped[str | None] = mapped_column(default=None)
     # Payment state. Fulfilment state lives on each shop_order — a shop
     # cancelling its part must not touch payment or the other shops.
     status: Mapped[str] = mapped_column(default="PENDING")
@@ -108,6 +129,7 @@ async def place_order(
     requested: list[tuple[str, int]],
     address: str,
     chosen: dict[str, str] | None = None,
+    idempotency_key: str | None = None,
 ) -> Order:
     """One transaction: lock stock, split by shop, snapshot prices.
 
@@ -115,6 +137,35 @@ async def place_order(
     out-of-stock half would ship something different from what the buyer
     confirmed.
     """
+    # A replay of a checkout the buyer already completed — the tap that
+    # double-fired, the retry after a flaky connection — must return the
+    # order that exists, not charge them twice. Checked before any stock is
+    # touched; the unique constraint below is what settles a true race.
+    if idempotency_key:
+        # Take a lock on the key itself before looking. Without it both
+        # copies of a double-tap read "no order yet", both do the work, and
+        # the loser only discovers the clash when its INSERT trips the
+        # unique constraint — deep inside a transaction that has already
+        # locked stock rows. Recovering from there proved worse than
+        # avoiding it: the failed flush left the pooled connection in a
+        # state that made the *next* request fail too.
+        #
+        # Advisory locks are released when the transaction ends, so the
+        # second request simply waits for the first to commit and then finds
+        # the order below. The unique constraint stays as the backstop.
+        await session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": f"{buyer_id}:{idempotency_key}"},
+        )
+        seen = await session.scalar(
+            select(Order).where(
+                Order.buyer_id == buyer_id,
+                Order.idempotency_key == idempotency_key,
+            )
+        )
+        if seen is not None:
+            return seen
+
     # Merge duplicate lines before locking. A line is a product *and* the
     # variant chosen, so two sizes of the same shirt stay two lines.
     wanted: dict[tuple[str, str | None], int] = {}
@@ -218,6 +269,7 @@ async def place_order(
         buyer_id=buyer_id,
         address=address,
         total=Decimal("0"),
+        idempotency_key=idempotency_key,
     )
     session.add(order)
     # Explicit flushes between the levels: these models carry no
@@ -701,3 +753,16 @@ async def shop_orders_view(
             (shop_order, shop_name, items_by_shop_order.get(shop_order.id, []))
         )
     return view
+
+
+async def find_by_idempotency_key(
+    session: AsyncSession, buyer_id: str, key: str | None
+) -> Order | None:
+    """The order a given checkout key already produced, if any."""
+    if not key:
+        return None
+    return await session.scalar(
+        select(Order).where(
+            Order.buyer_id == buyer_id, Order.idempotency_key == key
+        )
+    )
