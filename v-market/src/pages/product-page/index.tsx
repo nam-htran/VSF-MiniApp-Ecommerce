@@ -9,12 +9,35 @@ import {
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
-import { getProduct, type ApiProductDetail } from '@/api/products';
+import {
+  getProduct,
+  listProducts,
+  listShopProducts,
+  type ApiProduct,
+  type ApiProductDetail,
+} from '@/api/products';
 import { listAddresses } from '@/api/addresses';
+import { ProductStrip } from '@/components/product-strip';
 import { addToCart } from '@/lib/cart';
 import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
 import type { ProductCardData } from '@/lib/product-card';
+
+/** API product → the compact card the suggestion strips render. */
+const suggestionCard = (
+  p: ApiProduct & { shopName?: string }
+): ProductCardData => ({
+  id: p.id,
+  name: p.name,
+  price: p.price,
+  oldPrice: p.originalPrice ?? undefined,
+  image: p.imageUrl ?? undefined,
+  unit: p.unit ?? undefined,
+  emoji: '🛒',
+  tint: 'bg-global-neutral-neutral-10',
+  shopId: p.shopId,
+  shopName: p.shopName,
+});
 
 /**
  * Product detail at /product?id=… (single-level path, id in the query).
@@ -111,6 +134,31 @@ const Detail = ({
   buyerAddress?: string;
 }) => {
   const eta = estimateDelivery(view.shopProvince ?? null, buyerAddress);
+
+  const [sameShop, setSameShop] = useState<ProductCardData[]>([]);
+  const [similar, setSimilar] = useState<ProductCardData[]>([]);
+
+  useEffect(() => {
+    if (view.shopId) {
+      listShopProducts(view.shopId, 12)
+        .then(page =>
+          setSameShop(
+            page.items.filter(p => p.id !== view.id).map(suggestionCard)
+          )
+        )
+        .catch(() => setSameShop([]));
+    }
+    listProducts(16)
+      .then(page =>
+        setSimilar(
+          page.items
+            .filter(p => p.id !== view.id && p.shopId !== view.shopId)
+            .slice(0, 10)
+            .map(suggestionCard)
+        )
+      )
+      .catch(() => setSimilar([]));
+  }, [view.id, view.shopId]);
 
   return (
     <div
@@ -212,6 +260,14 @@ const Detail = ({
         <Policy text="Đổi trả trong 7 ngày nếu hàng lỗi do nhà sản xuất." />
         <Policy text="Thông tin nhận hàng chỉ dùng để giao đơn này." />
       </Card>
+
+      {view.shopName && (
+        <ProductStrip
+          title={`Sản phẩm khác của ${view.shopName}`}
+          products={sameShop}
+        />
+      )}
+      <ProductStrip title="Sản phẩm tương tự" products={similar} />
 
       <BuyBar view={view} />
     </div>

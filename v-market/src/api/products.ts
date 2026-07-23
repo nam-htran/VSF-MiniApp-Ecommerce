@@ -43,6 +43,13 @@ export type ProductPage = {
   hasMore: boolean;
 };
 
+/** Public — one shop's active products, for the "more from this shop" strip. */
+export function listShopProducts(shopId: string, limit = 10) {
+  return apiRequest<{ items: ApiProduct[]; hasMore: boolean }>(
+    `/shops/${shopId}/products?limit=${limit}`
+  );
+}
+
 /**
  * Public — the storefront across every shop, no session needed. `q`
  * searches by product or shop name across the whole catalogue (server
