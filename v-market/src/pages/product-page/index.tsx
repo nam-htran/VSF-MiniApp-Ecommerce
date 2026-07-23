@@ -18,6 +18,7 @@ import {
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
 import { ProductStrip } from '@/components/product-strip';
+import { ReviewsSection, Stars } from '@/components/reviews-section';
 import { addToCart } from '@/lib/cart';
 import { estimateDelivery } from '@/lib/delivery';
 import { formatVnd } from '@/lib/format';
@@ -64,6 +65,8 @@ type View = {
   shopAddress?: string | null;
   shopProvince?: string | null;
   shopPhone?: string | null;
+  ratingAverage?: number;
+  ratingCount?: number;
 };
 
 const fromDetail = (p: ApiProductDetail): View => ({
@@ -82,6 +85,8 @@ const fromDetail = (p: ApiProductDetail): View => ({
   shopAddress: p.shopAddress,
   shopProvince: p.shopProvince,
   shopPhone: p.shopPhone,
+  ratingAverage: p.ratingAverage,
+  ratingCount: p.ratingCount,
 });
 
 const ProductPage = () => {
@@ -198,6 +203,14 @@ const Detail = ({
         <Typography size="large" weight="bold" component="h1">
           {view.name}
         </Typography>
+        {view.ratingCount !== undefined && view.ratingCount > 0 && (
+          <span className="flex items-center gap-1.5">
+            <Stars value={view.ratingAverage ?? 0} />
+            <Typography size="x-small" color="text-secondary">
+              {(view.ratingAverage ?? 0).toFixed(1)} · {view.ratingCount} đánh giá
+            </Typography>
+          </span>
+        )}
         {view.unit && (
           <Typography size="small" color="text-secondary">
             {view.unit}
@@ -260,6 +273,8 @@ const Detail = ({
         <Policy text="Đổi trả trong 7 ngày nếu hàng lỗi do nhà sản xuất." />
         <Policy text="Thông tin nhận hàng chỉ dùng để giao đơn này." />
       </Card>
+
+      <ReviewsSection productId={view.id} />
 
       {view.shopName && (
         <ProductStrip

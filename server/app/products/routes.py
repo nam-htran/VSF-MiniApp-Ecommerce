@@ -16,6 +16,7 @@ from app.auth.deps import CurrentSeller
 from app.db import get_session
 from app.products import store as products
 from app.products.store import Product
+from app.reviews import store as reviews
 from app.shops import store as shops
 from app.users.store import MarketUser
 
@@ -214,10 +215,13 @@ async def get_product(product_id: str, session: Session) -> dict:
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
     shop = await shops.find_by_id(session, product.shop_id)
+    average, count = await reviews.summary(session, product_id)
     return {
         **_serialise(product),
         "shopName": shop.name if shop else None,
         "shopAddress": shop.address if shop else None,
         "shopProvince": shop.province if shop else None,
         "shopPhone": shop.phone if shop else None,
+        "ratingAverage": average,
+        "ratingCount": count,
     }

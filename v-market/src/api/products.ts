@@ -28,6 +28,8 @@ export type ApiProductDetail = ApiProduct & {
   shopAddress: string | null;
   shopProvince: string | null;
   shopPhone: string | null;
+  ratingAverage: number;
+  ratingCount: number;
 };
 
 /** Public — the product detail screen works without a session. */

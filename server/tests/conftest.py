@@ -70,6 +70,7 @@ async def prepare_db(require_vapp):
     from app.addresses import store as _addresses  # noqa: F401
     from app.orders import store as _orders  # noqa: F401
     from app.products import store as _products  # noqa: F401
+    from app.reviews import store as _reviews  # noqa: F401
     from app.shops import store as _shops  # noqa: F401
     from app.users import store as _users  # noqa: F401
 
