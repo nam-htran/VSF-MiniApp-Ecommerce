@@ -112,15 +112,17 @@ async def list_products(
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     onSale: Annotated[bool, Query()] = False,
+    q: Annotated[str | None, Query(max_length=100)] = None,
 ) -> dict:
     """Public: the marketplace storefront across all shops.
 
     Must work without login, like every browsing endpoint. Each item
     carries its shop's name so the card can show where it comes from.
     ?onSale=true keeps only discounted items — the flash-sale strip.
+    ?q=… searches by product or shop name across the whole catalogue.
     """
     page = await products.list_active(
-        session, limit=limit, offset=offset, on_sale=onSale
+        session, limit=limit, offset=offset, on_sale=onSale, q=q
     )
     return {
         "items": [

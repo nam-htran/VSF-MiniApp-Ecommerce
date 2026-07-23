@@ -253,3 +253,38 @@ async def test_storefront_needs_no_token(base_url):
 
     assert response.status_code == 200
     assert [p["name"] for p in response.json()["items"]] == ["Ấm siêu tốc"]
+
+
+async def test_search_matches_product_or_shop_name(base_url):
+    token_a, _ = await seller_with_shop(base_url, USER_A_ID, "Điện máy Sáng")
+    token_b, _ = await seller_with_shop(base_url, USER_B_ID, "Thời trang Xanh")
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token_a),
+            json={"name": "Máy xay sinh tố", "description": ".", "price": 500000, "stock": 5},
+        )
+        await client.post(
+            f"{base_url}/products",
+            headers=auth(token_b),
+            json={"name": "Áo khoác gió", "description": ".", "price": 300000, "stock": 5},
+        )
+
+        by_name = (
+            await client.get(f"{base_url}/products", params={"q": "xay"})
+        ).json()["items"]
+        by_shop = (
+            await client.get(f"{base_url}/products", params={"q": "Thời trang"})
+        ).json()["items"]
+        no_match = (
+            await client.get(f"{base_url}/products", params={"q": "zzzzz"})
+        ).json()["items"]
+        # A LIKE wildcard from the user must match literally, not everything.
+        literal = (
+            await client.get(f"{base_url}/products", params={"q": "%"})
+        ).json()["items"]
+
+    assert [p["name"] for p in by_name] == ["Máy xay sinh tố"]
+    assert [p["name"] for p in by_shop] == ["Áo khoác gió"]
+    assert no_match == []
+    assert literal == []

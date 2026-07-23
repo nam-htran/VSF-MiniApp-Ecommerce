@@ -28,7 +28,16 @@ export type ProductPage = {
   hasMore: boolean;
 };
 
-/** Public — the storefront across every shop, no session needed. */
-export function listProducts(limit = 20, offset = 0) {
-  return apiRequest<ProductPage>(`/products?limit=${limit}&offset=${offset}`);
+/**
+ * Public — the storefront across every shop, no session needed. `q`
+ * searches by product or shop name across the whole catalogue (server
+ * side), not just the page fetched here.
+ */
+export function listProducts(limit = 20, offset = 0, q?: string) {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (q && q.trim()) params.set('q', q.trim());
+  return apiRequest<ProductPage>(`/products?${params.toString()}`);
 }

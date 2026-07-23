@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, select
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,14 +55,27 @@ async def find_by_id(session: AsyncSession, product_id: str) -> Product | None:
     return await session.get(Product, product_id)
 
 
+def _escape_like(text: str) -> str:
+    """Neutralise LIKE wildcards so a user's % or _ is matched literally."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def list_active(
-    session: AsyncSession, limit: int, offset: int, on_sale: bool = False
+    session: AsyncSession,
+    limit: int,
+    offset: int,
+    on_sale: bool = False,
+    q: str | None = None,
 ) -> list[tuple[Product, str]]:
     """The marketplace storefront: active products across all shops,
     each with its shop's name — the card on the home screen shows both.
 
     Joined here rather than fetched per product: N cards must not cost
     N+1 queries, and the response budget is under a second.
+
+    `q` filters by product name or shop name, case-insensitively — the
+    search box. It moves the substring match from the client to Postgres,
+    so search covers the whole catalogue, not just the first page.
     """
     from app.shops.store import Shop
 
@@ -74,6 +87,14 @@ async def list_active(
     if on_sale:
         # On sale = has a struck-through price. No separate flag to drift.
         query = query.where(Product.original_price.is_not(None))
+    if q and q.strip():
+        like = f"%{_escape_like(q.strip())}%"
+        query = query.where(
+            or_(
+                Product.name.ilike(like, escape="\\"),
+                Shop.name.ilike(like, escape="\\"),
+            )
+        )
 
     rows = await session.execute(
         # Ordered so paging is stable — without it Postgres may return

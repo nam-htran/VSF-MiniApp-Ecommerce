@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Typography } from '@v-miniapp/ui-react';
+import { useEffect, useState } from 'react';
+import { Skeleton, Typography } from '@v-miniapp/ui-react';
 import { listProducts, type ApiProductListItem } from '@/api/products';
 import { GridProductCard } from '@/components/product-grid-section';
 import { useSearchQuery } from '@/lib/search-query';
@@ -20,38 +20,40 @@ const toCard = (item: ApiProductListItem): ProductCardData => ({
 });
 
 /**
- * Results only — the input lives in the top chrome, in the same spot as
- * the search pill on every other page, and the query arrives through the
- * shared store.
- *
- * Honest about its limits: one page of 50, name/shop substring match.
- * The seam for a real backend search (?q=) is the single fetch below.
+ * Results only — the input lives in the top chrome, and the query arrives
+ * through the shared store. The match runs on the server (?q=), so it
+ * covers the whole catalogue rather than one page filtered on the client.
+ * Typing is debounced so a request goes out after the user pauses, not on
+ * every keystroke.
  */
 const SearchPage = () => {
   const query = useSearchQuery();
-  const [all, setAll] = useState<ProductCardData[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  // null = loading (first load or a pending debounce).
+  const [results, setResults] = useState<ProductCardData[] | null>(null);
 
   useEffect(() => {
-    listProducts(50)
-      .then(page => setAll(page.items.map(toCard)))
-      .catch(() => setAll([]))
-      .finally(() => setLoaded(true));
-  }, []);
-
-  const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter(
-      product =>
-        product.name.toLowerCase().includes(needle) ||
-        (product.shopName ?? '').toLowerCase().includes(needle)
-    );
-  }, [all, query]);
+    let alive = true;
+    setResults(null);
+    const timer = setTimeout(() => {
+      listProducts(50, 0, query.trim() || undefined)
+        .then(page => alive && setResults(page.items.map(toCard)))
+        .catch(() => alive && setResults([]));
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   return (
     <div className="pt-chrome flex min-h-full flex-col gap-3 px-3 pb-6">
-      {loaded && results.length === 0 ? (
+      {results === null ? (
+        <div className="grid grid-cols-2 gap-2">
+          {[0, 1, 2, 3].map(i => (
+            <Skeleton key={i} className="h-56 w-full rounded-2xl" />
+          ))}
+        </div>
+      ) : results.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-8 pt-20 text-center">
           <span className="text-5xl">🔍</span>
           <Typography size="large" weight="semibold">
