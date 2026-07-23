@@ -67,6 +67,7 @@ async def prepare_db(require_vapp):
     from app.db import Base
 
     # Import registers each model on Base before create_all runs.
+    from app.orders import store as _orders  # noqa: F401
     from app.products import store as _products  # noqa: F401
     from app.shops import store as _shops  # noqa: F401
     from app.users import store as _users  # noqa: F401
@@ -96,7 +97,10 @@ async def clean_db(prepare_db):
     engine = _throwaway_engine()
     async with engine.begin() as conn:
         await conn.execute(
-            text("TRUNCATE TABLE products, shops, users CASCADE")
+            text(
+                "TRUNCATE TABLE order_items, shop_orders, orders,"
+                " products, shops, users CASCADE"
+            )
         )
     await engine.dispose()
     yield
