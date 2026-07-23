@@ -75,3 +75,19 @@ Change three lines in `.env` — `VAPP_BASE_URL`, `VAPP_CLIENT_ID`,
 `VAPP_CLIENT_SECRET` — and stop running `mock-openAPI`. There is no mock/real
 flag in the code; `app/vapp/gateway.py` is the single implementation and only
 ever sees a URL.
+
+## Migrations (Alembic)
+
+The schema lives in the SQLAlchemy models. Dev and tests build it directly
+with `create_all` for speed; Alembic is the path for a database that must
+evolve without being dropped — a real deployment.
+
+- Baseline: `migrations/versions/` holds the initial schema. A fresh
+  database is brought up to date with `python -m alembic upgrade head`.
+- A database that already has the tables (e.g. this dev one, built by
+  `create_all`) is reconciled once with `python -m alembic stamp head`.
+- After changing a model: `python -m alembic revision --autogenerate -m "..."`,
+  review the generated file, then `python -m alembic upgrade head`.
+
+The URL comes from app settings; override it for a one-off with
+`ALEMBIC_URL=... python -m alembic ...`.
