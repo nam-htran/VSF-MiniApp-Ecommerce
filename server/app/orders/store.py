@@ -194,6 +194,32 @@ async def find_by_id(session: AsyncSession, order_id: str) -> Order | None:
     return await session.get(Order, order_id)
 
 
+async def mark_paid(
+    session: AsyncSession, order_id: str, amount: Decimal
+) -> tuple[Order | None, str]:
+    """Move an order PENDING → PAID on a verified payment notification.
+
+    Idempotent: a repeated IPN for an already-paid order is a success, not
+    an error — the gateway retries until it gets a 200, so the same
+    notification can arrive more than once. The amount is checked against
+    the order's own total so a tampered notification can't pay less than
+    what was owed.
+    """
+    order = await session.get(Order, order_id, with_for_update=True)
+    if order is None:
+        return None, "NOT_FOUND"
+    if order.total != amount:
+        return order, "AMOUNT_MISMATCH"
+    if order.status == "PAID":
+        return order, "ALREADY_PAID"
+    if order.status != "PENDING":
+        return order, "NOT_PAYABLE"
+    order.status = "PAID"
+    await session.commit()
+    await session.refresh(order)
+    return order, "PAID"
+
+
 async def list_for_buyer(
     session: AsyncSession, buyer_id: str, limit: int, offset: int
 ) -> list[Order]:

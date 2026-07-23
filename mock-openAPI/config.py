@@ -20,5 +20,13 @@ class Settings(BaseSettings):
     authcode_ttl_seconds: int = 60
     access_token_ttl_seconds: int = 3600
 
+    # Payment gateway simulation. On a confirmed payment the mock posts an
+    # IPN to the merchant (server/), signed with a shared secret, and
+    # retries on this backoff until it gets a 200. Keep the secret equal to
+    # server/'s PAYMENT_IPN_SECRET.
+    merchant_ipn_url: str = "http://127.0.0.1:4000/payments/ipn"
+    payment_ipn_secret: str = "dev-ipn-secret"
+    ipn_retry_delays: list[int] = [2, 4, 8, 16]
+
 
 settings = Settings()

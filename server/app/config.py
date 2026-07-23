@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # base URL to point at a self-hosted Nominatim later if needed.
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
 
+    # Payment IPN: the mock (standing in for V-App's payment gateway) posts
+    # a server-to-server notification here when an order is paid. The shared
+    # secret signs it (HMAC); the flag lets verification be turned off while
+    # debugging. Keep the secret equal to the mock's PAYMENT_IPN_SECRET.
+    payment_ipn_secret: str = "dev-ipn-secret"
+    payment_verify_hash: bool = True
+
     jwt_secret: str = "dev-jwt-secret-change-before-deploy"
     jwt_ttl_seconds: int = 60 * 60 * 12
 

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import payments
 import store
 from config import settings
 from db import SessionFactory, create_tables, engine, get_session
@@ -233,6 +234,39 @@ async def simulator_auth_code(request: Request, session: Session):
             "expires_in": settings.authcode_ttl_seconds,
         }
     )
+
+
+# Payment gateway simulation. The MiniApp opens a session with the amount
+# it wants charged, then confirms (or abandons) it — standing in for
+# initPayment and V-App's native payment sheet. Confirming triggers the
+# server-to-server IPN to the merchant.
+@app.post("/simulator/payment/init", tags=["Demo controls"])
+async def payment_init(request: Request):
+    body = await request.json()
+    order_id = (body.get("orderId") or "").strip()
+    amount = int(body.get("amount") or 0)
+    if not order_id or amount <= 0:
+        return fail(
+            400, ERR_SIMULATOR_BAD_REQUEST, "orderId and a positive amount required"
+        )
+    payment_id = payments.create_session(order_id, amount)
+    return ok({"paymentId": payment_id, "amount": amount})
+
+
+@app.post("/simulator/payment/{payment_id}/confirm", tags=["Demo controls"])
+async def payment_confirm(payment_id: str):
+    result = await payments.confirm(payment_id)
+    if result is None:
+        return fail(404, ERR_SIMULATOR_BAD_REQUEST, "payment not found")
+    return ok(result)
+
+
+@app.post("/simulator/payment/{payment_id}/abandon", tags=["Demo controls"])
+async def payment_abandon(payment_id: str):
+    result = payments.abandon(payment_id)
+    if result is None:
+        return fail(404, ERR_SIMULATOR_BAD_REQUEST, "payment not found")
+    return ok(result)
 
 
 @app.get("/healthz", tags=["System"])

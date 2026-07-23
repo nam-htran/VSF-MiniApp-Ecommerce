@@ -9,6 +9,7 @@ from app.db import create_tables, engine
 from app.addresses.routes import router as addresses_router
 from app.geo.routes import router as geo_router
 from app.orders.routes import router as orders_router
+from app.payments.routes import router as payments_router
 from app.products.routes import router as products_router
 from app.shops.routes import router as shops_router
 
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(orders_router)
     app.include_router(geo_router)
     app.include_router(addresses_router)
+    app.include_router(payments_router)
     return app
 
 

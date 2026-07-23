@@ -3,6 +3,10 @@ import {
   Button,
   Icon,
   Image,
+  Sheet,
+  SheetBody,
+  SheetFooter,
+  SheetHeader,
   Skeleton,
   Toast,
   Typography,
@@ -18,6 +22,7 @@ import {
 import { useSession } from '@/lib/auth';
 import { placeOrder, SHIPPING_FEE_PER_SHOP } from '@/api/orders';
 import { listAddresses, type SavedAddress } from '@/api/addresses';
+import { abandonPayment, confirmPayment, initPayment } from '@/api/payments';
 import { AddressBookSheet } from '@/components/address-book';
 import { ApiError } from '@/api/client';
 import { formatVnd } from '@/lib/format';
@@ -65,6 +70,12 @@ const CheckoutPage = () => {
   const [selectedId, setSelectedId] = useState<string>();
   const [bookOpen, setBookOpen] = useState(false);
   const [placing, setPlacing] = useState(false);
+  // Set once the order is placed and a payment session opened — drives the
+  // payment sheet. The order already exists (PENDING) at this point.
+  const [payment, setPayment] = useState<{
+    paymentId: string;
+    amount: number;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await listAddresses().catch(() => []);
@@ -100,18 +111,13 @@ const CheckoutPage = () => {
   const place = async () => {
     if (!composed || placing) return;
     setPlacing(true);
+
+    let order;
     try {
-      await placeOrder(
+      order = await placeOrder(
         composed,
         lines.map(line => ({ productId: line.product.id, qty: line.qty }))
       );
-      clearCart();
-      Toast.show({
-        type: 'positive',
-        message: 'Đặt hàng thành công',
-        position: 'bottom',
-      });
-      navigate('/orders');
     } catch (error) {
       const detail =
         error instanceof ApiError &&
@@ -121,6 +127,23 @@ const CheckoutPage = () => {
           ? String((error.body as { detail: unknown }).detail)
           : 'Không đặt được đơn, thử lại nhé';
       Toast.show({ type: 'negative', message: detail, position: 'bottom' });
+      setPlacing(false);
+      return;
+    }
+
+    // The items are an order now — the cart's job is done whether or not
+    // payment goes through (an unpaid order stays reachable from /orders).
+    clearCart();
+    try {
+      const session = await initPayment(order.id, Math.round(order.total));
+      setPayment({ paymentId: session.paymentId, amount: order.total });
+    } catch {
+      Toast.show({
+        type: 'informative',
+        message: 'Đã tạo đơn — mở phần Đơn hàng để thanh toán',
+        position: 'bottom',
+      });
+      navigate('/orders');
     } finally {
       setPlacing(false);
     }
@@ -178,7 +201,104 @@ const CheckoutPage = () => {
           setSelectedId(created.id);
         }}
       />
+
+      {payment && (
+        <PaymentSheet paymentId={payment.paymentId} amount={payment.amount} />
+      )}
     </div>
+  );
+};
+
+/**
+ * The V-App payment sheet, simulated. On a real device initPayment opens
+ * the platform's own; here it's this. Confirming asks the gateway to
+ * charge, which sends the IPN that flips the order to PAID — the client
+ * never marks its own order paid. Both actions land on the orders screen.
+ */
+const PaymentSheet = ({
+  paymentId,
+  amount,
+}: {
+  paymentId: string;
+  amount: number;
+}) => {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState<'pay' | 'cancel' | null>(null);
+
+  const pay = async () => {
+    setBusy('pay');
+    try {
+      await confirmPayment(paymentId);
+      Toast.show({
+        type: 'positive',
+        message: 'Thanh toán thành công',
+        position: 'bottom',
+      });
+      navigate('/orders');
+    } catch {
+      Toast.show({
+        type: 'negative',
+        message: 'Thanh toán chưa xong, thử lại nhé',
+        position: 'bottom',
+      });
+      setBusy(null);
+    }
+  };
+
+  const cancel = async () => {
+    setBusy('cancel');
+    try {
+      await abandonPayment(paymentId);
+    } catch {
+      /* the order stays PENDING regardless */
+    }
+    Toast.show({
+      type: 'informative',
+      message: 'Đã huỷ thanh toán — đơn đang chờ trong Đơn hàng',
+      position: 'bottom',
+    });
+    navigate('/orders');
+  };
+
+  return (
+    <Sheet open onBackdropClick={busy ? undefined : cancel}>
+      <SheetHeader title="Cổng thanh toán V-App" />
+      <SheetBody>
+        <div className="flex flex-col items-center gap-2 py-2 text-center">
+          <Icon name="wallet" size={32} className="text-brand" />
+          <Typography size="small" color="text-secondary">
+            Số tiền thanh toán
+          </Typography>
+          <Typography size="2x-large" weight="bold" className="text-brand">
+            {formatVnd(amount)}
+          </Typography>
+          <Typography size="2x-small" color="text-tertiary">
+            Cổng thanh toán V-App (giả lập). Trên máy thật đây là màn hình
+            thanh toán của nền tảng.
+          </Typography>
+        </div>
+      </SheetBody>
+      <SheetFooter>
+        <div className="flex w-full gap-2">
+          <Button
+            type="outline"
+            theme="neutral"
+            block
+            loading={busy === 'cancel'}
+            onClick={cancel}>
+            Huỷ
+          </Button>
+          <Button
+            type="solid"
+            theme="brand"
+            block
+            loading={busy === 'pay'}
+            onClick={pay}>
+            Thanh toán
+          </Button>
+        </div>
+      </SheetFooter>
+    </Sheet>
   );
 };
 
