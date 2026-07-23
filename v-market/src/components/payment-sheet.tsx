@@ -89,6 +89,7 @@ export const PaymentSheet = ({
       <SheetFooter>
         <div className="flex w-full gap-2">
           <Button
+            shape="pill"
             type="outline"
             theme="neutral"
             block
@@ -97,6 +98,7 @@ export const PaymentSheet = ({
             Huỷ
           </Button>
           <Button
+            shape="pill"
             type="solid"
             theme="brand"
             block

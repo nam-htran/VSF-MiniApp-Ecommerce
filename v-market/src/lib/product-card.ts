@@ -27,6 +27,25 @@ export type ProductCardData = {
   ratingAverage?: number;
   ratingCount?: number;
   description?: string;
+  /** `price` after the best live voucher — server-computed, and the figure
+   *  the order will actually charge. Absent on demo cards. */
+  effectivePrice?: number;
+  /** The voucher behind that price, for the badge on the card. */
+  voucher?: { code: string; description: string; discount: number } | null;
+};
+
+/**
+ * How much is off this product, as a whole percent — the "-24%" badge.
+ *
+ * Measured from the pre-markdown price down to what the buyer actually
+ * pays, so a flash-sale markdown and a voucher count together rather than
+ * one of them quietly going unadvertised. 0 when nothing is off.
+ */
+export const discountPercent = (product: ProductCardData): number => {
+  const base = product.oldPrice ?? product.price;
+  const now = product.effectivePrice ?? product.price;
+  if (base <= 0 || now >= base) return 0;
+  return Math.round((1 - now / base) * 100);
 };
 
 /**
@@ -51,4 +70,6 @@ export const listItemToCard = (p: ApiProductListItem): ProductCardData => ({
   ratingCount: p.ratingCount,
   sold: p.sold,
   category: p.category,
+  effectivePrice: p.effectivePrice,
+  voucher: p.voucher,
 });

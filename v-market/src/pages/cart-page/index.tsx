@@ -214,7 +214,7 @@ const CheckoutBar = ({ lines }: { lines: CartLine[] }) => {
           {formatVnd(cartSubtotal(lines))}
         </Typography>
       </div>
-      <Button type="solid" theme="brand" onClick={startCheckout}>
+      <Button shape="pill" type="solid" theme="brand" onClick={startCheckout}>
         Đặt hàng
       </Button>
     </div>
@@ -232,7 +232,7 @@ const EmptyCart = () => {
       <Typography size="small" color="text-secondary">
         Ghé gian hàng và thêm vài món — không cần đăng nhập.
       </Typography>
-      <Button type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
         Xem sản phẩm
       </Button>
     </div>

@@ -7,14 +7,14 @@ import {
   useNavigate,
 } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
-import type { ProductCardData } from '@/lib/product-card';
+import { discountPercent, type ProductCardData } from '@/lib/product-card';
 
 /** A flash item is defined by its old price — nothing else can render a
  * badge or a struck-through price. */
 type FlashProduct = ProductCardData & { oldPrice: number };
 
-const discountPercent = (product: FlashProduct) =>
-  Math.round((1 - product.price / product.oldPrice) * 100);
+// The badge maths lives in lib/product-card, shared with the storefront
+// card — two copies would drift the moment a voucher entered the picture.
 
 /** hh:mm:ss until midnight — flash sales "end today", every day. */
 const timeLeftToday = () => {
@@ -149,9 +149,12 @@ const ProductCard = ({ product }: { product: FlashProduct }) => {
         )}
       </div>
 
+      {/* Price after any voucher, matching the badge above it — showing the
+          pre-voucher price beside a badge that counted the voucher would
+          have the two numbers contradict each other. */}
       <div className="mt-auto flex flex-wrap items-baseline gap-x-1.5">
         <Typography size="small" weight="bold" className="text-global-red-red-60">
-          {formatVnd(product.price)}
+          {formatVnd(product.effectivePrice ?? product.price)}
         </Typography>
         <Typography size="2x-small" color="text-tertiary" className="line-through">
           {formatVnd(product.oldPrice)}

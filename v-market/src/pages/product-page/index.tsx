@@ -390,6 +390,7 @@ const BuyBar = ({ view }: { view: View }) => {
       className="fixed inset-x-0 bottom-0 z-40 flex gap-2 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
       style={{ paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)' }}>
       <Button
+        shape="pill"
         type="outline"
         theme="brand"
         block
@@ -404,6 +405,7 @@ const BuyBar = ({ view }: { view: View }) => {
         Thêm vào giỏ
       </Button>
       <Button
+        shape="pill"
         type="solid"
         theme="brand"
         block
@@ -445,7 +447,7 @@ const NotFound = () => {
       <Typography size="small" color="text-secondary">
         Sản phẩm có thể đã bị gỡ hoặc đường dẫn không đúng.
       </Typography>
-      <Button type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
         Về trang chủ
       </Button>
     </div>

@@ -24,6 +24,21 @@ export type ApiProduct = {
   /** The full gallery the detail page swipes through. */
   imageUrls: string[];
   status: 'ACTIVE' | 'HIDDEN';
+  /**
+   * `price` after the best voucher running right now, and which voucher did
+   * it. Computed server-side by the same code that discounts the order, so
+   * this figure is what actually gets charged — never recompute it here.
+   * Equal to `price` when no voucher applies.
+   */
+  effectivePrice: number;
+  voucher: ProductVoucher | null;
+};
+
+export type ProductVoucher = {
+  code: string;
+  description: string;
+  /** Đồng taken off one unit. */
+  discount: number;
 };
 
 /** The detail screen also carries the shop's origin and contact, so it can

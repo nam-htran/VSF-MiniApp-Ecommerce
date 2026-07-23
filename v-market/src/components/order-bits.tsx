@@ -108,6 +108,24 @@ export const ShopBlock = ({
       </div>
     ))}
 
+    {shopOrder.discount > 0 && (
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-1">
+          <Icon
+            name="discount-code"
+            size={11}
+            className="shrink-0 text-global-green-green-70"
+          />
+          <Typography size="2x-small" className="truncate text-global-green-green-70">
+            {shopOrder.voucherCode ?? 'Mã giảm giá'}
+          </Typography>
+        </span>
+        <Typography size="2x-small" weight="semibold" className="text-global-green-green-70">
+          −{formatVnd(shopOrder.discount)}
+        </Typography>
+      </div>
+    )}
+
     <div className="flex items-center justify-between">
       <Typography size="2x-small" color="text-tertiary">
         Phí giao hàng

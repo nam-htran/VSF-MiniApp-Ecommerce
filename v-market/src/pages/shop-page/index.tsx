@@ -331,7 +331,7 @@ const OwnerProducts = ({
       <Typography size="base" weight="bold">
         Sản phẩm của bạn
       </Typography>
-      <Button type="solid-subtle" theme="brand" size="medium" onClick={onAdd}>
+      <Button shape="pill" type="solid-subtle" theme="brand" size="medium" onClick={onAdd}>
         <span className="flex items-center gap-1">
           <Icon name="plus" size={16} />
           Thêm
@@ -412,7 +412,7 @@ const NotFound = () => {
       <Typography size="large" weight="semibold">
         Không tìm thấy cửa hàng
       </Typography>
-      <Button type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
         Về trang chủ
       </Button>
     </div>

@@ -156,7 +156,7 @@ const LoginPage = () => {
           type="negative"
           title="Không tải được danh sách tài khoản"
           message={accounts.message}
-          action={<Button onClick={load}>Thử lại</Button>}
+          action={<Button shape="pill" onClick={load}>Thử lại</Button>}
         />
       )}
 
@@ -199,7 +199,7 @@ const LoginPage = () => {
             placeholder="Tên của bạn"
             className="flex-1"
           />
-          <Button type="solid" theme="brand" onClick={register}>
+          <Button shape="pill" type="solid" theme="brand" onClick={register}>
             Tạo mới
           </Button>
         </div>
@@ -234,13 +234,14 @@ const LoginPage = () => {
         <SheetFooter>
           <div className="flex w-full gap-2">
             <Button
+              shape="pill"
               type="outline"
               theme="neutral"
               block
               onClick={() => setConsentFor(null)}>
               Từ chối
             </Button>
-            <Button type="solid" theme="brand" block onClick={agreeConsent}>
+            <Button shape="pill" type="solid" theme="brand" block onClick={agreeConsent}>
               Đồng ý
             </Button>
           </div>

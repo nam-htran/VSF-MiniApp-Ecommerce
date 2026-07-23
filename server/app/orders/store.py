@@ -60,6 +60,13 @@ class ShopOrder(Base):
     status: Mapped[str] = mapped_column(default="CONFIRMED")
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     shipping_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    # What a voucher took off this shop's slice, and which one — snapshotted
+    # like the prices above, so a voucher edited or expired tomorrow leaves
+    # yesterday's receipt intact.
+    discount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=0, server_default="0"
+    )
+    voucher_code: Mapped[str | None] = mapped_column(default=None)
 
 
 class OrderItem(Base):
@@ -95,6 +102,7 @@ async def place_order(
     buyer_id: str,
     requested: list[tuple[str, int]],
     address: str,
+    chosen: dict[str, str] | None = None,
 ) -> Order:
     """One transaction: lock stock, split by shop, snapshot prices.
 
@@ -147,23 +155,56 @@ async def place_order(
     # order; it all stays one transaction until the commit below.
     await session.flush()
 
+    # Vouchers live right now, read once. The best applicable one applies
+    # itself per shop — the buyer never types a code, and the same
+    # `discount_for` that priced the product card prices the order, so the
+    # advertised saving is the saving charged.
+    from app.vouchers import store as vouchers
+
+    live_vouchers = await vouchers.list_live(session)
+
     total = Decimal("0")
     shop_orders: list[ShopOrder] = []
     for shop_id in sorted(by_shop):
-        subtotal = sum(
-            (products[pid].price * wanted[pid] for pid in by_shop[shop_id]),
-            Decimal("0"),
-        )
+        lines = [
+            (products[pid].category, products[pid].price * wanted[pid])
+            for pid in by_shop[shop_id]
+        ]
+        subtotal = sum((amount for _, amount in lines), Decimal("0"))
+        applicable = [
+            voucher
+            for voucher in live_vouchers
+            if voucher.shop_id is None or voucher.shop_id == shop_id
+        ]
+        # A code the buyer picked at checkout wins, as long as it is still
+        # live, still theirs to use and still worth something; otherwise the
+        # best one applies itself. Validated here, never trusted from the
+        # request — a chosen code is a request for a discount, not proof of
+        # one.
+        voucher, discount = None, Decimal("0")
+        wanted_code = (chosen or {}).get(shop_id)
+        if wanted_code:
+            for candidate in applicable:
+                if candidate.code == wanted_code.upper():
+                    picked = vouchers.discount_on(candidate, lines)
+                    if picked > 0:
+                        voucher, discount = candidate, picked
+                    break
+        if voucher is None:
+            voucher, discount = vouchers.best_for(applicable, lines)
+
         shop_order = ShopOrder(
             id=str(uuid.uuid4()),
             order_id=order.id,
             shop_id=shop_id,
             subtotal=subtotal,
             shipping_fee=SHIPPING_FEE_PER_SHOP,
+            discount=discount,
+            voucher_code=voucher.code if voucher is not None else None,
         )
         session.add(shop_order)
         shop_orders.append(shop_order)
-        total += subtotal + SHIPPING_FEE_PER_SHOP
+        total += subtotal - discount + SHIPPING_FEE_PER_SHOP
     await session.flush()
 
     for shop_order in shop_orders:
@@ -188,6 +229,108 @@ async def place_order(
     await session.commit()
     await session.refresh(order)
     return order
+
+
+async def quote(
+    session: AsyncSession,
+    requested: list[tuple[str, int]],
+    chosen: dict[str, str] | None = None,
+) -> dict:
+    """Price a basket without placing it — what checkout previews.
+
+    Runs the same grouping and the same voucher arithmetic as `place_order`,
+    so the figure shown before confirming is the figure charged after. It
+    takes no locks and writes nothing: stock is only checked for real inside
+    the order transaction, where it can be held.
+    """
+    from app.vouchers import store as vouchers
+
+    wanted: dict[str, int] = {}
+    for product_id, qty in requested:
+        wanted[product_id] = wanted.get(product_id, 0) + qty
+
+    found: dict[str, Product] = {}
+    for product_id in wanted:
+        product = await session.get(Product, product_id)
+        if product is not None and product.status == "ACTIVE":
+            found[product_id] = product
+
+    by_shop: dict[str, list[str]] = {}
+    for product_id, product in found.items():
+        by_shop.setdefault(product.shop_id, []).append(product_id)
+
+    live_vouchers = await vouchers.list_live(session)
+
+    shops_view = []
+    total = Decimal("0")
+    merchandise = Decimal("0")
+    discount_total = Decimal("0")
+    for shop_id in sorted(by_shop):
+        lines = [
+            (found[pid].category, found[pid].price * wanted[pid])
+            for pid in by_shop[shop_id]
+        ]
+        subtotal = sum((amount for _, amount in lines), Decimal("0"))
+        applicable = [
+            voucher
+            for voucher in live_vouchers
+            if voucher.shop_id is None or voucher.shop_id == shop_id
+        ]
+
+        # Every voucher this shop offers, usable or not — checkout shows the
+        # unusable ones greyed with the reason, so a buyer can see what they
+        # would need to do to earn one.
+        offers = vouchers.offers_for(applicable, lines)
+        wanted_code = (chosen or {}).get(shop_id)
+        picked = next(
+            (
+                offer
+                for offer in offers
+                if offer["applicable"]
+                and wanted_code
+                and offer["voucher"].code == wanted_code.upper()
+            ),
+            None,
+        )
+        if picked is not None:
+            voucher, discount = picked["voucher"], picked["discount"]
+        else:
+            voucher, discount = vouchers.best_for(applicable, lines)
+
+        shops_view.append(
+            {
+                "shopId": shop_id,
+                "subtotal": float(subtotal),
+                "discount": float(discount),
+                "shippingFee": float(SHIPPING_FEE_PER_SHOP),
+                "voucherCode": voucher.code if voucher is not None else None,
+                "voucherDescription": (
+                    voucher.description if voucher is not None else None
+                ),
+                "vouchers": [
+                    {
+                        "code": offer["voucher"].code,
+                        "description": offer["voucher"].description,
+                        "discount": float(offer["discount"]),
+                        "applicable": offer["applicable"],
+                        "reason": offer["reason"],
+                        "endsAt": offer["voucher"].ends_at.isoformat(),
+                    }
+                    for offer in offers
+                ],
+            }
+        )
+        merchandise += subtotal
+        discount_total += discount
+        total += subtotal - discount + SHIPPING_FEE_PER_SHOP
+
+    return {
+        "merchandise": float(merchandise),
+        "discount": float(discount_total),
+        "shipping": float(len(by_shop) * SHIPPING_FEE_PER_SHOP),
+        "total": float(total),
+        "shops": shops_view,
+    }
 
 
 async def find_by_id(session: AsyncSession, order_id: str) -> Order | None:

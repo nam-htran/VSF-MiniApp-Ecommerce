@@ -30,6 +30,10 @@ class CheckoutItem(BaseModel):
 class CheckoutRequest(BaseModel):
     address: str = Field(min_length=5, max_length=500)
     items: list[CheckoutItem] = Field(min_length=1, max_length=50)
+    # shopId -> voucher code the buyer picked. Optional: leave it out and
+    # the best applicable voucher applies itself. Re-validated server-side,
+    # so a chosen code is only ever a request for a discount.
+    voucherCodes: dict[str, str] | None = None
 
 
 def _serialise_item(item: OrderItem) -> dict:
@@ -53,8 +57,11 @@ def _serialise_shop_order(
         "status": shop_order.status,
         "subtotal": float(shop_order.subtotal),
         # Itemised, not folded into the total — review rule 5.2.1 wants
-        # every surcharge visible before the buyer confirms.
+        # every surcharge visible before the buyer confirms. The voucher is
+        # itemised for the same reason, from the other direction.
         "shippingFee": float(shop_order.shipping_fee),
+        "discount": float(shop_order.discount),
+        "voucherCode": shop_order.voucher_code,
         "items": [_serialise_item(item) for item in items],
     }
 
@@ -83,6 +90,7 @@ async def place_order(
             buyer_id=user.id,
             requested=[(item.productId, item.qty) for item in body.items],
             address=body.address,
+            chosen=body.voucherCodes,
         )
     except OrderError as error:
         await session.rollback()
@@ -113,6 +121,29 @@ async def my_orders(
     }
 
 
+class QuoteRequest(BaseModel):
+    items: list[CheckoutItem] = Field(min_length=1, max_length=50)
+    voucherCodes: dict[str, str] | None = None
+
+
+# Above GET /{order_id}, like the seller routes, so "quote" isn't read as
+# an order id.
+@router.post("/quote")
+async def quote_order(body: QuoteRequest, session: Session) -> dict:
+    """Price a basket before it is placed.
+
+    Public, like browsing: it reveals nothing a product page doesn't. The
+    point is that checkout previews the *server's* arithmetic — same
+    grouping, same voucher — instead of adding prices up itself and then
+    disagreeing with the bill.
+    """
+    return await orders.quote(
+        session,
+        [(item.productId, item.qty) for item in body.items],
+        chosen=body.voucherCodes,
+    )
+
+
 def _serialise_seller_shop_order(
     shop_order: ShopOrder, order: Order, items: list[OrderItem]
 ) -> dict:
@@ -125,6 +156,8 @@ def _serialise_seller_shop_order(
         "status": shop_order.status,
         "subtotal": float(shop_order.subtotal),
         "shippingFee": float(shop_order.shipping_fee),
+        "discount": float(shop_order.discount),
+        "voucherCode": shop_order.voucher_code,
         "address": order.address,
         "createdAt": order.created_at.isoformat(),
         "items": [_serialise_item(item) for item in items],

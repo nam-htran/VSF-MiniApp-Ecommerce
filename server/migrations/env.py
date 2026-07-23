@@ -29,6 +29,7 @@ from app.products import store as _products  # noqa: F401
 from app.reviews import store as _reviews  # noqa: F401
 from app.shops import store as _shops  # noqa: F401
 from app.users import store as _users  # noqa: F401
+from app.vouchers import store as _vouchers  # noqa: F401
 
 config = context.config
 config.set_main_option(

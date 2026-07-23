@@ -217,10 +217,10 @@ const ReviewForm = ({
       </SheetBody>
       <SheetFooter>
         <div className="flex w-full gap-2">
-          <Button type="outline" theme="neutral" block onClick={onClose}>
+          <Button shape="pill" type="outline" theme="neutral" block onClick={onClose}>
             Huỷ
           </Button>
-          <Button type="solid" theme="brand" block loading={saving} onClick={save}>
+          <Button shape="pill" type="solid" theme="brand" block loading={saving} onClick={save}>
             Gửi đánh giá
           </Button>
         </div>

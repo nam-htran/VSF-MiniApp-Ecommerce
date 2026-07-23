@@ -193,6 +193,7 @@ export const ShopForm = ({
         inputMode="tel"
       />
       <Button
+        shape="pill"
         type="solid"
         theme="brand"
         block

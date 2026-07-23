@@ -25,6 +25,9 @@ export type ShopOrderView = {
   subtotal: number;
   /** Itemised, not folded into the total — review rule 5.2.1. */
   shippingFee: number;
+  /** What a voucher took off this shop's slice, snapshotted at purchase. */
+  discount: number;
+  voucherCode: string | null;
   items: OrderItemView[];
 };
 
@@ -57,11 +60,63 @@ const bearer = (): Record<string, string> | undefined => {
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 };
 
-export function placeOrder(address: string, items: CheckoutItem[]) {
+export function placeOrder(
+  address: string,
+  items: CheckoutItem[],
+  voucherCodes?: VoucherChoice
+) {
   return apiRequest<OrderView>('/orders', {
     method: 'POST',
-    data: { address, items },
+    data: { address, items, voucherCodes },
     headers: bearer(),
+  });
+}
+
+/**
+ * What the server will charge for this basket, before placing it. Checkout
+ * previews *this* rather than adding prices up itself — same grouping, same
+ * voucher arithmetic as the real order, so the preview cannot disagree with
+ * the bill. Public: it reveals nothing a product page doesn't.
+ */
+export type OrderQuote = {
+  merchandise: number;
+  /** Total taken off by vouchers, already reflected in `total`. */
+  discount: number;
+  shipping: number;
+  total: number;
+  shops: QuotedShop[];
+};
+
+export type QuotedShop = {
+  shopId: string;
+  subtotal: number;
+  discount: number;
+  shippingFee: number;
+  /** The voucher actually applied to this shop — chosen, or the best. */
+  voucherCode: string | null;
+  voucherDescription: string | null;
+  /** Every voucher this shop offers, usable or not. */
+  vouchers: VoucherOffer[];
+};
+
+export type VoucherOffer = {
+  code: string;
+  description: string;
+  discount: number;
+  /** false = shown greyed out and not selectable. */
+  applicable: boolean;
+  /** Why it can't be used yet — "Cần thêm 400000₫". */
+  reason: string | null;
+  endsAt: string;
+};
+
+/** shopId -> code the buyer picked. Omit a shop to let the best apply. */
+export type VoucherChoice = Record<string, string>;
+
+export function quoteOrder(items: CheckoutItem[], voucherCodes?: VoucherChoice) {
+  return apiRequest<OrderQuote>('/orders/quote', {
+    method: 'POST',
+    data: { items, voucherCodes },
   });
 }
 

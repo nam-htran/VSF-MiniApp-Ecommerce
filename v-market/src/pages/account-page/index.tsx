@@ -97,7 +97,7 @@ const SignedIn = () => {
       </div>
 
       <div className="mx-3 mt-1">
-        <Button type="outline" theme="neutral" block onClick={signOut}>
+        <Button shape="pill" type="outline" theme="neutral" block onClick={signOut}>
           Đăng xuất
         </Button>
       </div>
@@ -161,7 +161,7 @@ const Guest = () => {
         Duyệt cửa hàng và thêm giỏ thoải mái — đăng nhập chỉ cần khi đặt
         hàng.
       </Typography>
-      <Button type="solid" theme="brand" onClick={() => navigate('/login')}>
+      <Button shape="pill" type="solid" theme="brand" onClick={() => navigate('/login')}>
         Đăng nhập với V-App
       </Button>
     </div>

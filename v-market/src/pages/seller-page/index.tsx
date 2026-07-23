@@ -56,7 +56,7 @@ const SellerPage = () => {
           type="negative"
           title="Không tải được kênh người bán"
           message="Thử lại nhé."
-          action={<Button onClick={load}>Thử lại</Button>}
+          action={<Button shape="pill" onClick={load}>Thử lại</Button>}
         />
       </div>
     );

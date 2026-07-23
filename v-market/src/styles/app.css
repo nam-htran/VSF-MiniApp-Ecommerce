@@ -9,6 +9,23 @@
 }
 
 /*
+ * The library ships its own brand red (#ea0029), which `<Button
+ * theme="brand">` and friends paint with. Left alone it sits a shade off
+ * our #e31c23, so a library button beside anything using bg-brand read as
+ * two different reds. Point the library's brand alias at ours, with the
+ * darker / lighter steps it needs for pressed, subtle and disabled.
+ *
+ * Unlayered on purpose: the library's declarations sit in a layer, and
+ * unlayered ones win — the same trick as the toast rule below.
+ */
+:root {
+  --color-alias-custom-brand: #e31c23;
+  --color-alias-custom-brand-strong: #b8171c;
+  --color-alias-custom-brand-subtle: #fdecec;
+  --color-alias-custom-brand-disabled: #f2a6a9;
+}
+
+/*
  * A short fade-and-rise for content that swaps in place — the address
  * form's field groups, the address-book views, small chips. Give the
  * swapping element a changing `key` so React remounts it and the

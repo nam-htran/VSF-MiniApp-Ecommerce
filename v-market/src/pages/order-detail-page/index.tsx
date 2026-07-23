@@ -107,6 +107,7 @@ const OrderDetailPage = () => {
             Hoàn tất thanh toán để cửa hàng bắt đầu chuẩn bị và giao hàng.
           </Typography>
           <Button
+            shape="pill"
             type="solid"
             theme="brand"
             block
@@ -188,7 +189,7 @@ const NotFound = () => {
       <Typography size="small" color="text-secondary">
         Đơn có thể không tồn tại hoặc không thuộc về bạn.
       </Typography>
-      <Button type="outline" onClick={() => navigate('/orders')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/orders')}>
         Về danh sách đơn
       </Button>
     </div>

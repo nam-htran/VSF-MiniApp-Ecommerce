@@ -66,7 +66,7 @@ const HomePage = () => {
             type="negative"
             title="Không tải được sản phẩm"
             message={feed.message}
-            action={<Button onClick={load}>Thử lại</Button>}
+            action={<Button shape="pill" onClick={load}>Thử lại</Button>}
           />
         </div>
       ) : (

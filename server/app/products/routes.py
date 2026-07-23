@@ -18,6 +18,7 @@ from app.products import store as products
 from app.products.store import Product
 from app.reviews import store as reviews
 from app.shops import store as shops
+from app.vouchers import store as vouchers
 from app.users.store import MarketUser
 
 router = APIRouter(tags=["Products"])
@@ -84,11 +85,46 @@ def _serialise(product: Product) -> dict:
     }
 
 
-def _list_item(row: dict) -> dict:
-    """A storefront row: the product plus the card's extra data — shop name
-    and province, average rating, and units sold."""
+def _voucher_view(product: Product, live: list) -> dict:
+    """The price this product actually sells for once the best live voucher
+    applies, plus which voucher did it.
+
+    Priced on one unit, so the card can promise a per-item figure. Buying
+    more only ever qualifies for the same voucher or a better one — except
+    where a percentage voucher hits its cap, which is why the checkout
+    recomputes against the real basket rather than multiplying this out.
+    """
+    applicable = [
+        voucher
+        for voucher in live
+        if voucher.shop_id is None or voucher.shop_id == product.shop_id
+    ]
+    # One line: this product's own category and one unit of its price. A
+    # category-scoped voucher therefore only prices the items it covers.
+    voucher, discount = vouchers.best_for(
+        applicable, [(product.category, product.price)]
+    )
     return {
-        **_serialise(row["product"]),
+        "effectivePrice": float(product.price - discount),
+        "voucher": (
+            None
+            if voucher is None
+            else {
+                "code": voucher.code,
+                "description": voucher.description,
+                "discount": float(discount),
+            }
+        ),
+    }
+
+
+def _list_item(row: dict, live: list) -> dict:
+    """A storefront row: the product plus the card's extra data — shop name
+    and province, average rating, units sold, and the best live voucher."""
+    product = row["product"]
+    return {
+        **_serialise(product),
+        **_voucher_view(product, live),
         "shopName": row["shopName"],
         "shopProvince": row["shopProvince"],
         "ratingAverage": row["ratingAverage"],
@@ -121,8 +157,9 @@ async def list_shop_products(
     page = await products.list_for_shop(
         session, shop_id, limit=limit, offset=offset
     )
+    live = await vouchers.list_live(session, shop_id=shop_id)
     return {
-        "items": [_list_item(row) for row in page],
+        "items": [_list_item(row, live) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -145,8 +182,9 @@ async def list_products(
     page = await products.list_active(
         session, limit=limit, offset=offset, on_sale=onSale, q=q
     )
+    live = await vouchers.list_live(session)
     return {
-        "items": [_list_item(row) for row in page],
+        "items": [_list_item(row, live) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -163,8 +201,9 @@ async def list_my_products(
     page = await products.list_for_shop(
         session, shop.id, limit=limit, offset=offset, include_hidden=True
     )
+    live = await vouchers.list_live(session, shop_id=shop.id)
     return {
-        "items": [_list_item(row) for row in page],
+        "items": [_list_item(row, live) for row in page],
         "hasMore": len(page) == limit,
     }
 
@@ -237,8 +276,10 @@ async def get_product(product_id: str, session: Session) -> dict:
         )
     shop = await shops.find_by_id(session, product.shop_id)
     average, count = await reviews.summary(session, product_id)
+    live = await vouchers.list_live(session, shop_id=product.shop_id)
     return {
         **_serialise(product),
+        **_voucher_view(product, live),
         "shopName": shop.name if shop else None,
         "shopAddress": shop.address if shop else None,
         "shopProvince": shop.province if shop else None,

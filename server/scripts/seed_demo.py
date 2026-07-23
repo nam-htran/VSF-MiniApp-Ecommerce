@@ -24,6 +24,7 @@ import base64
 import json
 import sys
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Runnable from anywhere: put server/ on the path so `app.*` imports work.
@@ -72,6 +73,57 @@ SHOPS = [
             ("Bình giữ nhiệt 500ml", "Giữ nóng 12h, giữ lạnh 24h.", "Inox 304", 220000, 280000, 80, "bottle"),
         ],
     ),
+]
+
+
+# One live sale per shop, in shop order. The best applicable one applies
+# itself to the card price and again to the order — nobody types a code.
+# `days` is the window relative to today, so a reseed always lands live.
+VOUCHERS = [
+    # Shop 1 gets two, on purpose: one that bites straight away and one that
+    # needs a big basket, so checkout shows a live code beside a greyed-out
+    # one with "cần thêm …".
+    [
+        {
+            "code": "BINHMINH25",
+            "description": "Giảm 25% toàn shop, tối đa 200.000₫",
+            "discountType": "PERCENT",
+            "discountValue": 25,
+            "maxDiscount": 200_000,
+            "days": (-1, 14),
+        },
+        {
+            "code": "BINHMINH500K",
+            "description": "Giảm 500.000₫ cho đơn từ 5.000.000₫",
+            "discountType": "AMOUNT",
+            "discountValue": 500_000,
+            "minOrder": 5_000_000,
+            "days": (-1, 30),
+        },
+    ],
+    # Category-scoped: only clothing counts towards it, and only clothing
+    # gets discounted — the keyboard in the same basket earns nothing.
+    [
+        {
+            "code": "ANNHIEN20",
+            "description": "Giảm 20% hàng thời trang, tối đa 50.000₫",
+            "category": "thoi-trang",
+            "discountType": "PERCENT",
+            "discountValue": 20,
+            "maxDiscount": 50_000,
+            "days": (-1, 10),
+        },
+    ],
+    [
+        {
+            "code": "NHAMINH10",
+            "description": "Giảm 10% đồ gia dụng, tối đa 30.000₫",
+            "discountType": "PERCENT",
+            "discountValue": 10,
+            "maxDiscount": 30_000,
+            "days": (-1, 21),
+        },
+    ],
 ]
 
 
@@ -207,7 +259,18 @@ def seed() -> None:
             if original is not None:
                 payload["originalPrice"] = original
             post(BACKEND, "/products", payload, token)
-        print(f"  {shop_name}: {len(product_rows)} sản phẩm")
+
+        codes = []
+        for template in VOUCHERS[index] if index < len(VOUCHERS) else []:
+            voucher = dict(template)
+            start_days, end_days = voucher.pop("days")
+            now = datetime.now(timezone.utc)
+            voucher["startsAt"] = (now + timedelta(days=start_days)).isoformat()
+            voucher["endsAt"] = (now + timedelta(days=end_days)).isoformat()
+            post(BACKEND, "/vouchers", voucher, token)
+            codes.append(voucher["code"])
+        suffix = f", mã {', '.join(codes)}" if codes else ""
+        print(f"  {shop_name}: {len(product_rows)} sản phẩm{suffix}")
 
 
 if __name__ == "__main__":

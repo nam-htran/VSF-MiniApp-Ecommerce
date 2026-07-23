@@ -1,7 +1,7 @@
 import { Icon, Image, Typography, useNavigate } from '@v-miniapp/ui-react';
 import { formatVnd } from '@/lib/format';
 import { estimateDelivery } from '@/lib/delivery';
-import type { ProductCardData } from '@/lib/product-card';
+import { discountPercent, type ProductCardData } from '@/lib/product-card';
 import { Skeleton } from '@v-miniapp/ui-react';
 
 
@@ -23,14 +23,15 @@ export const ProductGridSection = ({
 }) => {
   if (products === undefined) {
     return (
-      <section className="grid grid-cols-2 gap-2 p-3">
+      // Uneven heights here too, so the skeleton previews the real stagger.
+      <section className="columns-2 gap-2 p-3">
         {[0, 1, 2, 3].map(i => (
           <div
             key={i}
-            className="flex flex-col gap-1.5 rounded-xl bg-alias-background p-2 shadow-sm">
+            className="mb-2 flex break-inside-avoid flex-col gap-1.5 rounded-xl bg-alias-background p-2 shadow-sm">
             <Skeleton className="h-36 w-full rounded-lg" />
             <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-3 w-1/2" />
+            {i % 2 === 0 && <Skeleton className="h-3 w-1/2" />}
           </div>
         ))}
       </section>
@@ -52,9 +53,15 @@ export const ProductGridSection = ({
   }
 
   return (
-    <section className="grid grid-cols-2 gap-2 p-3">
+    // Masonry rather than a grid: CSS columns let each card end where its
+    // own content ends, so the two columns stagger instead of every row
+    // being padded to its tallest card. break-inside-avoid keeps a card
+    // from being split across the column break.
+    <section className="columns-2 gap-2 p-3">
       {products.map(product => (
-        <GridProductCard key={product.id} product={product} />
+        <div key={product.id} className="mb-2 break-inside-avoid">
+          <GridProductCard product={product} />
+        </div>
       ))}
     </section>
   );
@@ -72,6 +79,11 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
       : null;
   const hasRating = (product.ratingCount ?? 0) > 0;
   const hasSold = (product.sold ?? 0) > 0;
+  // The server already applied the best live voucher; the card just shows
+  // the result. Demo cards carry no effectivePrice and fall back to price.
+  const shownPrice = product.effectivePrice ?? product.price;
+  const discounted = shownPrice < product.price;
+  const percentOff = discountPercent(product);
   return (
   // Stretched-link layout: one button covers the whole card (opens the
   // product), while the shop name is a second, real button floating above
@@ -89,25 +101,36 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
       }
       className="absolute inset-0 z-0 rounded-xl"
     />
-    <Image
-      src={product.image}
-      alt={product.name}
-      fit="cover"
-      // NOT lazy — same story as the flash strip: Image only sets src
-      // after its internal VisibilitySensor fires, and inside the app's
-      // scroll container it never does, so photos silently fall back to
-      // the emoji. Bundled images are cheap; real lazy-loading returns
-      // when products come from the backend, implemented by hand.
-      className="h-36 w-full rounded-lg"
-      // The emoji tile steps in if the photo fails, at the same size,
-      // so the card never collapses and shifts the grid.
-      fallback={
-        <div
-          className={`flex h-36 w-full items-center justify-center rounded-lg text-4xl ${product.tint}`}>
-          {product.emoji}
-        </div>
-      }
-    />
+    <div className="relative">
+      <Image
+        src={product.image}
+        alt={product.name}
+        fit="cover"
+        // NOT lazy — same story as the flash strip: Image only sets src
+        // after its internal VisibilitySensor fires, and inside the app's
+        // scroll container it never does, so photos silently fall back to
+        // the emoji. Bundled images are cheap; real lazy-loading returns
+        // when products come from the backend, implemented by hand.
+        className="h-36 w-full rounded-lg"
+        // The emoji tile steps in if the photo fails, at the same size,
+        // so the card never collapses and shifts the grid.
+        fallback={
+          <div
+            className={`flex h-36 w-full items-center justify-center rounded-lg text-4xl ${product.tint}`}>
+            {product.emoji}
+          </div>
+        }
+      />
+      {/* The same badge the flash strip shows, on every card that has a
+          saving — markdown, voucher, or both. */}
+      {percentOff > 0 && (
+        <span className="absolute right-1 top-1 rounded-md bg-global-red-red-60 px-1.5 py-0.5">
+          <Typography size="2x-small" weight="bold" className="text-global-basic-white">
+            -{percentOff}%
+          </Typography>
+        </span>
+      )}
+    </div>
 
     <div className="flex flex-col">
       <Typography size="small" weight="bold" className="line-clamp-2">
@@ -120,19 +143,34 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
       )}
     </div>
 
+    {/* The headline price is the one a voucher already brought down, so the
+        card never advertises more than checkout charges. The struck-through
+        figure is whichever is higher: the sale's original, or the pre-voucher
+        price. */}
     <div className="flex flex-wrap items-baseline gap-x-1.5">
       <Typography
         size="base"
         weight="bold"
-        className={product.oldPrice ? 'text-global-red-red-60' : undefined}>
-        {formatVnd(product.price)}
+        className={
+          product.oldPrice || discounted ? 'text-global-red-red-60' : undefined
+        }>
+        {formatVnd(shownPrice)}
       </Typography>
-      {product.oldPrice && (
+      {(product.oldPrice ?? (discounted ? product.price : undefined)) && (
         <Typography size="2x-small" color="text-tertiary" className="line-through">
-          {formatVnd(product.oldPrice)}
+          {formatVnd(product.oldPrice ?? product.price)}
         </Typography>
       )}
     </div>
+
+    {product.voucher && (
+      <span className="flex w-fit items-center gap-1 rounded bg-global-red-red-10 px-1.5 py-0.5">
+        <Icon name="discount-code" size={10} className="shrink-0 text-global-red-red-60" />
+        <Typography size="2x-small" weight="semibold" className="truncate text-global-red-red-60">
+          {product.voucher.code}
+        </Typography>
+      </span>
+    )}
 
     <div className="mt-auto flex flex-col gap-0.5">
       {(hasRating || hasSold) && (

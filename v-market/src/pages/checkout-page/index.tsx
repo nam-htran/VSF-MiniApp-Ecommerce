@@ -16,13 +16,22 @@ import {
   type CartLine,
 } from '@/lib/cart';
 import { useSession } from '@/lib/auth';
-import { placeOrder, SHIPPING_FEE_PER_SHOP } from '@/api/orders';
+import {
+  placeOrder,
+  quoteOrder,
+  SHIPPING_FEE_PER_SHOP,
+  type OrderQuote,
+  type QuotedShop,
+  type VoucherChoice,
+} from '@/api/orders';
+import { VoucherSheet } from '@/components/voucher-picker';
 import { listAddresses, type SavedAddress } from '@/api/addresses';
 import { initPayment } from '@/api/payments';
 import { AddressBookSheet } from '@/components/address-book';
 import { PaymentSheet } from '@/components/payment-sheet';
 import { ApiError } from '@/api/client';
 import { formatVnd } from '@/lib/format';
+import { estimateDelivery } from '@/lib/delivery';
 
 /**
  * The checkout screen, Shopee-shaped: a delivery address picked from the
@@ -97,9 +106,47 @@ const CheckoutPage = () => {
   }, [refresh]);
 
   const groups = useMemo(() => groupByShop(lines), [lines]);
-  const merchandise = cartSubtotal(lines);
-  const shipping = groups.length * SHIPPING_FEE_PER_SHOP;
-  const total = merchandise + shipping;
+
+  // The server prices the basket — same grouping and the same voucher
+  // arithmetic the order will use — so this preview cannot quote one figure
+  // and charge another. Until it answers, fall back to the plain sum, which
+  // is only ever an over-estimate (no voucher applied yet), never under.
+  const [quote, setQuote] = useState<OrderQuote | null>(null);
+  // shopId -> code the buyer picked. Empty means "best applies itself".
+  const [picked, setPicked] = useState<VoucherChoice>({});
+  useEffect(() => {
+    if (lines.length === 0) return;
+    let current = true;
+    quoteOrder(
+      lines.map(line => ({ productId: line.product.id, qty: line.qty })),
+      picked
+    )
+      .then(result => {
+        if (current) setQuote(result);
+      })
+      .catch(() => {
+        if (current) setQuote(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [lines, picked]);
+
+  const merchandise = quote?.merchandise ?? cartSubtotal(lines);
+  const shipping = quote?.shipping ?? groups.length * SHIPPING_FEE_PER_SHOP;
+  const discount = quote?.discount ?? 0;
+  const total = quote?.total ?? merchandise + shipping;
+  // What the flash-sale markdown already took off, separate from vouchers:
+  // `merchandise` is the sum at sale prices, so this is shown struck through
+  // on that line rather than as a second deduction.
+  const markdown = lines.reduce(
+    (sum, { product, qty }) =>
+      sum +
+      (product.oldPrice && product.oldPrice > product.price
+        ? (product.oldPrice - product.price) * qty
+        : 0),
+    0
+  );
 
   const selected = addresses?.find(a => a.id === selectedId) ?? null;
   // One free-text address field on the server: fold recipient, phone and
@@ -109,7 +156,12 @@ const CheckoutPage = () => {
     : null;
   const canPlace = composed !== null && !placing;
 
-  if (lines.length === 0) return <EmptyCheckout />;
+  // An empty cart means "nothing to check out" only before an order exists.
+  // Placing one clears the cart on purpose, so without the two guards below
+  // the page would swap to the empty state at the very moment the payment
+  // sheet should open — the order is placed, but the buyer is shown an
+  // empty basket and never gets to pay.
+  if (lines.length === 0 && !placing && !payment) return <EmptyCheckout />;
 
   const place = async () => {
     if (!composed || placing) return;
@@ -119,7 +171,10 @@ const CheckoutPage = () => {
     try {
       order = await placeOrder(
         composed,
-        lines.map(line => ({ productId: line.product.id, qty: line.qty }))
+        lines.map(line => ({ productId: line.product.id, qty: line.qty })),
+        // The server re-validates each pick and silently falls back to the
+        // best voucher, so a stale choice can never fail the order.
+        picked
       );
     } catch (error) {
       const detail =
@@ -172,7 +227,20 @@ const CheckoutPage = () => {
       />
 
       {groups.map(group => (
-        <ShopGroupCard key={group.key} group={group} />
+        <ShopGroupCard
+          key={group.key}
+          group={group}
+          buyerAddress={selected?.addressLine}
+          quoted={quote?.shops.find(s => s.shopId === group.shopId) ?? null}
+          onPickVoucher={code =>
+            setPicked(prev => {
+              const next = { ...prev };
+              if (code === null) delete next[group.shopId!];
+              else next[group.shopId!] = code;
+              return next;
+            })
+          }
+        />
       ))}
 
       <PaymentCard />
@@ -180,6 +248,8 @@ const CheckoutPage = () => {
       <BreakdownCard
         merchandise={merchandise}
         shipping={shipping}
+        markdown={markdown}
+        discount={discount}
         total={total}
       />
 
@@ -308,8 +378,26 @@ const QtyStepper = ({ id, qty }: { id: string; qty: number }) => (
   </div>
 );
 
-const ShopGroupCard = ({ group }: { group: ShopGroup }) => {
+const ShopGroupCard = ({
+  group,
+  buyerAddress,
+  quoted,
+  onPickVoucher,
+}: {
+  group: ShopGroup;
+  buyerAddress?: string;
+  /** This shop's slice of the server's quote — vouchers included. */
+  quoted: QuotedShop | null;
+  onPickVoucher: (code: string | null) => void;
+}) => {
   const navigate = useNavigate();
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  // Each shop ships from its own province, so the estimate is per card —
+  // the buyer's address sharpens it when the two are in the same region.
+  const eta = estimateDelivery(
+    group.lines[0]?.product.shopProvince ?? null,
+    buyerAddress
+  );
   return (
   <Card>
     {group.shopId ? (
@@ -360,14 +448,72 @@ const ShopGroupCard = ({ group }: { group: ShopGroup }) => {
       </div>
     ))}
 
-    <div className="flex items-center justify-between border-t border-alias-border-subtle-01 pt-2">
-      <span className="flex items-center gap-1.5">
-        <Icon name="scooter-front" size={14} className="text-global-teal-teal-60" />
-        <Typography size="x-small" color="text-secondary">
-          Phí vận chuyển
+    {/* This shop's vouchers. Shown whenever the shop has any, so the buyer
+        can see what they'd need for the ones that don't apply yet. */}
+    {quoted && quoted.vouchers.length > 0 && (
+      <button
+        type="button"
+        onClick={() => setVoucherOpen(true)}
+        className="flex items-center gap-2 rounded-xl bg-alias-layer-01 px-2.5 py-2 text-left">
+        <Icon name="discount-code" size={16} className="shrink-0 text-brand" />
+        <div className="flex min-w-0 flex-1 flex-col">
+          {quoted.voucherCode ? (
+            <>
+              <Typography size="x-small" weight="semibold" className="truncate text-brand">
+                {quoted.voucherCode}
+              </Typography>
+              <Typography size="2x-small" className="text-global-green-green-70">
+                Giảm {formatVnd(quoted.discount)}
+              </Typography>
+            </>
+          ) : (
+            <Typography size="x-small" color="text-secondary">
+              Chọn mã giảm giá ({quoted.vouchers.length})
+            </Typography>
+          )}
+        </div>
+        <Icon name="chevron-right" size={14} color="text-tertiary" />
+      </button>
+    )}
+
+    <VoucherSheet
+      open={voucherOpen}
+      offers={quoted?.vouchers ?? []}
+      selected={quoted?.voucherCode ?? null}
+      onPick={code => {
+        onPickVoucher(code);
+        setVoucherOpen(false);
+      }}
+      onClose={() => setVoucherOpen(false)}
+    />
+
+    <div className="flex flex-col gap-1.5 border-t border-alias-border-subtle-01 pt-2">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5">
+          <Icon name="clock" size={14} className="text-global-teal-teal-60" />
+          <Typography size="x-small" color="text-secondary">
+            Dự kiến giao
+          </Typography>
+        </span>
+        <Typography size="small" weight="semibold">
+          {eta.days}
+          {eta.sameRegion && (
+            <Typography size="2x-small" color="text-tertiary">
+              {' '}
+              · cùng khu vực
+            </Typography>
+          )}
         </Typography>
-      </span>
-      <Typography size="small">{formatVnd(SHIPPING_FEE_PER_SHOP)}</Typography>
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5">
+          <Icon name="scooter-front" size={14} className="text-global-teal-teal-60" />
+          <Typography size="x-small" color="text-secondary">
+            Phí vận chuyển
+          </Typography>
+        </span>
+        <Typography size="small">{formatVnd(SHIPPING_FEE_PER_SHOP)}</Typography>
+      </div>
     </div>
   </Card>
   );
@@ -402,15 +548,32 @@ const PaymentCard = () => (
 const BreakdownCard = ({
   merchandise,
   shipping,
+  markdown,
+  discount,
   total,
 }: {
   merchandise: number;
   shipping: number;
+  /** Flash-sale markdown already inside `merchandise` — shown struck
+   *  through on that line, not deducted a second time. */
+  markdown: number;
+  /** Voucher saving across every shop, genuinely subtracted from the total.
+   *  Deliberately unlabelled with a code: a basket spanning two shops can
+   *  carry two vouchers, and naming one of them beside their combined
+   *  amount would misstate both. Each shop's card names its own. */
+  discount: number;
   total: number;
 }) => (
   <Card>
-    <Row label="Tổng tiền hàng" value={formatVnd(merchandise)} />
+    <Row
+      label="Tổng tiền hàng"
+      value={formatVnd(merchandise)}
+      was={markdown > 0 ? formatVnd(merchandise + markdown) : undefined}
+    />
     <Row label="Tổng phí vận chuyển" value={formatVnd(shipping)} />
+    {discount > 0 && (
+      <Row label="Mã giảm giá" value={formatVnd(discount)} tone="save" />
+    )}
     <div className="flex items-center justify-between border-t border-alias-border-subtle-01 pt-2">
       <Typography size="base" weight="bold">
         Tổng thanh toán
@@ -422,12 +585,38 @@ const BreakdownCard = ({
   </Card>
 );
 
-const Row = ({ label, value }: { label: string; value: string }) => (
-  <div className="flex items-center justify-between">
-    <Typography size="small" color="text-secondary">
+const Row = ({
+  label,
+  value,
+  was,
+  tone,
+}: {
+  label: string;
+  value: string;
+  /** Original price, struck through before the current one. */
+  was?: string;
+  tone?: 'save';
+}) => (
+  <div className="flex items-center justify-between gap-3">
+    <Typography
+      size="small"
+      color={tone === 'save' ? undefined : 'text-secondary'}
+      className={tone === 'save' ? 'text-global-green-green-70' : undefined}>
       {label}
     </Typography>
-    <Typography size="small">{value}</Typography>
+    <span className="flex shrink-0 items-baseline gap-1.5">
+      {was && (
+        <Typography size="x-small" color="text-tertiary" className="line-through">
+          {was}
+        </Typography>
+      )}
+      <Typography
+        size="small"
+        weight={tone === 'save' ? 'semibold' : 'regular'}
+        className={tone === 'save' ? 'text-global-green-green-70' : undefined}>
+        {tone === 'save' ? `−${value}` : value}
+      </Typography>
+    </span>
   </div>
 );
 
@@ -442,24 +631,25 @@ const PlaceOrderBar = ({
   loading: boolean;
   onPlace: () => void;
 }) => (
+  // One full-width action carrying its own amount, rather than a total
+  // beside a small button — the breakdown card above already itemises it,
+  // so the figure appeared twice on one bar.
   <div
-    className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-between gap-3 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
+    className="fixed inset-x-0 bottom-0 z-40 border-t border-alias-border-subtle-01 bg-alias-background px-4 pt-2"
     style={{ paddingBottom: 'calc(var(--safe-area-inset-bottom, 0px) + 8px)' }}>
-    <div className="flex flex-col">
-      <Typography size="x-small" color="text-secondary">
-        Tổng thanh toán
-      </Typography>
-      <Typography size="large" weight="bold" className="text-brand">
-        {formatVnd(total)}
-      </Typography>
-    </div>
     <Button
+      shape="pill"
       type="solid"
       theme="brand"
+      size="large"
+      block
       loading={loading}
       disabled={disabled}
       onClick={onPlace}>
-      Đặt hàng
+      <span className="flex w-full items-center justify-between gap-3">
+        <span>Đặt hàng</span>
+        <span className="tabular-nums">{formatVnd(total)}</span>
+      </span>
     </Button>
   </div>
 );
@@ -475,7 +665,7 @@ const EmptyCheckout = () => {
       <Typography size="small" color="text-secondary">
         Thêm sản phẩm vào giỏ trước khi thanh toán.
       </Typography>
-      <Button type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
         Xem sản phẩm
       </Button>
     </div>

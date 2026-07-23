@@ -220,7 +220,7 @@ const AddressList = ({
         );
       })}
 
-      <Button type="outline" theme="brand" block onClick={onAdd}>
+      <Button shape="pill" type="outline" theme="brand" block onClick={onAdd}>
         <span className="flex items-center justify-center gap-1.5">
           <Icon name="plus" size={16} />
           Thêm địa chỉ mới
@@ -430,7 +430,7 @@ const AddressForm = ({
           </button>
         </span>
       ) : (
-        <Button type="outline" theme="neutral" block loading={pinning} onClick={useMyLocation}>
+        <Button shape="pill" type="outline" theme="neutral" block loading={pinning} onClick={useMyLocation}>
           <span className="flex items-center justify-center gap-1.5">
             <Icon name="pin-tack" size={16} />
             Ghim vị trí hiện tại
@@ -455,10 +455,10 @@ const AddressForm = ({
       </button>
 
       <div className="flex gap-2 pt-1">
-        <Button type="outline" theme="neutral" block onClick={onCancel}>
+        <Button shape="pill" type="outline" theme="neutral" block onClick={onCancel}>
           Huỷ
         </Button>
-        <Button type="solid" theme="brand" block loading={saving} disabled={!canSave} onClick={save}>
+        <Button shape="pill" type="solid" theme="brand" block loading={saving} disabled={!canSave} onClick={save}>
           Lưu địa chỉ
         </Button>
       </div>

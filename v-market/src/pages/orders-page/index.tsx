@@ -185,7 +185,7 @@ const Failed = ({
       type="negative"
       title="Không tải được đơn hàng"
       message={message}
-      action={<Button onClick={onRetry}>Thử lại</Button>}
+      action={<Button shape="pill" onClick={onRetry}>Thử lại</Button>}
     />
   </div>
 );
@@ -202,7 +202,7 @@ const EmptyOrders = () => {
       <Typography size="small" color="text-secondary">
         Đơn hàng của bạn sẽ hiện ở đây sau khi đặt mua.
       </Typography>
-      <Button type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
         Xem cửa hàng
       </Button>
     </div>

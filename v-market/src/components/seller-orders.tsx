@@ -199,6 +199,7 @@ const OrderCard = ({
 
       {step && (
         <Button
+          shape="pill"
           type="solid"
           theme="brand"
           block
