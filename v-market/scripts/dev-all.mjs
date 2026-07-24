@@ -3,7 +3,10 @@
  *   1. requires Docker (Postgres lives there)
  *   2. docker compose up -d --wait
  *   3. creates the Python venvs on first run if they are missing
- *   4. mock-openAPI :4001, server :4000, MiniApp dev server
+ *   4. alembic upgrade head
+ *   5. mock-openAPI :4001, server :4000
+ *   6. seeds the demo data, but only when there is none
+ *   7. MiniApp dev server
  *
  * Ctrl+C stops everything. `npm run dev:app` runs the MiniApp alone.
  */
@@ -63,8 +66,16 @@ for (const dir of [serverDir, mockDir]) {
 console.log('→ docker compose up -d --wait');
 execSync('docker compose up -d --wait', { cwd: root, stdio: 'inherit' });
 
-// The three processes. --reload on both Python servers, quiet logs so
-// the MiniApp CLI's output stays readable.
+// The app no longer creates its own tables; migrations own the schema.
+console.log('→ alembic upgrade head');
+execSync(`"${python(serverDir)}" -m alembic upgrade head`, {
+  cwd: serverDir,
+  stdio: 'inherit',
+  shell: true,
+});
+
+// --reload on both Python servers, quiet logs so the MiniApp CLI's output
+// stays readable.
 const children = [
   spawn(
     python(mockDir),
@@ -75,12 +86,6 @@ const children = [
     python(serverDir),
     ['-m', 'uvicorn', 'app.main:app', '--port', '4000', '--log-level', 'warning', '--reload'],
     { cwd: serverDir, stdio: 'inherit' }
-  ),
-  // One quoted string, not (cmd, args): shell:true concatenates args
-  // unquoted, and this path contains a space ("Project 4week").
-  spawn(
-    `"${path.join(appDir, 'node_modules', '.bin', 'v-miniapp-cli')}" dev`,
-    { cwd: appDir, stdio: 'inherit', shell: true }
   ),
 ];
 
@@ -105,7 +110,7 @@ process.on('SIGTERM', () => {
 process.on('exit', stopAll);
 
 // If any process dies, take the rest down — half a stack only confuses.
-for (const child of children) {
+const watch = (child) => {
   child.on('exit', (code) => {
     if (code !== null && code !== 0) {
       console.error(`\nA process exited with code ${code} — stopping the stack.\n`);
@@ -113,4 +118,55 @@ for (const child of children) {
       process.exit(code);
     }
   });
+  return child;
+};
+children.forEach(watch);
+
+const getJson = async (url, timeoutMs = 60_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return await response.json();
+    } catch {
+      /* not up yet */
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return null;
+};
+
+// Only into an empty catalogue: seed_demo.py truncates first, so doing this
+// every start would throw away whatever was being worked on. Empty is the
+// case worth automating — a fresh clone, or a database pytest just wiped.
+const catalogue = await getJson('http://127.0.0.1:4000/products?limit=1');
+if (catalogue === null) {
+  console.error('\nServer never came up — skipping the seed.\n');
+} else if (catalogue.items.length === 0) {
+  console.log('→ empty catalogue, seeding demo data (about a minute)');
+  // The seed places real orders against the two servers above, so it has to
+  // run while they are alive — hence spawn, not execSync.
+  await new Promise((resolve) => {
+    const seed = spawn(python(serverDir), ['scripts/seed_demo.py'], {
+      cwd: serverDir,
+      stdio: 'inherit',
+    });
+    seed.on('exit', (code) => {
+      if (code !== 0) console.error('\nSeeding failed — the app will be empty.\n');
+      resolve();
+    });
+    seed.on('error', resolve);
+  });
 }
+
+// One quoted string, not (cmd, args): shell:true concatenates args
+// unquoted, and this path contains a space ("Project 4week").
+children.push(
+  watch(
+    spawn(`"${path.join(appDir, 'node_modules', '.bin', 'v-miniapp-cli')}" dev`, {
+      cwd: appDir,
+      stdio: 'inherit',
+      shell: true,
+    })
+  )
+);
