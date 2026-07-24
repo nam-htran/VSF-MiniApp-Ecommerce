@@ -183,7 +183,31 @@ Chi tiết ở [platform-constraints.md](platform-constraints.md) §10; điểm 
 | Cụm `⋯ ✕` của V-App đè lên trang, không chiếm layout | nội dung hàng đầu chừa vùng đó; "Xem tất cả" thuộc hàng Flash sale nằm dưới |
 | Bộ icon không có cart/giỏ | emoji ReactNode làm icon tab |
 
-## 7. Chạy
+## 7. Form thêm sản phẩm — nút bị khoá phải nói lý do
+
+`ProductFormSheet` khoá nút "Thêm/Lưu" khi form chưa hợp lệ. Bản đầu **khoá
+im lặng** — người bán điền xong vẫn thấy nút mờ mà không biết thiếu gì. Hai
+nguyên nhân hay gặp, cả hai đều không hiện ra:
+
+- **Giá gõ có dấu phân cách.** VND là số nguyên đồng, người bán gõ `50.000`
+  hay `50,000`. `Number("50,000")` ra `NaN` → nút khoá. Giờ `parseVnd` chỉ
+  giữ chữ số, nên `50.000`, `50,000`, `50 000`, `50000` đều thành `50000`.
+- **Mô tả để trống.** Backend bắt buộc `description` (min_length=1), nên
+  client cũng bắt — nhưng trước đây không nói.
+
+Cách sửa đúng: tính `problem` — **yêu cầu chưa đạt đầu tiên, bằng lời** — và
+hiện ngay trên nút. Nút disable không bao giờ còn là câu đố. Cùng tinh thần
+với thông báo kiểm duyệt ([day13](../day13/security.md) §3): từ chối mà không
+nêu lý do là một ticket hỗ trợ đang chờ.
+
+> **Lỗi ô SKU chết:** ô SKU thêm ở phần sau có `useState`, có `TextField`,
+> nhưng `save()` **không hề đưa `sku` vào payload** — gõ gì cũng mất. Backend
+> vẫn nhận `sku` (`CreateProductRequest`, `UpdateProductRequest`) và có ràng
+> buộc `UNIQUE(shop_id, sku)`. Đã nối lại ở cả create lẫn update; kiểm chứng
+> bằng backend thật: tạo `TEST-SKU-001` → lưu đúng, tạo lại trùng → **409
+> "Mã SKU đã tồn tại trong shop"**.
+
+## 8. Chạy
 
 ```bash
 docker compose up -d

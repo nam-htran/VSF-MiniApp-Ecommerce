@@ -74,19 +74,44 @@ export const ProductFormSheet = ({
   const [saving, setSaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const priceNum = Number(price);
-  const originalNum = original.trim() ? Number(original) : null;
-  const stockNum = Number(stock);
+  // VND is whole đồng, and sellers type prices with separators — "50.000",
+  // "50,000", "50 000". Number("50,000") is NaN, which used to disable the
+  // button with no explanation. Keep the digits and read them as one number.
+  const parseVnd = (s: string): number => {
+    const digits = s.replace(/\D/g, '');
+    return digits ? Number(digits) : NaN;
+  };
 
-  const valid =
-    name.trim().length >= 1 &&
-    description.trim().length >= 1 &&
-    Number.isFinite(priceNum) &&
-    priceNum > 0 &&
-    Number.isInteger(stockNum) &&
-    stockNum >= 0 &&
-    (originalNum === null ||
-      (Number.isFinite(originalNum) && originalNum > priceNum));
+  const priceNum = parseVnd(price);
+  const originalNum = original.trim() ? parseVnd(original) : null;
+  const stockNum = parseVnd(stock);
+  // With options, the per-combination quantities are the stock and the field
+  // above is disabled; send 0 rather than NaN for the product's own figure.
+  const stockValue = Number.isFinite(stockNum) ? stockNum : 0;
+  const hasVariants = variants.length > 0;
+
+  // The first unmet requirement, in words. A disabled button that never says
+  // why is the same trap as a rejected product with no reason — the seller is
+  // left guessing. Whatever field they actually missed, this names it.
+  const problem: string | null =
+    name.trim().length < 1
+      ? 'Nhập tên sản phẩm'
+      : description.trim().length < 1
+        ? 'Nhập mô tả sản phẩm'
+        : !price.trim()
+          ? 'Nhập giá bán'
+          : !Number.isFinite(priceNum) || priceNum <= 0
+            ? 'Giá bán phải lớn hơn 0'
+            : !hasVariants && !stock.trim()
+              ? 'Nhập tồn kho'
+              : !hasVariants && (!Number.isInteger(stockNum) || stockNum < 0)
+                ? 'Tồn kho phải là số nguyên ≥ 0'
+                : originalNum !== null &&
+                    (!Number.isFinite(originalNum) || originalNum <= priceNum)
+                  ? 'Giá gốc phải lớn hơn giá bán, hoặc để trống'
+                  : null;
+
+  const valid = problem === null;
 
   const pickImage = async (file: File) => {
     setUploading(true);
@@ -110,10 +135,11 @@ export const ProductFormSheet = ({
     try {
       if (editing) {
         await updateProduct(product.id, {
+          sku: sku.trim() || null,
           name: name.trim(),
           description: description.trim(),
           price: priceNum,
-          stock: stockNum,
+          stock: stockValue,
           category: category ?? null,
           imageUrls: images,
           status: hidden ? 'HIDDEN' : 'ACTIVE',
@@ -127,12 +153,13 @@ export const ProductFormSheet = ({
         });
       } else {
         await createProduct({
+          sku: sku.trim() || null,
           name: name.trim(),
           description: description.trim(),
           unit: unit.trim() || null,
           price: priceNum,
           originalPrice: originalNum,
-          stock: stockNum,
+          stock: stockValue,
           category: category ?? null,
           imageUrls: images,
           // Omitted when there are none, so a plain product is created
@@ -318,6 +345,16 @@ export const ProductFormSheet = ({
         </div>
       </SheetBody>
       <SheetFooter>
+        {/* Say what's still missing, so the disabled button is never a
+            mystery. Hidden while uploading — the button shows that itself. */}
+        {problem && !uploading && (
+          <div className="mb-2 flex items-center gap-1.5">
+            <Icon name="circle-info" size={14} className="shrink-0 text-global-amber-amber-70" />
+            <Typography size="2x-small" className="text-global-amber-amber-70">
+              {problem}
+            </Typography>
+          </div>
+        )}
         <div className="flex w-full gap-2">
           <Button shape="pill" type="outline" theme="neutral" block onClick={onClose}>
             Huỷ
