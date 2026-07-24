@@ -67,17 +67,31 @@ Nhờ vậy toàn bộ luồng chạy được thật, và khi có credential th
 
 ## Tài liệu
 
-| | |
-|---|---|
-| [day1/login.md](docs/day1/login.md) | Đăng nhập qua V-App, consent hai giai đoạn |
-| [day2/research.md](docs/day2/research.md) | Khảo sát nền tảng |
-| [day2/storage.md](docs/day2/storage.md) | Vì sao Postgres |
-| [day3/platform-constraints.md](docs/day3/platform-constraints.md) | Ràng buộc của V-App — đọc trước khi thêm tính năng |
-| [day3/shops.md](docs/day3/shops.md) | Shop và vai trò |
-| [day3/products.md](docs/day3/products.md) | Sản phẩm |
-| [day3/orders.md](docs/day3/orders.md) | Đơn hàng, thanh toán, giao hàng, **và bảo vệ tiền người mua** |
-| [day3/vouchers-variants.md](docs/day3/vouchers-variants.md) | Voucher, phân loại, SKU, kiểm duyệt |
-| [day3/frontend.md](docs/day3/frontend.md) | Giao diện |
+Sắp theo **ngày trong Plan**, để một dòng kế hoạch tra ngược ra được tài liệu
+và ngược lại.
+
+| Ngày | | |
+|---|---|---|
+| 1 | [day1/login.md](docs/day1/login.md) | Đăng nhập qua V-App, consent hai giai đoạn |
+| 2 | [day2/research.md](docs/day2/research.md) | Khảo sát nền tảng |
+| 2 | [day2/storage.md](docs/day2/storage.md) | Vì sao Postgres |
+| — | [day3/platform-constraints.md](docs/day3/platform-constraints.md) | **Ràng buộc của V-App — đọc trước khi thêm tính năng** |
+| 3 | [day3/shops.md](docs/day3/shops.md) | Shop và vai trò |
+| 4 | [day3/products.md](docs/day3/products.md) | Sản phẩm |
+| 5–6 | [day5/buyer-journey.md](docs/day5/buyer-journey.md) | Duyệt hàng, tìm kiếm, danh mục, giỏ hàng |
+| 7 | [day7/checkout.md](docs/day7/checkout.md) | Sổ địa chỉ, định vị, báo giá, đặt hàng |
+| 8, 11–12 | [day3/orders.md](docs/day3/orders.md) | Đơn hàng, thanh toán, giữ hàng, **bảo vệ tiền người mua** |
+| 9 | [day9/fulfilment-and-storefront.md](docs/day9/fulfilment-and-storefront.md) | Người bán xử lý đơn, trang cửa hàng, upload ảnh |
+| 13 | [day13/security.md](docs/day13/security.md) | Phân quyền, kiểm duyệt, XSS, rate limit |
+| 14 | [day3/frontend.md](docs/day3/frontend.md) | Kiến trúc MiniApp |
+| 15 | [day15/testing.md](docs/day15/testing.md) | Cách kiểm thử và ma trận 57 ca |
+| 17 | [day3/vouchers-variants.md](docs/day3/vouchers-variants.md) | Voucher, phân loại, SKU |
+| 17 | [day17/reviews.md](docs/day17/reviews.md) | Đánh giá của người đã mua |
+
+> Thư mục `day3/` chứa cả tài liệu của ngày sau (`orders.md`,
+> `vouchers-variants.md`, `frontend.md`). Chúng lớn dần theo thời gian và
+> được giữ nguyên chỗ để link cũ không hỏng — cột **Ngày** ở trên mới là
+> chỗ tra đúng.
 
 `Plan.xlsx` có kế hoạch 4 tuần và **ma trận 57 ca kiểm thử**, mỗi ca ghi rõ
 file test chứng minh nó.
