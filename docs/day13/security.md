@@ -10,6 +10,13 @@ lấy thứ không phải của mình**. Tất cả kiểm ở backend; UI chỉ
 Ba vai trò: `BUYER` (mặc định), `SELLER` (kiếm được bằng cách mở shop),
 `ADMIN` (người vận hành sàn).
 
+```mermaid
+flowchart LR
+    B["BUYER<br/>(mặc định khi đăng nhập)"] -->|"mở shop"| S["SELLER"]
+    C["config<br/>ADMIN_VAPP_USER_IDS"] -->|"đọc lại mỗi lần login"| A["ADMIN"]
+    B -.->|"KHÔNG có đường<br/>tự phong admin"| A
+```
+
 | Kiểm | Ở đâu |
 |---|---|
 | AUTH-04 — người mua gọi endpoint người bán | `CurrentSeller` → 403 |

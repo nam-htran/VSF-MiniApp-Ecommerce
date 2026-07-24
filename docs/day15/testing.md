@@ -13,6 +13,14 @@ cd server
 
 ## 1. Không mock tầng nào
 
+```mermaid
+flowchart LR
+    T["pytest<br/>httpx client"] -->|"HTTP thật"| BE["uvicorn thật<br/>(thread riêng)"]
+    BE --> PG[("Postgres thật<br/>Docker")]
+    BE -->|"authCode, IPN"| MK["mock-openAPI thật"]
+    T -.->|"authCode"| MK
+```
+
 Test khởi động **uvicorn thật**, gọi qua HTTP, dùng **Postgres thật** và
 **mock-openAPI thật**. Không có `TestClient` chạy in-process, không patch
 database.

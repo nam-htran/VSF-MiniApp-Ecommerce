@@ -3,6 +3,32 @@
 Màn hình checkout làm ba việc: chọn nơi giao, cho người mua thấy **đúng số
 tiền sẽ bị trừ**, và tạo đơn.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant MA as MiniApp (checkout)
+    participant BE as server/
+    participant GW as cổng (mock)
+
+    MA->>BE: GET /addresses
+    BE-->>MA: sổ địa chỉ (mặc định lên đầu)
+
+    loop mỗi lần đổi giỏ / chọn mã
+        MA->>BE: POST /orders/quote {items, voucherCodes}
+        Note over BE: cùng discount_for,<br/>cùng cách nhóm shop
+        BE-->>MA: merchandise · discount · shipping · total
+    end
+
+    MA->>BE: POST /orders + Idempotency-Key<br/>{address, items, voucherCodes}
+    Note over BE: khoá tồn kho, tính giá lại,<br/>tách theo shop → PENDING + giữ hàng
+    BE-->>MA: order (PENDING)
+
+    MA->>BE: POST /payments/session {orderId}
+    BE->>GW: mở phiên
+    GW-->>MA: paymentId
+    Note over GW,BE: cổng gửi IPN có ký → PAID
+```
+
 ---
 
 ## 1. Sổ địa chỉ

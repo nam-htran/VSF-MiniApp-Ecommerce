@@ -11,12 +11,17 @@ cùng làm hai: đánh giá và [voucher](../day3/vouchers-variants.md).
 không phải đánh giá, mà là ô bình luận — và sao trung bình tính từ nó là số
 vô nghĩa.
 
-Cổng kiểm nằm ở `has_purchased`, đi ngược ba bảng:
+Cổng kiểm nằm ở `has_purchased`, đi ngược ba bảng — từ người dùng và sản
+phẩm, tìm xem có một đơn **đã trả tiền** nối họ với nó không:
 
-```
-orders (status = PAID)
-  └── shop_orders
-        └── order_items (product_id = ?)
+```mermaid
+flowchart LR
+    U["user_id"] --> O["orders<br/>buyer_id = user<br/>status = PAID"]
+    O --> SO["shop_orders"]
+    SO --> OI["order_items<br/>product_id = ?"]
+    OI --> R{"có đường nối?"}
+    R -->|"có"| Y["được đánh giá (201)"]
+    R -->|"không"| N["403"]
 ```
 
 Ba điều kiện, và **`PAID` là điều kiện quan trọng nhất**: đơn mới đặt chưa

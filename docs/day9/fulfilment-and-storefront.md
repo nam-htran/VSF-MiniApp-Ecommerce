@@ -12,6 +12,20 @@ GET   /orders/shop?status=SHIPPING   → các lát đơn của shop mình
 PATCH /orders/shop/{id}  {status}    → đẩy một lát tiến một bước
 ```
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> CONFIRMED : đơn cha thành PAID
+    CONFIRMED --> SHIPPING : người bán bấm "Giao"
+    SHIPPING --> DELIVERED : người bán bấm "Đã giao"
+    DELIVERED --> [*]
+
+    note right of CONFIRMED
+        server chỉ nhận đúng bước kế tiếp
+        (không nhảy cóc, không lùi)
+    end note
+```
+
 Bốn ràng buộc, tất cả ở server — không bao giờ chỉ ở UI:
 
 **Chỉ đơn `PAID` hiện ra.** Chưa trả tiền thì chưa có gì để giao;
@@ -48,6 +62,16 @@ Banner và logo là **ảnh người bán tự tải lên** (`image_url` là ban
 giờ trông vỡ.
 
 ### Trang quản lý *chính là* trang cửa hàng
+
+```mermaid
+flowchart TD
+    V["/shop?id="] --> Q{"session.user.id<br/>== shop.ownerId ?"}
+    Q -->|"khách"| P["banner · logo · tên<br/>sản phẩm theo danh mục"]
+    Q -->|"chủ shop"| O["cùng banner + cây bút sửa<br/>3 tab quản lý tại chỗ"]
+    O --> T1["Sản phẩm — thêm/sửa/ẩn/xoá"]
+    O --> T2["Đơn hàng — hàng đợi giao"]
+    O --> T3["Mã giảm — tạo/tắt voucher"]
+```
 
 Không có dashboard riêng. Chủ shop mở trang shop của mình thì thấy thêm:
 

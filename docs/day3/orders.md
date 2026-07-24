@@ -13,22 +13,63 @@ lập, và người bán xử lý giao hàng.
 
 ## 1. Model B, như đã dựng
 
+```mermaid
+erDiagram
+    orders ||--o{ shop_orders : "tách theo shop"
+    shop_orders ||--o{ order_items : "chứa"
+
+    orders {
+        str  id PK
+        str  buyer_id FK
+        str  status "PENDING→PAID/CANCELLED"
+        str  idempotency_key "chặn đặt 2 lần"
+        str  payment_id "phiên cổng đang mở"
+        num  total
+    }
+    shop_orders {
+        str  id PK
+        str  shop_id FK
+        str  status "CONFIRMED→SHIPPING→DELIVERED"
+        num  subtotal
+        num  discount "voucher đã trừ"
+        num  shipping_fee
+    }
+    order_items {
+        str  id PK
+        str  product_id FK
+        str  name "ảnh chụp lúc đặt"
+        num  price "ảnh chụp lúc đặt"
+        int  qty
+        str  variant_label "Đen / L"
+    }
 ```
-orders          ← trả tiền một lần
-└── shop_orders ← giao hàng, mỗi shop một dòng
-    └── order_items ← ảnh chụp tên/giá lúc đặt
+
+Điểm làm nó thành model **B**: `order_items` treo vào **`shop_orders`**, không
+treo vào `orders`. Treo thẳng vào `orders` thì chỉ là dán nhãn shop lên từng
+dòng hàng — vẫn là model A.
+
+Hai loại trạng thái **tách biệt**, không dùng chung một cột. Thanh toán có
+**một**, giao hàng có **nhiều**: shop A gửi trong 2 tiếng, shop B ba ngày
+sau. Một cột trạng thái cho cả đơn thì không trả lời nổi câu "đơn này tới đâu
+rồi".
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "orders — thanh toán (cổng đổi qua IPN)" as pay {
+        [*] --> PENDING
+        PENDING --> PAID
+        PENDING --> CANCELLED : hết hạn giữ hàng / buyer huỷ
+    }
+    state "shop_orders — giao hàng (người bán đổi)" as ship {
+        [*] --> CONFIRMED
+        CONFIRMED --> SHIPPING
+        SHIPPING --> DELIVERED
+    }
 ```
 
-Hai loại trạng thái **tách biệt**, không dùng chung một cột:
-
-| Bảng | Trạng thái | Ai đổi |
-|---|---|---|
-| `orders` | `PENDING` → `PAID` / `FAILED` / `CANCELLED` | cổng thanh toán (IPN) |
-| `shop_orders` | `CONFIRMED` → `SHIPPING` → `DELIVERED` / `CANCELLED` | người bán |
-
-Thanh toán có **một**, giao hàng có **nhiều**: shop A gửi trong 2 tiếng, shop
-B ba ngày sau. Một cột trạng thái cho cả đơn thì không trả lời nổi câu "đơn
-này tới đâu rồi" — nên trạng thái giao nằm trên từng `shop_orders`.
+`shop_orders` chỉ bắt đầu chạy **sau khi** `orders` thành `PAID` — chưa trả
+tiền thì chưa có gì để giao.
 
 ---
 
@@ -164,6 +205,41 @@ sản phẩm. **Chính trạng thái đơn là cái chặn cộng lại hai lầ
 
 Thứ tự là có chủ ý: **chặn không cho xảy ra**, **tự biết khi vẫn xảy ra**,
 **sửa được hậu quả**.
+
+Kịch bản đắt nhất — khách đang nhập OTP thì hết hạn giữ hàng — chạy qua cả ba
+lớp như sau:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant MA as MiniApp
+    participant BE as server/
+    participant GW as cổng (mock)
+
+    MA->>BE: POST /payments/session {orderId}
+    Note over BE: đơn ghi payment_id +<br/>payment_started_at
+    BE->>GW: mở phiên
+    GW-->>MA: paymentId
+
+    Note over MA: khách nhập OTP…<br/>hết order_hold_minutes
+
+    rect rgb(235,245,235)
+        Note over BE: LỚP 1 — Ngăn<br/>scheduler quét: đơn có phiên trong<br/>payment_grace_minutes → KHÔNG huỷ
+    end
+
+    alt webhook tới bình thường
+        GW->>BE: IPN (ký) → PAID
+    else webhook mất
+        rect rgb(245,240,230)
+            Note over BE: LỚP 2 — Phát hiện<br/>scheduler: reconcile → hỏi cổng<br/>"đã trả chưa?" → PAID
+        end
+    end
+
+    Note over BE: nếu đơn đã lỡ CANCELLED trước khi tiền tới:
+    rect rgb(245,235,235)
+        Note over BE: LỚP 3 — Khắc phục<br/>IPN → 409, ghi payment_exceptions<br/>(gateway_payment_id, amount) chờ hoàn
+    end
+```
 
 ### Chạy nền
 

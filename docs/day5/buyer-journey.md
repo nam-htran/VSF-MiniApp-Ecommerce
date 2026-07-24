@@ -97,6 +97,16 @@ export const lineKey = (line: CartLine): string =>
   `${line.product.id}::${line.variant?.id ?? ''}`;
 ```
 
+```mermaid
+flowchart LR
+    subgraph giỏ["giỏ hàng"]
+        L1["Áo · Size M<br/>id::variantM"]
+        L2["Áo · Size L<br/>id::variantL"]
+    end
+    L1 --> V1["product_variants[M].stock"]
+    L2 --> V2["product_variants[L].stock"]
+```
+
 Áo size M và áo size L là **hai dòng, hai số lượng**. Trên server chúng là
 hai dòng tồn kho khác nhau; gộp lại là giao sai size.
 

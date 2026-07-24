@@ -20,6 +20,16 @@ cần job dọn, và không thể lỡ quảng cáo một chương trình đã k
 Chỉ có **một** hàm tính giảm giá: `discount_for`. Giá hiện trên card, báo giá
 ở checkout, và số tiền thật bị trừ đều đi qua nó.
 
+```mermaid
+flowchart LR
+    D["discount_for()<br/>một nguồn duy nhất"]
+    D --> C["card sản phẩm<br/>effectivePrice"]
+    D --> Q["POST /orders/quote<br/>báo giá checkout"]
+    D --> O["POST /orders<br/>tiền thật bị trừ"]
+    C -. "phải bằng nhau" .- Q
+    Q -. "phải bằng nhau" .- O
+```
+
 > Đây là lỗi duy nhất thực sự chết người của một tính năng giảm giá:
 > **quảng cáo một đằng, tính tiền một nẻo.**
 
@@ -51,6 +61,14 @@ hợp**. Tên nhóm do seller đặt, nên shop bán sơn ghi `Dung tích` mà k
 đổi schema.
 
 ### Tồn kho nằm ở đúng một nơi
+
+```mermaid
+flowchart TD
+    P{"sản phẩm có<br/>phân loại?"}
+    P -->|"không"| A["tồn kho ở<br/>products.stock"]
+    P -->|"có"| B["tồn kho CHỈ ở<br/>product_variants[].stock<br/>products.stock bị bỏ qua"]
+    B --> S["storefront hiện TỔNG các biến thể"]
+```
 
 - Sản phẩm **không** khai phân loại → tồn kho ở `products.stock`, y như cũ.
 - Khai rồi → tồn kho **chỉ** ở `product_variants`, và storefront hiện tổng.
