@@ -133,7 +133,51 @@ Backend nhận biết "đã xin consent chưa" bằng cách kiểm tra `info.get
 
 ---
 
-## 7. Tra hàm
+## 7. Hết hạn, và gia hạn không cần hỏi lại
+
+JWT của V-Market sống **12 giờ** (`jwt_ttl_seconds`). Hết hạn thì mọi API cần
+đăng nhập trả **401** — và điều đó là đúng.
+
+**Không có refresh token, và cố ý không có.** `login-free-system` không định
+nghĩa cái nào. Cách gia hạn của nền tảng là *gọi lại `getAuthCode(['auth'])`*
+— im lặng với người đã đồng ý một lần — rồi đổi lấy phiên mới. Cất thêm một
+credential sống lâu trên máy chỉ thêm thứ để mất, mà không mua được gì.
+
+Nên **gia hạn chính là đăng nhập, chạy lại lặng lẽ**:
+
+```
+gọi API ─→ 401 ─→ loginSilently(vappUserId) ─→ token mới ─→ gọi lại đúng 1 lần
+                          └─ không được ─→ signOut() ─→ /login
+```
+
+Đặt ở `lib/session-renew.ts`, nối vào transport qua `setSessionRenewer()`
+chứ không import trực tiếp — nếu không sẽ thành vòng `client → auth → client`.
+Vì vậy phiên lưu thêm `vappUserId` (khác `user.id` của V-Market), và khoá lưu
+trữ lên `session.v2`.
+
+Vài điểm cố ý:
+
+- **Chỉ thử lại một lần**, và chỉ khi request có mang `Authorization`. 401 mà
+  không có token là lỗi lập trình, không phải hết hạn.
+- **Một lần gia hạn cho nhiều request.** Một màn hình bắn 3 lời gọi cùng lúc
+  thì cả 3 cùng 401; chúng chia nhau một promise đăng nhập, không đua nhau.
+- **Chạy lại được** vì `POST /orders` có `Idempotency-Key` — lần thử thứ hai
+  trả về đơn đã tạo chứ không mua thêm lần nữa.
+- **Mạng hỏng thì giữ nguyên phiên.** Không đá người ta ra khỏi giỏ hàng chỉ
+  vì backend vừa restart.
+
+> **Còn một nguyên nhân 401 nữa, hay gặp hơn cả hết hạn:** chạy `pytest` xoá
+> sạch bảng, seed lại sinh **id mới**. Token cũ trỏ vào một user không còn
+> tồn tại → `current_user` trả 401 `Unknown user`. Lúc này gia hạn nhận
+> `CONSENT_REQUIRED` (tài khoản V-App còn, tài khoản V-Market thì không), nên
+> phiên bị xoá và người dùng về màn đăng nhập — đúng thứ nên xảy ra.
+>
+> Phân biệt hai ca bằng chính body của 401: `Invalid or expired token` là hết
+> hạn, `Unknown user` là DB đã bị xoá.
+
+---
+
+## 8. Tra hàm
 
 ### `mock-openAPI/store.py`
 
@@ -193,14 +237,16 @@ Nó cũng cố ý **không** phân nhánh theo mã lỗi cụ thể, chỉ xét 
 
 | Hàm | Làm gì |
 |---|---|
-| `issue_session_token(user)` | Ký JWT HS256, chứa `sub`, `role`, `sellerId`, hạn 12h |
+| `issue_session_token(user)` | Ký JWT HS256, chứa `sub`, `role`, hạn 12h |
 | `verify_session_token(token)` | Giải mã, trả `SessionClaims` |
 
-`role` và `sellerId` nằm trong JWT để các API sau (ngày 3 trở đi) phân quyền mà không phải tra DB mỗi request.
+`role` có trong JWT, nhưng **`current_user` vẫn đọc lại user từ DB** thay vì
+tin bản sao đó: quyền bị thu hồi phải có hiệu lực ngay, không đợi token hết
+hạn. Xem [ngày 13](../day13/security.md).
 
 ---
 
-## 8. Chạy
+## 9. Chạy
 
 Cần **hai** terminal:
 
@@ -232,7 +278,7 @@ curl -X POST 127.0.0.1:4000/auth/session \
 
 Lần đầu sẽ ra `CONSENT_REQUIRED`. Lấy authCode mới với `"scopes":"profile phone"` rồi gọi lại — sẽ ra `AUTHENTICATED` kèm JWT.
 
-## 9. Test
+## 10. Test
 
 ```bash
 cd server
@@ -248,7 +294,7 @@ cd server
 
 ---
 
-## 10. Đổi sang API thật
+## 11. Đổi sang API thật
 
 Sửa 3 dòng trong `server/.env`:
 

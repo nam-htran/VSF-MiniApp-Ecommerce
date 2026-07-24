@@ -12,9 +12,20 @@ import type { SessionUser } from '@/api/auth';
  * through the storage seam so a restart keeps the session, matching
  * review rule 2.4.5 (stay signed in until an explicit logout).
  */
-export type Session = { token: string; user: SessionUser };
+export type Session = {
+  token: string;
+  user: SessionUser;
+  /**
+   * The V-App account this session came from. Kept so the session can be
+   * renewed silently when the JWT expires — see lib/session-renew.ts.
+   * Not the same as `user.id`, which is V-Market's own id.
+   */
+  vappUserId: string;
+};
 
-const STORAGE_KEY = 'session.v1';
+// v2 adds vappUserId. A v1 session cannot be renewed, and every v1 token
+// is long expired anyway, so there is nothing worth migrating.
+const STORAGE_KEY = 'session.v2';
 
 let session: Session | null = null;
 // The stored session loads asynchronously; until it has, "no session"
@@ -68,3 +79,6 @@ export function useSessionHydrated(): boolean {
 
 /** For API calls that need the bearer token outside React. */
 export const currentToken = () => session?.token ?? null;
+
+/** For the renewer, which needs the V-App account behind the session. */
+export const currentSession = () => session;

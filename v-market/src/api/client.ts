@@ -38,10 +38,64 @@ type RequestInit = {
 
 let warnedHttpFallback = false;
 
+/**
+ * How to get a fresh token when the server says 401. Registered from
+ * lib/session-renew.ts rather than imported, so the transport stays
+ * unaware of sessions and there is no import cycle
+ * (client -> auth -> client).
+ */
+type Renewer = () => Promise<string | null>;
+let renewSession: Renewer | null = null;
+let renewing: Promise<string | null> | null = null;
+
+export function setSessionRenewer(fn: Renewer): void {
+  renewSession = fn;
+}
+
+/** One renewal at a time: a screen fires several calls at once and they
+ *  all get 401 together — they should share one login, not race. */
+const renewOnce = (): Promise<string | null> => {
+  if (!renewing) {
+    renewing = renewSession!().finally(() => {
+      renewing = null;
+    });
+  }
+  return renewing;
+};
+
+const authorized = (headers?: Record<string, string>) =>
+  Object.keys(headers ?? {}).some(key => key.toLowerCase() === 'authorization');
+
 export async function apiRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
+  try {
+    return await send<T>(path, init);
+  } catch (error) {
+    // Only a 401 on a call that actually carried a token is worth
+    // retrying. A 401 without one is the caller's bug, not an expiry.
+    const expired =
+      error instanceof ApiError &&
+      error.status === 401 &&
+      authorized(init.headers) &&
+      renewSession !== null;
+    if (!expired) throw error;
+
+    const token = await renewOnce();
+    if (!token) throw error;
+
+    // Safe to replay: reads are idempotent, and POST /orders carries an
+    // Idempotency-Key for exactly this reason — the retry returns the
+    // order that already exists rather than buying twice.
+    return send<T>(path, {
+      ...init,
+      headers: { ...init.headers, Authorization: `Bearer ${token}` },
+    });
+  }
+}
+
+async function send<T>(path: string, init: RequestInit): Promise<T> {
   // Absolute URLs pass through — the auth flow talks to the mock V-App,
   // which lives on its own base. Everything else goes to the backend.
   const url = path.startsWith('http') ? path : `${BASE}${path}`;

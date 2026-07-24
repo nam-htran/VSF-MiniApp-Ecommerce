@@ -66,7 +66,13 @@ const LoginPage = () => {
 
   const finish = (result: SessionResult, account: VappAccount) => {
     if (result.status === 'AUTHENTICATED') {
-      signIn({ token: result.token, user: result.user });
+      // vappUserId is kept so the session can renew itself later without
+      // sending the user back here — see lib/session-renew.ts.
+      signIn({
+        token: result.token,
+        user: result.user,
+        vappUserId: account.user_id,
+      });
       Toast.show({
         type: 'positive',
         message: `Đã đăng nhập: ${result.user.name ?? account.name}`,
