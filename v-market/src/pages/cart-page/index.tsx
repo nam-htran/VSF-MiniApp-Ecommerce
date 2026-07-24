@@ -253,7 +253,7 @@ const EmptyCart = () => {
       <Typography size="small" color="text-secondary">
         Ghé gian hàng và thêm vài món — không cần đăng nhập.
       </Typography>
-      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
+      <Button shape="pill" type="outline" onClick={() => navigate('/', { animation: { type: 'none' } })}>
         Xem sản phẩm
       </Button>
     </div>

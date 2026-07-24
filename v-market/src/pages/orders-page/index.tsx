@@ -210,8 +210,8 @@ const EmptyOrders = () => {
       <Typography size="small" color="text-secondary">
         Đơn hàng của bạn sẽ hiện ở đây sau khi đặt mua.
       </Typography>
-      <Button shape="pill" type="outline" onClick={() => navigate('/')}>
-        Xem cửa hàng
+      <Button shape="pill" type="outline" onClick={() => navigate('/', { animation: { type: 'none' } })}>
+        Xem trang chủ
       </Button>
     </div>
   );
