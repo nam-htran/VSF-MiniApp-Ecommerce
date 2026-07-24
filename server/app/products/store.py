@@ -20,7 +20,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 
-ProductStatus = Literal["ACTIVE", "HIDDEN"]
+#   ACTIVE   — on sale, visible to buyers
+#   HIDDEN   — kept out of the storefront, but still in the seller's list
+#   ARCHIVED — deleted by the seller, but ordered at least once, so the row
+#              survives to keep past order lines valid; gone from every list
+ProductStatus = Literal["ACTIVE", "HIDDEN", "ARCHIVED"]
 
 
 class Product(Base):
@@ -317,7 +321,11 @@ async def list_for_shop(
         .outerjoin(sold, sold.c.pid == Product.id)
         .where(Product.shop_id == shop_id)
     )
-    if not include_hidden:
+    if include_hidden:
+        # The seller's own view: ACTIVE and HIDDEN, but never ARCHIVED — a
+        # deleted product is gone even from the person who deleted it.
+        query = query.where(Product.status != "ARCHIVED")
+    else:
         query = query.where(Product.status == "ACTIVE")
 
     rows = await session.execute(
@@ -411,3 +419,47 @@ async def update_product(
     await session.commit()
     await session.refresh(product)
     return product
+
+
+async def delete_product(session: AsyncSession, product: Product) -> str:
+    """Remove a product from the shop, honestly.
+
+    Two outcomes, decided by whether it was ever ordered:
+
+      - never ordered -> the row and its variants are truly deleted. This is
+        the common case: a mistake, a test item, something that never sold.
+      - ordered at least once -> archived, not deleted. An order line points
+        at this product for its name and price snapshot, and the foreign key
+        would refuse the delete; even if it didn't, erasing the row would
+        corrupt someone's order history. It leaves every list instead.
+
+    Returns "deleted" or "archived" so the caller can say which happened.
+    """
+    from app.orders.store import OrderItem
+
+    ordered = await session.scalar(
+        select(func.count())
+        .select_from(OrderItem)
+        .where(OrderItem.product_id == product.id)
+    )
+
+    if ordered:
+        product.status = "ARCHIVED"
+        await session.commit()
+        return "archived"
+
+    # Safe to remove for real. Clear what only exists to describe this
+    # product — its variants and its reviews — then the product itself.
+    from app.reviews.store import Review
+
+    await session.execute(
+        ProductVariant.__table__.delete().where(
+            ProductVariant.product_id == product.id
+        )
+    )
+    await session.execute(
+        Review.__table__.delete().where(Review.product_id == product.id)
+    )
+    await session.delete(product)
+    await session.commit()
+    return "deleted"

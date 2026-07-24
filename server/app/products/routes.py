@@ -389,6 +389,32 @@ async def update_product(
     return _with_variants(_serialise(updated), current)
 
 
+@router.delete("/products/{product_id}")
+async def delete_product(
+    product_id: str,
+    seller: CurrentSeller,
+    session: Session,
+) -> dict:
+    """Remove one of the seller's own products.
+
+    Really deletes it when it was never ordered; archives it when it was, so
+    past order lines keep their snapshot. The response says which happened.
+    """
+    product = await products.find_by_id(session, product_id)
+    shop = await shops.find_by_owner(session, seller.id)
+
+    # Same 404-for-everything as update: missing, someone else's, and "you
+    # have no shop" are indistinguishable, so the endpoint can't be used to
+    # probe which product ids exist.
+    if product is None or shop is None or product.shop_id != shop.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+
+    outcome = await products.delete_product(session, product)
+    return {"outcome": outcome}
+
+
 @router.get("/products/{product_id}")
 async def get_product(product_id: str, session: Session) -> dict:
     """Public: the product detail screen, with its shop's origin and

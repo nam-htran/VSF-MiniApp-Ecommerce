@@ -1,6 +1,6 @@
 # Ngày 15 — Kiểm thử
 
-**135 ca**, chạy qua HTTP thật. Ma trận 57 kịch bản trong
+**138 ca**, chạy qua HTTP thật. Ma trận 57 kịch bản trong
 `Plan.xlsx › Test scenarios` đều có file chứng minh, ghi ở cột *Ghi chú*.
 
 ```bash
@@ -58,7 +58,7 @@ Nhờ vậy một dòng trong Plan tra ngược được ra file, và ngược l
 | File | Phủ |
 |---|---|
 | `test_auth_flow.py` | AUTH-01…03 |
-| `test_shops.py`, `test_products.py` | PROD-01…05, AUTH-04/05 |
+| `test_shops.py`, `test_products.py` | PROD-01…05, AUTH-04/05, xoá sản phẩm (xoá cứng vs lưu trữ) |
 | `test_orders.py` | ORD-01/02/03/05, CART-01/03, INV-05 |
 | `test_payments.py` | PAY-01…05, STATE-01 |
 | `test_fulfilment.py` | STATE-02/03, AUTH-05 |

@@ -133,6 +133,99 @@ async def test_hidden_products_stay_out_of_the_storefront(base_url):
     assert [p["id"] for p in mine.json()["items"]] == [product_id]
 
 
+ADDRESS = "12 Đường Test, Q1, TPHCM"
+
+
+async def test_deleting_a_never_ordered_product_removes_it(base_url):
+    """No order ever pointed at it, so it is truly gone — row and variants."""
+    token, shop_id = await seller_with_shop(base_url, USER_A_ID, "Shop A")
+
+    async with httpx.AsyncClient() as client:
+        created = await client.post(
+            f"{base_url}/products", headers=auth(token), json=PRODUCT
+        )
+        product_id = created.json()["id"]
+
+        deleted = await client.delete(
+            f"{base_url}/products/{product_id}", headers=auth(token)
+        )
+        detail = await client.get(f"{base_url}/products/{product_id}")
+        mine = await client.get(
+            f"{base_url}/products/mine", headers=auth(token)
+        )
+
+    assert deleted.status_code == 200
+    assert deleted.json()["outcome"] == "deleted"
+    assert detail.status_code == 404
+    # Gone even from the seller's own list — a real delete, not a hide.
+    assert mine.json()["items"] == []
+
+
+async def test_deleting_an_ordered_product_archives_it(base_url):
+    """An order line snapshots this product, so the row must survive; it just
+    leaves every list and can no longer be bought."""
+    token, _ = await seller_with_shop(base_url, USER_A_ID, "Shop A")
+    buyer = await token_for(base_url, USER_B_ID)
+
+    async with httpx.AsyncClient() as client:
+        created = await client.post(
+            f"{base_url}/products", headers=auth(token), json=PRODUCT
+        )
+        product_id = created.json()["id"]
+
+        placed = await client.post(
+            f"{base_url}/orders",
+            headers=auth(buyer),
+            json={"address": ADDRESS, "items": [{"productId": product_id, "qty": 1}]},
+        )
+        assert placed.status_code == 201
+
+        deleted = await client.delete(
+            f"{base_url}/products/{product_id}", headers=auth(token)
+        )
+        detail = await client.get(f"{base_url}/products/{product_id}")
+        mine = await client.get(
+            f"{base_url}/products/mine", headers=auth(token)
+        )
+        # The buyer's order still shows the product it snapshotted.
+        orders = await client.get(f"{base_url}/orders", headers=auth(buyer))
+
+    assert deleted.status_code == 200
+    assert deleted.json()["outcome"] == "archived"
+    # Off the storefront and out of the seller's own list...
+    assert detail.status_code == 404
+    assert mine.json()["items"] == []
+    # ...but the order history is intact.
+    ordered_ids = [
+        item["productId"]
+        for order in orders.json()["items"]
+        for shop_order in order["shopOrders"]
+        for item in shop_order["items"]
+    ]
+    assert product_id in ordered_ids
+
+
+async def test_only_the_owner_can_delete_a_product(base_url):
+    token_b, _ = await seller_with_shop(base_url, USER_B_ID, "Shop B")
+    token_c, _ = await seller_with_shop(base_url, USER_C_ID, "Shop C")
+
+    async with httpx.AsyncClient() as client:
+        created = await client.post(
+            f"{base_url}/products", headers=auth(token_b), json=PRODUCT
+        )
+        product_id = created.json()["id"]
+
+        # Another seller gets 404, not 403 — same as edit, so the endpoint
+        # can't confirm which ids exist.
+        response = await client.delete(
+            f"{base_url}/products/{product_id}", headers=auth(token_c)
+        )
+        still_there = await client.get(f"{base_url}/products/{product_id}")
+
+    assert response.status_code == 404
+    assert still_there.status_code == 200
+
+
 async def test_negative_stock_is_rejected(base_url):
     token, _ = await seller_with_shop(base_url, USER_A_ID, "Shop A")
 

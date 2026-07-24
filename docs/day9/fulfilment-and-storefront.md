@@ -93,3 +93,37 @@ biết JSON, còn đây là `multipart/form-data`.
 
 > `.gitignore` phải viết `/uploads/` có gạch chéo đầu. Viết `uploads/` sẽ
 > khớp luôn cả module code `server/app/uploads/`.
+
+---
+
+## 5. Xoá sản phẩm — xoá thật hay lưu trữ, tuỳ đã bán chưa
+
+`DELETE /products/{id}` (chỉ chủ shop). Một sản phẩm **không thể xoá vô tư**:
+`order_items.product_id` là khoá ngoại tới `products`, và mỗi dòng đơn cũ chụp
+lại tên/giá từ sản phẩm đó. Xoá thẳng sẽ hoặc bị DB từ chối, hoặc làm hỏng
+lịch sử đơn của người đã mua.
+
+Nên server tự chọn một trong hai, dựa trên **đã từng có đơn hay chưa**:
+
+| Tình huống | Kết quả | `outcome` |
+|---|---|---|
+| Chưa ai đặt | Xoá thật — cả `product_variants` và `reviews` đi kèm | `deleted` |
+| Đã bán ít nhất một lần | Đổi trạng thái sang `ARCHIVED` | `archived` |
+
+`ARCHIVED` là trạng thái thứ ba bên cạnh `ACTIVE`/`HIDDEN`: **biến mất khỏi mọi
+danh sách**, kể cả trang quản lý của chính người bán (`list_for_shop` lọc
+`status != 'ARCHIVED'` ngay cả khi `include_hidden`), nhưng hàng đã đặt vẫn trỏ
+tới được. `place_order` vốn đã đòi `status == 'ACTIVE'`, nên hàng lưu trữ không
+mua được nữa.
+
+Giao diện xác nhận trước khi xoá, và **nói đúng cái đã xảy ra**: `deleted` →
+"Đã xoá", `archived` → "Đã gỡ khỏi cửa hàng (vẫn giữ trong đơn đã bán)" — để
+người bán không hoang mang khi thấy sản phẩm còn nằm trong một đơn cũ.
+
+> Kiểm bằng backend thật, cả hai nhánh: sản phẩm mới tạo rồi xoá → `deleted`,
+> mất khỏi danh sách; sản phẩm được đặt một đơn rồi xoá → `archived`, mất khỏi
+> danh sách người bán nhưng đơn của người mua **vẫn hiện tên nó**, và
+> `GET /products/{id}` công khai trả **404**.
+
+> Không đối xứng có chủ đích: **ẩn** (`HIDDEN`) là nút mềm hơn ngay phía trên,
+> cho người bán chỉ muốn tạm gỡ khỏi kệ mà chưa xoá hẳn.

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import {
   Button,
+  Dialog,
   Dropdown,
   Icon,
   Image,
@@ -16,6 +17,7 @@ import { CATEGORIES } from '@/lib/categories';
 import { VariantEditor, type DraftVariant } from '@/components/variant-editor';
 import {
   createProduct,
+  deleteProduct,
   updateProduct,
   type ApiProduct,
 } from '@/api/products';
@@ -72,6 +74,8 @@ export const ProductFormSheet = ({
 
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   // Which fields to show an error for. A field earns its error once the
@@ -143,6 +147,35 @@ export const ProductFormSheet = ({
       });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!editing || deleting) return;
+    setDeleting(true);
+    try {
+      const { outcome } = await deleteProduct(product.id);
+      Toast.show({
+        type: 'positive',
+        // The server archives instead of deleting when the product has been
+        // ordered — say so, so the seller isn't confused to still see it on
+        // an old order.
+        message:
+          outcome === 'archived'
+            ? 'Đã gỡ khỏi cửa hàng (vẫn giữ trong đơn đã bán)'
+            : 'Đã xoá sản phẩm',
+        position: 'bottom',
+      });
+      setConfirmDelete(false);
+      onSaved();
+    } catch (error) {
+      Toast.show({
+        type: 'negative',
+        message: error instanceof Error ? error.message : 'Không xoá được',
+        position: 'bottom',
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -370,19 +403,34 @@ export const ProductFormSheet = ({
             )}
 
           {editing && (
-            <button
-              type="button"
-              onClick={() => setHidden(v => !v)}
-              className="flex items-center gap-2">
-              <Icon
-                name={hidden ? 'eye-slash' : 'eye'}
-                size={18}
-                className={hidden ? 'text-alias-icon-tertiary' : 'text-brand'}
-              />
-              <Typography size="small">
-                {hidden ? 'Đang ẩn khỏi cửa hàng' : 'Đang hiển thị'}
-              </Typography>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setHidden(v => !v)}
+                className="flex items-center gap-2">
+                <Icon
+                  name={hidden ? 'eye-slash' : 'eye'}
+                  size={18}
+                  className={hidden ? 'text-alias-icon-tertiary' : 'text-brand'}
+                />
+                <Typography size="small">
+                  {hidden ? 'Đang ẩn khỏi cửa hàng' : 'Đang hiển thị'}
+                </Typography>
+              </button>
+
+              {/* Delete is destructive, so it sits apart from the fields and
+                  behind a confirm. Hiding is the softer option right above —
+                  a seller who only wants it off the shop has that already. */}
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="mt-1 flex items-center gap-2 border-t border-alias-border-subtle-01 pt-3">
+                <Icon name="trash" size={18} className="text-global-red-red-60" />
+                <Typography size="small" className="text-global-red-red-60">
+                  Xoá sản phẩm
+                </Typography>
+              </button>
+            </>
           )}
         </div>
       </SheetBody>
@@ -418,6 +466,38 @@ export const ProductFormSheet = ({
           </Button>
         </div>
       </SheetFooter>
+
+      {/* Confirm before deleting. portal so it layers above this sheet
+          rather than being clipped inside it. */}
+      <Dialog
+        portal
+        open={confirmDelete}
+        title="Xoá sản phẩm?"
+        description={`"${name || product?.name || 'Sản phẩm này'}" sẽ bị gỡ khỏi cửa hàng. Nếu đã từng bán, sản phẩm vẫn được giữ trong các đơn cũ.`}
+        onBackdropClick={() => !deleting && setConfirmDelete(false)}
+        footer={
+          <div className="flex w-full gap-2">
+            <Button
+              shape="pill"
+              type="outline"
+              theme="neutral"
+              block
+              disabled={deleting}
+              onClick={() => setConfirmDelete(false)}>
+              Huỷ
+            </Button>
+            <Button
+              shape="pill"
+              type="solid"
+              theme="brand"
+              block
+              loading={deleting}
+              onClick={remove}>
+              Xoá
+            </Button>
+          </div>
+        }
+      />
     </Sheet>
   );
 };

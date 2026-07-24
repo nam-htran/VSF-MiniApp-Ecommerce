@@ -192,3 +192,16 @@ export function updateProduct(
     headers: bearer(),
   });
 }
+
+/**
+ * Remove one of the seller's own products. The server really deletes it if
+ * it was never ordered, and archives it if it was — either way it leaves
+ * the shop. `outcome` says which, so the UI can word the confirmation
+ * ("đã xoá" vs "đã lưu trữ", since a past buyer's order still shows it).
+ */
+export function deleteProduct(id: string) {
+  return apiRequest<{ outcome: 'deleted' | 'archived' }>(`/products/${id}`, {
+    method: 'DELETE',
+    headers: bearer(),
+  });
+}
