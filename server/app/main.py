@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.auth.routes import router as auth_router
 from app.config import settings
-from app.db import create_tables, engine
+from app.db import engine
 from app.json_response import SafeJSONResponse
 from app import scheduler
 from app.addresses.routes import router as addresses_router
@@ -19,7 +19,7 @@ from app.products.routes import router as products_router
 from app.shops.routes import router as shops_router
 from app.vouchers.routes import router as vouchers_router
 
-# Imported so SQLAlchemy knows about the models before create_tables() runs.
+# Imported so every model is registered on Base before the first query.
 from app.addresses import store as _addresses  # noqa: F401
 from app.orders import store as _orders  # noqa: F401
 from app.reviews import store as _reviews  # noqa: F401
@@ -32,9 +32,7 @@ from app.payments import store as _payment_exceptions  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await create_tables()
-    # Releasing held stock and chasing lost payment webhooks must happen
-    # whether or not anyone is using the shop — see app/scheduler.py.
+    # Held stock and lost payment webhooks — see app/scheduler.py.
     jobs = scheduler.start()
     yield
     await scheduler.stop(jobs)

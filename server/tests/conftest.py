@@ -1,6 +1,9 @@
 import socket
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
@@ -67,28 +70,21 @@ def require_vapp():
 # with no database around.
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def prepare_db(require_vapp):
-    from app.db import Base
-
-    # Import registers each model on Base before create_all runs.
-    from app.addresses import store as _addresses  # noqa: F401
-    from app.orders import store as _orders  # noqa: F401
-    from app.products import store as _products  # noqa: F401
-    from app.reviews import store as _reviews  # noqa: F401
-    from app.shops import store as _shops  # noqa: F401
-    from app.users import store as _users  # noqa: F401
-
-    engine = _throwaway_engine()
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except OSError as error:
+    # Subprocess: migrations/env.py calls asyncio.run, which cannot nest
+    # inside pytest-asyncio's loop.
+    done = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=Path(__file__).resolve().parent.parent,
+        capture_output=True,
+        text=True,
+    )
+    if done.returncode != 0:
         pytest.skip(
-            f"No database reachable: {error}\n"
-            "Start it with:  docker compose up -d",
+            "alembic upgrade head failed — is the database up?\n"
+            "Start it with:  docker compose up -d\n"
+            f"{done.stderr.strip()[-800:]}",
             allow_module_level=True,
         )
-    finally:
-        await engine.dispose()
 
 
 @pytest_asyncio.fixture
