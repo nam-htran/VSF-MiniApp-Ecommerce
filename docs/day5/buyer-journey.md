@@ -36,6 +36,26 @@ Một sản phẩm "đang giảm" **chỉ vì `original_price` được đặt**
 `is_on_sale` — hai con số sẽ lệch nhau. `?onSale=true` lọc đúng điều kiện đó,
 và phần trăm giảm luôn được **suy ra**, không lưu.
 
+### Kéo xuống làm mới — chỉ trang chủ
+
+`PullToRefresh` bọc **riêng** trang chủ. Các tab khác (giỏ, đơn hàng, tài
+khoản) tự nạp lại theo hành động của chúng; kéo ở đó chẳng làm mới cái gì có
+nghĩa, nên chỉ storefront có cử chỉ này.
+
+Component tự tìm **scroll-parent gần nhất** và chỉ kích hoạt khi đang ở đỉnh,
+nên không cần cấu hình gì thêm — bọc là chạy, và dải cuộn ngang (flash sale)
+không nuốt cử chỉ vì nó cuộn theo trục X.
+
+Hai khác biệt so với lần nạp đầu:
+
+- **Không quay về skeleton.** Sản phẩm đang xem đứng yên trong khi trang mới
+  về — chớp sang khung xám giữa chừng là khó chịu.
+- **Hỏng thì giữ nguyên màn hình**, chỉ toast "Không làm mới được". Nạp lần
+  đầu mới hiện trang lỗi, vì lúc đó chưa có gì để giữ.
+
+`onRefresh` **trả về promise** để spinner ở đỉnh chờ đúng lúc fetch xong mới
+tắt, không tắt sớm.
+
 ---
 
 ## 2. Tìm kiếm
