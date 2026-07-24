@@ -1,26 +1,34 @@
 import { useEffect, type PropsWithChildren } from 'react';
-import { useLocation, useNavigate } from '@v-miniapp/ui-react';
+import { useLocation, useNavigate, type IIconName } from '@v-miniapp/ui-react';
 import { useSession, useSessionHydrated } from '@/lib/auth';
+import { AUTH_REQUIRED, TAB_ROOTS, type LoginTarget } from '@/lib/routes';
+import { SignInRequired } from './sign-in-required';
 
 /**
- * Route middleware: one list of paths that need a session, one redirect.
- * Pages never check auth themselves.
+ * Route middleware: one list of paths that need a session, and two ways
+ * of asking for one. Pages never check auth themselves.
  *
- * Browsing stays anonymous by design (review rule 3.4.8) — this list is
- * only for screens that are meaningless without an owner. Actions inside
- * public pages (the checkout button) do their own check at the moment of
- * the action, which is the pattern the review rules prefer anyway.
+ * Browsing stays anonymous by design (review rule 3.4.8) — AUTH_REQUIRED
+ * is only for screens that are meaningless without an owner. Actions
+ * inside public pages (the checkout button) do their own check at the
+ * moment of the action, which is the pattern the review rules prefer.
  *
  * Waits for the stored session to hydrate before judging: on a cold
  * start "no session yet" usually just means "still reading storage",
  * and bouncing a logged-in user to /login would be wrong.
  */
-const AUTH_REQUIRED = ['/orders', '/checkout', '/order', '/seller'];
 
-/** What /login reads to know where to go once it succeeds. */
-export type LoginTarget = {
-  pathname: string;
-  params?: Record<string, string>;
+/** Copy for the tab roots that need an account. */
+const TAB_PROMPT: Record<
+  string,
+  { icon: IIconName; title: string; message: string }
+> = {
+  '/orders': {
+    icon: 'receipt',
+    title: 'Đăng nhập để xem đơn hàng',
+    message:
+      'Đơn hàng gắn với tài khoản V-App của bạn — đăng nhập để xem đơn đã đặt và theo dõi giao hàng.',
+  },
 };
 
 export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
@@ -31,7 +39,13 @@ export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
 
   const pathname = location?.pathname ?? '/';
   const guarded = AUTH_REQUIRED.includes(pathname);
-  const mustLogin = guarded && hydrated && !session;
+  const missing = guarded && hydrated && !session;
+
+  // A tab root asks in place; anything else redirects. Throwing someone
+  // off a tab they just pressed — and off the tab bar with it — reads as
+  // being ejected from the app, not as being asked to sign in.
+  const askHere = missing && TAB_ROOTS.includes(pathname);
+  const mustLogin = missing && !askHere;
 
   // Serialised so the effect below has a stable dependency — the params
   // object is a fresh identity on every render and would loop.
@@ -43,11 +57,9 @@ export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
     // back button should not return to it.
     //
     // But `replace` erases where the user was going, and the tab bar
-    // replaces too — tapping the Orders tab overwrites the current entry,
-    // then this overwrites that. Signing in and calling navigate(-1) then
-    // lands somewhere unrelated, or nowhere at all when there is no entry
-    // left underneath, stranding the user on /login. So carry the
-    // destination along and let /login return to it by name.
+    // replaces too — so signing in and calling navigate(-1) can land
+    // somewhere unrelated, or nowhere at all when no entry is left
+    // underneath. Carry the destination and let /login return to it.
     navigate('/login', {
       replace: true,
       state: {
@@ -58,6 +70,13 @@ export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
       },
     });
   }, [mustLogin, navigate, pathname, params]);
+
+  if (askHere) {
+    const prompt = TAB_PROMPT[pathname];
+    return prompt ? (
+      <SignInRequired target={{ pathname }} {...prompt} />
+    ) : null;
+  }
 
   // Guarded and not ready (hydrating, or about to redirect): render
   // nothing rather than flashing a screen that is about to disappear.

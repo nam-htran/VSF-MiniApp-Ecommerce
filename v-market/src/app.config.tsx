@@ -25,10 +25,15 @@ import AccountPage from './pages/account-page';
  * See docs/day3/platform-constraints.md §3.
  */
 export const getAppConfig = (): IAppConfig => ({
-  // Every page passes through these, outermost first: the session guard
-  // (route middleware — auth checks live there, not in pages), then the
-  // top chrome (back button + search pill).
-  Layouts: [SessionGuardLayout, TopChromeLayout],
+  // Every page passes through these, outermost first: the top chrome
+  // (back button + search pill), then the session guard (route
+  // middleware — auth checks live there, not in pages).
+  //
+  // The chrome is outside on purpose. The guard sometimes renders its own
+  // content instead of the page — "sign in to see your orders" — and that
+  // content still belongs under the app's own chrome. Were the guard
+  // outermost, replacing the page would take the search pill with it.
+  Layouts: [TopChromeLayout, SessionGuardLayout],
   pages: [
     {
       pathname: '/',

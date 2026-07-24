@@ -87,11 +87,38 @@ sequenceDiagram
 - **Seam mock↔thật nằm trọn trong `api/auth.ts`**: chỉ chỗ lấy authCode là swappable (thật = `apisAsync.getAuthCode`, cần app đăng ký DevCenter — không có). Mọi thứ sau authCode giống hệt nhau ở hai chế độ
 - Trên máy thật, cả màn `/login` **không tồn tại** — người dùng đã đăng nhập V-App sẵn, `getAuthCode` chạy im lặng
 
+### Hỏi đăng nhập ở đâu: hai cách, tuỳ loại trang
+
+`SessionGuardLayout` chặn `/orders`, `/checkout`, `/order`, `/seller`. Nhưng
+nó **không** đối xử với chúng như nhau:
+
+| Loại trang | Cách hỏi |
+|---|---|
+| Tab gốc (`/orders`) | Hiện thẳng "Đăng nhập để xem đơn hàng" **tại chỗ** |
+| Còn lại | Đẩy sang `/login`, xong quay về |
+
+Đá người ta khỏi **tab vừa bấm** — và mất luôn thanh tab, vì `/login` không có
+`bottomTabBarId` — đọc ra như bị văng khỏi app, chứ không phải như được mời
+đăng nhập. Ba tab kia cũng biến mất cùng. Với trang người dùng **cố ý mở**
+(`/checkout`, `/order`) thì chuyển hướng lại đúng: họ xin trang đó, và sẽ được
+trả lại đúng trang đó.
+
+`SignInRequired` cố tình trông giống các empty state bên cạnh nó — chưa đăng
+nhập là **trạng thái bình thường**, không phải lỗi.
+
+> Đổi thứ tự `Layouts` thành `[TopChromeLayout, SessionGuardLayout]` vì việc
+> này: guard giờ có lúc **thay nội dung trang bằng nội dung của nó**, mà phần
+> đó vẫn phải nằm dưới chrome của app. Để guard ở ngoài thì thay trang là mất
+> luôn ô tìm kiếm.
+
+`TAB_ROOTS` và `AUTH_REQUIRED` dời về `lib/routes.ts` — trước đó `TAB_ROOTS`
+nằm trong `top-chrome-layout.tsx` và giờ cả hai layout đều cần. Lệch nhau thì
+triệu chứng rất khó đoán: nút back mọc trên một tab, hoặc một tab bị đá ra.
+
 ### Đăng nhập xong thì quay về đâu
 
-`SessionGuardLayout` chặn `/orders`, `/checkout`, `/order`, `/seller`. Nó đẩy
-sang `/login` bằng **`replace`** — trang bị chặn chưa từng mở ra thật, không
-nên để nút back quay lại.
+Nhánh chuyển hướng đẩy sang `/login` bằng **`replace`** — trang bị chặn chưa
+từng mở ra thật, không nên để nút back quay lại.
 
 Nhưng `replace` cũng **xoá luôn nơi người dùng định đến**, và thanh tab cũng
 `replace` (`bottom-tab-bar-layout/index.js` gọi `navigate(path, {replace: true})`).
@@ -104,6 +131,9 @@ Nên bấm tab **Đơn hàng** lúc chưa đăng nhập là hai lần ghi đè l
 Không còn gì bên dưới, nên `navigate(-1)` sau khi đăng nhập **không đi đâu
 cả** — kẹt lại ở màn đăng nhập. Từ tab Tài khoản thì không dính, vì nút
 "Đăng nhập" ở đó là `push` bình thường, còn `[/account]` vẫn nằm dưới.
+
+(Riêng `/orders` giờ không còn đi đường này nữa — nó hỏi tại chỗ. Nhưng cái
+bẫy vẫn còn nguyên cho mọi tab gốc cần đăng nhập về sau.)
 
 Cách sửa: guard **mang theo đích đến** trong `state.loginTarget` (cả
 `pathname` lẫn `params`, vì `/order?id=` cần id), và `/login` quay về **đúng

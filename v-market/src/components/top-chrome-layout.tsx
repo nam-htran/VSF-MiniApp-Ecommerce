@@ -6,6 +6,7 @@ import {
   useNavigate,
 } from '@v-miniapp/ui-react';
 import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
+import { TAB_ROOTS } from '@/lib/routes';
 
 /**
  * The app's own top chrome, as one app-level layout wrapping every page:
@@ -23,7 +24,6 @@ import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
  * right offset uses --vsf-header-padding-right where the runtime injects
  * it; the 112px fallback clears the pill the Simulator draws.
  */
-const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
 // No search pill — and, since the band only backs the pill, no band either.
 // /product is here for the second reason: the photo runs to the top edge and
 // a bar over it would only get in the way. The back button still floats.
