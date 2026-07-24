@@ -1,9 +1,16 @@
-"""Receiving product images.
+"""Receiving product and shop images.
 
 The MiniApp can't hotlink a third-party CDN — the whitelist only covers
-domains the app owns — so seller images are uploaded here and served from
-the same origin as the API. Seller-only: an upload endpoint open to anyone
-is a free file host.
+domains the app owns — so images are uploaded here and served from the same
+origin as the API.
+
+Any logged-in user, not seller-only: opening a shop is where someone first
+uploads a banner and logo, and they are still a BUYER at that moment — the
+SELLER role is granted only once the shop is created (see shops/routes.py).
+Requiring SELLER here would make the open-shop form impossible to complete,
+the same chicken-and-egg that POST /shops already sidesteps. A valid V-App
+session is still required, so this is not the open file host the guard was
+guarding against.
 """
 
 import uuid
@@ -11,7 +18,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, status
 
-from app.auth.deps import CurrentSeller
+from app.auth.deps import CurrentUser
 
 router = APIRouter(tags=["Uploads"])
 
@@ -25,7 +32,7 @@ _MAX_BYTES = 5 * 1024 * 1024
 
 @router.post("/uploads")
 async def upload_image(
-    request: Request, file: UploadFile, seller: CurrentSeller
+    request: Request, file: UploadFile, user: CurrentUser
 ) -> dict:
     extension = _ALLOWED.get(file.content_type or "")
     if extension is None:

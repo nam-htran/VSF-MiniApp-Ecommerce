@@ -81,9 +81,16 @@ thà thiếu một thẻ còn hơn một khung trống.
 
 ## 4. Ảnh tải lên
 
-`POST /uploads` — chỉ người bán, chỉ `image/jpeg|png|webp`, tối đa **5MB**,
-lưu vào `server/uploads/` và trả về **URL tuyệt đối** dựng từ
+`POST /uploads` — **bất kỳ ai đã đăng nhập**, chỉ `image/jpeg|png|webp`, tối
+đa **5MB**, lưu vào `server/uploads/` và trả về **URL tuyệt đối** dựng từ
 `request.base_url`.
+
+> Không đòi vai trò SELLER, có chủ đích: người mở shop up banner/logo **ngay
+> trong form mở shop**, mà lúc đó họ vẫn là BUYER — vai trò SELLER chỉ được
+> cấp sau khi shop tạo xong. Đòi SELLER ở đây thì form mở shop **không bao giờ
+> hoàn tất được** (chính con-gà-quả-trứng mà `POST /shops` đã né). Vẫn đòi một
+> phiên đăng nhập hợp lệ, nên đây không phải "free file host". Một test từng
+> khẳng định buyer bị 403 — chính nó đã che lỗi này, giờ đã sửa.
 
 Phải là URL tuyệt đối vì MiniApp chạy ở origin khác backend; đường dẫn tương
 đối sẽ trỏ vào Vite dev server và 404.

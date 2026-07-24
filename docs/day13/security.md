@@ -108,9 +108,13 @@ hàng không bao giờ bị chặn.
 
 ## 6. Tải file
 
-`POST /uploads`: chỉ người bán, allowlist `image/jpeg|png|webp`, tối đa 5MB.
-Là **allowlist chứ không phải blocklist** — liệt kê cái được phép thì thứ
-chưa nghĩ tới sẽ bị chặn theo mặc định.
+`POST /uploads`: **bất kỳ ai đã đăng nhập**, allowlist `image/jpeg|png|webp`,
+tối đa 5MB. Là **allowlist chứ không phải blocklist** — liệt kê cái được phép
+thì thứ chưa nghĩ tới sẽ bị chặn theo mặc định.
+
+Không đòi SELLER vì người mở shop up banner/logo khi còn là BUYER (vai trò chỉ
+lên sau khi shop tạo xong). Ranh giới đúng ở đây là **có phiên đăng nhập**,
+không phải vai trò: ẩn danh vẫn bị 401, nên không thành free file host.
 
 ---
 
