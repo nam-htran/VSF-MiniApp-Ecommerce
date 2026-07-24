@@ -15,7 +15,7 @@ import {
   type CartLine,
 } from '@/lib/cart';
 import { useSession } from '@/lib/auth';
-import type { LoginTarget } from '@/components/session-guard-layout';
+import type { LoginTarget } from '@/lib/routes';
 import { formatVnd } from '@/lib/format';
 
 const CartPage = () => {

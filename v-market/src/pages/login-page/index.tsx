@@ -15,7 +15,7 @@ import {
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
-import type { LoginTarget } from '@/components/session-guard-layout';
+import type { LoginTarget } from '@/lib/routes';
 import {
   listVappAccounts,
   loginSilently,
