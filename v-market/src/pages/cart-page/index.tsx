@@ -15,6 +15,7 @@ import {
   type CartLine,
 } from '@/lib/cart';
 import { useSession } from '@/lib/auth';
+import type { LoginTarget } from '@/components/session-guard-layout';
 import { formatVnd } from '@/lib/format';
 
 const CartPage = () => {
@@ -208,10 +209,18 @@ const CheckoutBar = ({ lines }: { lines: CartLine[] }) => {
 
   const startCheckout = () => {
     // Ask for the session at the moment of the action, not on the page:
-    // browsing and filling a cart stay anonymous (review rule 3.4.8). On
-    // return from /login the button is tapped again, now with a session.
+    // browsing and filling a cart stay anonymous (review rule 3.4.8).
     // /checkout is also guarded, so a deep link there is safe too.
-    navigate(session ? '/checkout' : '/login');
+    if (session) {
+      navigate('/checkout');
+      return;
+    }
+    // Carry the destination the same way the guard does, so signing in
+    // continues to checkout instead of dropping the buyer back here to
+    // press the button a second time.
+    navigate('/login', {
+      state: { loginTarget: { pathname: '/checkout' } satisfies LoginTarget },
+    });
   };
 
   return (

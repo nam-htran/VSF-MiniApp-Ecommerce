@@ -17,6 +17,12 @@ import { useSession, useSessionHydrated } from '@/lib/auth';
  */
 const AUTH_REQUIRED = ['/orders', '/checkout', '/order', '/seller'];
 
+/** What /login reads to know where to go once it succeeds. */
+export type LoginTarget = {
+  pathname: string;
+  params?: Record<string, string>;
+};
+
 export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -27,9 +33,31 @@ export const SessionGuardLayout = ({ children }: PropsWithChildren) => {
   const guarded = AUTH_REQUIRED.includes(pathname);
   const mustLogin = guarded && hydrated && !session;
 
+  // Serialised so the effect below has a stable dependency — the params
+  // object is a fresh identity on every render and would loop.
+  const params = JSON.stringify(location?.params ?? {});
+
   useEffect(() => {
-    if (mustLogin) navigate('/login', { replace: true });
-  }, [mustLogin, navigate]);
+    if (!mustLogin) return;
+    // Replace, not push: the guarded page never really opened, so the
+    // back button should not return to it.
+    //
+    // But `replace` erases where the user was going, and the tab bar
+    // replaces too — tapping the Orders tab overwrites the current entry,
+    // then this overwrites that. Signing in and calling navigate(-1) then
+    // lands somewhere unrelated, or nowhere at all when there is no entry
+    // left underneath, stranding the user on /login. So carry the
+    // destination along and let /login return to it by name.
+    navigate('/login', {
+      replace: true,
+      state: {
+        loginTarget: {
+          pathname,
+          params: JSON.parse(params) as Record<string, string>,
+        } satisfies LoginTarget,
+      },
+    });
+  }, [mustLogin, navigate, pathname, params]);
 
   // Guarded and not ready (hydrating, or about to redirect): render
   // nothing rather than flashing a screen that is about to disappear.

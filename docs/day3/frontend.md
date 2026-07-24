@@ -87,6 +87,32 @@ sequenceDiagram
 - **Seam mock↔thật nằm trọn trong `api/auth.ts`**: chỉ chỗ lấy authCode là swappable (thật = `apisAsync.getAuthCode`, cần app đăng ký DevCenter — không có). Mọi thứ sau authCode giống hệt nhau ở hai chế độ
 - Trên máy thật, cả màn `/login` **không tồn tại** — người dùng đã đăng nhập V-App sẵn, `getAuthCode` chạy im lặng
 
+### Đăng nhập xong thì quay về đâu
+
+`SessionGuardLayout` chặn `/orders`, `/checkout`, `/order`, `/seller`. Nó đẩy
+sang `/login` bằng **`replace`** — trang bị chặn chưa từng mở ra thật, không
+nên để nút back quay lại.
+
+Nhưng `replace` cũng **xoá luôn nơi người dùng định đến**, và thanh tab cũng
+`replace` (`bottom-tab-bar-layout/index.js` gọi `navigate(path, {replace: true})`).
+Nên bấm tab **Đơn hàng** lúc chưa đăng nhập là hai lần ghi đè liên tiếp:
+
+```
+[/]  ──tab──▶  [/orders]  ──guard──▶  [/login]
+```
+
+Không còn gì bên dưới, nên `navigate(-1)` sau khi đăng nhập **không đi đâu
+cả** — kẹt lại ở màn đăng nhập. Từ tab Tài khoản thì không dính, vì nút
+"Đăng nhập" ở đó là `push` bình thường, còn `[/account]` vẫn nằm dưới.
+
+Cách sửa: guard **mang theo đích đến** trong `state.loginTarget` (cả
+`pathname` lẫn `params`, vì `/order?id=` cần id), và `/login` quay về **đúng
+tên đường** thay vì lùi lịch sử. Không có `loginTarget` — tức người dùng tự
+vào `/login` — thì `navigate(-1)` vẫn là lối ra đúng.
+
+Nút đặt hàng ở giỏ dùng chung cơ chế đó, nên đăng nhập xong là **đi thẳng
+sang `/checkout`**, không bắt bấm lại lần nữa.
+
 ## 4. Giỏ hàng — nằm ở client
 
 ```mermaid

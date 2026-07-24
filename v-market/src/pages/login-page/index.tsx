@@ -12,8 +12,10 @@ import {
   TextField,
   Toast,
   Typography,
+  useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
+import type { LoginTarget } from '@/components/session-guard-layout';
 import {
   listVappAccounts,
   loginSilently,
@@ -43,6 +45,12 @@ type Accounts =
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Set when the route guard sent us here, so we know where to go back
+  // to. Absent when the user came on purpose (the account tab), and then
+  // stepping back through history is the right exit.
+  const target = (location?.state as { loginTarget?: LoginTarget } | undefined)
+    ?.loginTarget;
   const [accounts, setAccounts] = useState<Accounts>({ status: 'loading' });
   const [consentFor, setConsentFor] = useState<VappAccount | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -78,7 +86,10 @@ const LoginPage = () => {
         message: `Đã đăng nhập: ${result.user.name ?? account.name}`,
         position: 'bottom',
       });
-      navigate(-1);
+      // Replace again: this screen has done its job and should not be
+      // somewhere the back button can land on.
+      if (target) navigate(target.pathname, { replace: true, params: target.params });
+      else navigate(-1);
       return;
     }
     // New to V-Market — V-App wants the user's OK before sharing profile.
