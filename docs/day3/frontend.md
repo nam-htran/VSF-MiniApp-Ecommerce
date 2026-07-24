@@ -183,22 +183,31 @@ Chi tiết ở [platform-constraints.md](platform-constraints.md) §10; điểm 
 | Cụm `⋯ ✕` của V-App đè lên trang, không chiếm layout | nội dung hàng đầu chừa vùng đó; "Xem tất cả" thuộc hàng Flash sale nằm dưới |
 | Bộ icon không có cart/giỏ | emoji ReactNode làm icon tab |
 
-## 7. Form thêm sản phẩm — nút bị khoá phải nói lý do
+## 7. Form thêm sản phẩm — báo lỗi ngay tại ô, khi đang gõ
 
-`ProductFormSheet` khoá nút "Thêm/Lưu" khi form chưa hợp lệ. Bản đầu **khoá
-im lặng** — người bán điền xong vẫn thấy nút mờ mà không biết thiếu gì. Hai
-nguyên nhân hay gặp, cả hai đều không hiện ra:
+`ProductFormSheet` từng **khoá nút im lặng** khi form chưa hợp lệ — người bán
+điền xong vẫn thấy nút mờ mà không biết thiếu gì. Đúng như một ô email báo
+thiếu `@` ngay lúc gõ, form giờ báo lỗi **tại từng ô**, không dồn về cái nút.
+
+`TextField` của thư viện có sẵn `error` + `errorMessage`, nên mỗi ô có một
+hàm kiểm riêng (`errors[field]`), tính lại mỗi lần gõ. Ba quy tắc hiển thị:
+
+- Lỗi chỉ hiện **sau khi rời ô** (`onBlur` → `touched`), không mắng một ô còn
+  trống mà người bán chưa chạm tới.
+- Bấm nút khi còn lỗi thì **bật hết lỗi cùng lúc** (`submitted`) — nút không
+  còn bị khoá, vì bấm nút chính là cách hỏi "đang thiếu gì".
+- Sửa xong lỗi tự biến mất ngay, không đợi blur lần nữa.
+
+Hai lỗi hay vướng nhất mà bản cũ giấu:
 
 - **Giá gõ có dấu phân cách.** VND là số nguyên đồng, người bán gõ `50.000`
-  hay `50,000`. `Number("50,000")` ra `NaN` → nút khoá. Giờ `parseVnd` chỉ
-  giữ chữ số, nên `50.000`, `50,000`, `50 000`, `50000` đều thành `50000`.
-- **Mô tả để trống.** Backend bắt buộc `description` (min_length=1), nên
-  client cũng bắt — nhưng trước đây không nói.
+  hay `50,000`. `Number("50,000")` ra `NaN`. Giờ `parseVnd` chỉ giữ chữ số,
+  nên `50.000`, `50,000`, `50 000`, `50000` đều thành `50000`.
+- **Mô tả để trống.** Backend bắt buộc `description` (min_length=1), client
+  cũng bắt — giờ ô mô tả tự nói.
 
-Cách sửa đúng: tính `problem` — **yêu cầu chưa đạt đầu tiên, bằng lời** — và
-hiện ngay trên nút. Nút disable không bao giờ còn là câu đố. Cùng tinh thần
-với thông báo kiểm duyệt ([day13](../day13/security.md) §3): từ chối mà không
-nêu lý do là một ticket hỗ trợ đang chờ.
+Cùng tinh thần với thông báo kiểm duyệt ([day13](../day13/security.md) §3):
+từ chối mà không nêu lý do là một ticket hỗ trợ đang chờ.
 
 > **Lỗi ô SKU chết:** ô SKU thêm ở phần sau có `useState`, có `TextField`,
 > nhưng `save()` **không hề đưa `sku` vào payload** — gõ gì cũng mất. Backend

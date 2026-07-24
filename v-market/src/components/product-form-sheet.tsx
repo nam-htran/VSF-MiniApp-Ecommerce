@@ -74,9 +74,17 @@ export const ProductFormSheet = ({
   const [saving, setSaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Which fields to show an error for. A field earns its error once the
+  // seller has left it (blur), or once they press the button with the form
+  // still incomplete — never on a pristine field they haven't reached yet.
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [submitted, setSubmitted] = useState(false);
+  const touch = (field: string) =>
+    setTouched(prev => (prev[field] ? prev : { ...prev, [field]: true }));
+
   // VND is whole đồng, and sellers type prices with separators — "50.000",
-  // "50,000", "50 000". Number("50,000") is NaN, which used to disable the
-  // button with no explanation. Keep the digits and read them as one number.
+  // "50,000", "50 000". Number("50,000") is NaN; keep the digits and read
+  // them as one number so every way of writing a price works.
   const parseVnd = (s: string): number => {
     const digits = s.replace(/\D/g, '');
     return digits ? Number(digits) : NaN;
@@ -90,28 +98,37 @@ export const ProductFormSheet = ({
   const stockValue = Number.isFinite(stockNum) ? stockNum : 0;
   const hasVariants = variants.length > 0;
 
-  // The first unmet requirement, in words. A disabled button that never says
-  // why is the same trap as a rejected product with no reason — the seller is
-  // left guessing. Whatever field they actually missed, this names it.
-  const problem: string | null =
-    name.trim().length < 1
-      ? 'Nhập tên sản phẩm'
-      : description.trim().length < 1
-        ? 'Nhập mô tả sản phẩm'
-        : !price.trim()
-          ? 'Nhập giá bán'
-          : !Number.isFinite(priceNum) || priceNum <= 0
-            ? 'Giá bán phải lớn hơn 0'
-            : !hasVariants && !stock.trim()
-              ? 'Nhập tồn kho'
-              : !hasVariants && (!Number.isInteger(stockNum) || stockNum < 0)
-                ? 'Tồn kho phải là số nguyên ≥ 0'
-                : originalNum !== null &&
-                    (!Number.isFinite(originalNum) || originalNum <= priceNum)
-                  ? 'Giá gốc phải lớn hơn giá bán, hoặc để trống'
-                  : null;
+  // One check per field, each returning its own message. Checked live on
+  // every keystroke, like an email box flagging a missing @ — so the seller
+  // is corrected while typing, not left to guess at a dead button.
+  const errors: Record<string, string | undefined> = {
+    name: name.trim().length < 1 ? 'Nhập tên sản phẩm' : undefined,
+    description:
+      description.trim().length < 1 ? 'Nhập mô tả sản phẩm' : undefined,
+    price: !price.trim()
+      ? 'Nhập giá bán'
+      : !Number.isFinite(priceNum) || priceNum <= 0
+        ? 'Giá bán phải lớn hơn 0'
+        : undefined,
+    stock: hasVariants
+      ? undefined
+      : !stock.trim()
+        ? 'Nhập tồn kho'
+        : !Number.isInteger(stockNum) || stockNum < 0
+          ? 'Tồn kho phải là số nguyên ≥ 0'
+          : undefined,
+    original:
+      originalNum !== null &&
+      (!Number.isFinite(originalNum) || originalNum <= priceNum)
+        ? 'Giá gốc phải lớn hơn giá bán, hoặc để trống'
+        : undefined,
+  };
 
-  const valid = problem === null;
+  /** The message to render under a field: only once it's been seen. */
+  const shownError = (field: string): string | undefined =>
+    touched[field] || submitted ? errors[field] : undefined;
+
+  const valid = !Object.values(errors).some(Boolean);
 
   const pickImage = async (file: File) => {
     setUploading(true);
@@ -130,7 +147,13 @@ export const ProductFormSheet = ({
   };
 
   const save = async () => {
-    if (!valid || saving) return;
+    if (saving) return;
+    // Pressing the button is itself a request to be told what's wrong: reveal
+    // every field's error at once rather than staying inert.
+    if (!valid) {
+      setSubmitted(true);
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
@@ -256,11 +279,21 @@ export const ProductFormSheet = ({
             />
           </div>
 
-          <TextField value={name} onChange={setName} placeholder="Tên sản phẩm" />
+          <TextField
+            value={name}
+            onChange={setName}
+            onBlur={() => touch('name')}
+            placeholder="Tên sản phẩm"
+            error={!!shownError('name')}
+            errorMessage={shownError('name')}
+          />
           <TextField
             value={description}
             onChange={setDescription}
+            onBlur={() => touch('description')}
             placeholder="Mô tả"
+            error={!!shownError('description')}
+            errorMessage={shownError('description')}
           />
           <Dropdown
             placeholder="Danh mục"
@@ -282,15 +315,21 @@ export const ProductFormSheet = ({
           <TextField
             value={price}
             onChange={setPrice}
+            onBlur={() => touch('price')}
             placeholder="Giá bán (₫)"
             inputMode="numeric"
+            error={!!shownError('price')}
+            errorMessage={shownError('price')}
           />
           {!editing && (
             <TextField
               value={original}
               onChange={setOriginal}
+              onBlur={() => touch('original')}
               placeholder="Giá gốc nếu đang giảm (₫) — không bắt buộc"
               inputMode="numeric"
+              error={!!shownError('original')}
+              errorMessage={shownError('original')}
             />
           )}
           {/* The seller's own article number, for reconciling against
@@ -304,11 +343,14 @@ export const ProductFormSheet = ({
           <TextField
             value={stock}
             onChange={setStock}
+            onBlur={() => touch('stock')}
             placeholder="Tồn kho"
             inputMode="numeric"
             // Once options exist their quantities are the stock, so this
             // field would be a second number nobody reads.
             disabled={variants.length > 0}
+            error={!!shownError('stock')}
+            errorMessage={shownError('stock')}
           />
           {variants.length > 0 && (
             <Typography size="2x-small" color="text-tertiary">
@@ -345,13 +387,14 @@ export const ProductFormSheet = ({
         </div>
       </SheetBody>
       <SheetFooter>
-        {/* Say what's still missing, so the disabled button is never a
-            mystery. Hidden while uploading — the button shows that itself. */}
-        {problem && !uploading && (
+        {/* Each field flags its own problem inline; this only nudges the
+            seller to look up when they press the button with errors still
+            open — some may have scrolled out of view. */}
+        {submitted && !valid && !uploading && (
           <div className="mb-2 flex items-center gap-1.5">
             <Icon name="circle-info" size={14} className="shrink-0 text-global-amber-amber-70" />
             <Typography size="2x-small" className="text-global-amber-amber-70">
-              {problem}
+              Vui lòng kiểm tra các ô được tô đỏ ở trên.
             </Typography>
           </div>
         )}
@@ -365,7 +408,11 @@ export const ProductFormSheet = ({
             theme="brand"
             block
             loading={saving}
-            disabled={!valid || uploading}
+            // Not gated on `valid`: a disabled button can't be pressed, and
+            // pressing it is how the seller asks what's wrong. save() checks
+            // validity and reveals the errors. Only an in-flight image upload
+            // blocks it — its URL isn't ready to save yet.
+            disabled={uploading}
             onClick={save}>
             {editing ? 'Lưu' : 'Thêm'}
           </Button>
