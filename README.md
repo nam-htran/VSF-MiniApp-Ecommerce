@@ -61,7 +61,7 @@ cung cấp — đổi `authCode` lấy phiên, hồ sơ người dùng, và mộ
 toán biết gửi **IPN có ký** về server.
 
 Nhờ vậy toàn bộ luồng chạy được thật, và khi có credential thật thì chỉ đổi
-`VAPP_BASE_URL`. Chi tiết: [docs/day1/login.md](docs/day1/login.md).
+`VAPP_BASE_URL`. Chi tiết: [docs/phase1/day1/login.md](docs/phase1/day1/login.md).
 
 ---
 
@@ -72,21 +72,21 @@ và ngược lại.
 
 | Ngày | | |
 |---|---|---|
-| 1 | [day1/login.md](docs/day1/login.md) | Đăng nhập qua V-App, consent hai giai đoạn |
-| 2 | [day2/research.md](docs/day2/research.md) | Khảo sát nền tảng |
-| 2 | [day2/storage.md](docs/day2/storage.md) | Vì sao Postgres |
-| — | [day3/platform-constraints.md](docs/day3/platform-constraints.md) | **Ràng buộc của V-App — đọc trước khi thêm tính năng** |
-| 3 | [day3/shops.md](docs/day3/shops.md) | Shop và vai trò |
-| 4 | [day3/products.md](docs/day3/products.md) | Sản phẩm |
-| 5–6 | [day5/buyer-journey.md](docs/day5/buyer-journey.md) | Duyệt hàng, tìm kiếm, danh mục, giỏ hàng |
-| 7 | [day7/checkout.md](docs/day7/checkout.md) | Sổ địa chỉ, định vị, báo giá, đặt hàng |
-| 8, 11–12 | [day3/orders.md](docs/day3/orders.md) | Đơn hàng, thanh toán, giữ hàng, **bảo vệ tiền người mua** |
-| 9 | [day9/fulfilment-and-storefront.md](docs/day9/fulfilment-and-storefront.md) | Người bán xử lý đơn, trang cửa hàng, upload ảnh |
-| 13 | [day13/security.md](docs/day13/security.md) | Phân quyền, kiểm duyệt, XSS, rate limit |
-| 14 | [day3/frontend.md](docs/day3/frontend.md) | Kiến trúc MiniApp |
-| 15 | [day15/testing.md](docs/day15/testing.md) | Cách kiểm thử và ma trận 57 ca |
-| 17 | [day3/vouchers-variants.md](docs/day3/vouchers-variants.md) | Voucher, phân loại, SKU |
-| 17 | [day17/reviews.md](docs/day17/reviews.md) | Đánh giá của người đã mua |
+| 1 | [day1/login.md](docs/phase1/day1/login.md) | Đăng nhập qua V-App, consent hai giai đoạn |
+| 2 | [day2/research.md](docs/phase1/day2/research.md) | Khảo sát nền tảng |
+| 2 | [day2/storage.md](docs/phase1/day2/storage.md) | Vì sao Postgres |
+| — | [day3/platform-constraints.md](docs/phase1/day3/platform-constraints.md) | **Ràng buộc của V-App — đọc trước khi thêm tính năng** |
+| 3 | [day3/shops.md](docs/phase1/day3/shops.md) | Shop và vai trò |
+| 4 | [day3/products.md](docs/phase1/day3/products.md) | Sản phẩm |
+| 5–6 | [day5/buyer-journey.md](docs/phase1/day5/buyer-journey.md) | Duyệt hàng, tìm kiếm, danh mục, giỏ hàng |
+| 7 | [day7/checkout.md](docs/phase1/day7/checkout.md) | Sổ địa chỉ, định vị, báo giá, đặt hàng |
+| 8, 11–12 | [day3/orders.md](docs/phase1/day3/orders.md) | Đơn hàng, thanh toán, giữ hàng, **bảo vệ tiền người mua** |
+| 9 | [day9/fulfilment-and-storefront.md](docs/phase1/day9/fulfilment-and-storefront.md) | Người bán xử lý đơn, trang cửa hàng, upload ảnh |
+| 13 | [day13/security.md](docs/phase1/day13/security.md) | Phân quyền, kiểm duyệt, XSS, rate limit |
+| 14 | [day3/frontend.md](docs/phase1/day3/frontend.md) | Kiến trúc MiniApp |
+| 15 | [day15/testing.md](docs/phase1/day15/testing.md) | Cách kiểm thử và ma trận 57 ca |
+| 17 | [day3/vouchers-variants.md](docs/phase1/day3/vouchers-variants.md) | Voucher, phân loại, SKU |
+| 17 | [day17/reviews.md](docs/phase1/day17/reviews.md) | Đánh giá của người đã mua |
 
 > Thư mục `day3/` chứa cả tài liệu của ngày sau (`orders.md`,
 > `vouchers-variants.md`, `frontend.md`). Chúng lớn dần theo thời gian và
@@ -109,7 +109,7 @@ Những thứ dễ làm sai và đã được cân nhắc kỹ:
 - **Đơn chỉ `PAID` khi IPN server-to-server tới.** Khách mất mạng không ảnh
   hưởng gì.
 - **Giữ hàng có thời hạn**, và đơn đang được thanh toán thì **không** bị
-  huỷ — xem [orders.md §6](docs/day3/orders.md#6-tiền-của-người-mua).
+  huỷ — xem [orders.md §6](docs/phase1/day3/orders.md#6-tiền-của-người-mua).
 - **Tồn kho nằm ở đúng một nơi**: trên sản phẩm, hoặc trên phân loại, không
   bao giờ cả hai.
 

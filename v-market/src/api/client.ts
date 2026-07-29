@@ -3,7 +3,7 @@
  *
  * Inside V-App there is no `fetch` and no `XMLHttpRequest` — the runtime is
  * an isolated JS environment and every request goes through the platform
- * bridge, HTTPS only. See docs/day3/platform-constraints.md §1.
+ * bridge, HTTPS only. See docs/phase1/day3/platform-constraints.md §1.
  */
 import { apisAsync } from '@v-miniapp/apis';
 

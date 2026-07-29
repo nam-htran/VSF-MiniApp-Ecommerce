@@ -212,4 +212,4 @@ DATABASE_URL=postgresql+asyncpg://vmarket:vmarket@127.0.0.1:5433/vmarket
 
 ---
 
-Phần quản lý shop (`app/shops/`, `app/auth/deps.py`) thuộc ngày 3, tài liệu ở `docs/day3/`.
+Phần quản lý shop (`app/shops/`, `app/auth/deps.py`) thuộc ngày 3, tài liệu ở `docs/phase1/day3/`.

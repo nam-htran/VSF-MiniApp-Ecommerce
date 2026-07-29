@@ -22,7 +22,7 @@ import AccountPage from './pages/account-page';
  * the home page instead of failing — so keep them lowercase and register
  * each screen here as it is built.
  *
- * See docs/day3/platform-constraints.md §3.
+ * See docs/phase1/day3/platform-constraints.md §3.
  */
 export const getAppConfig = (): IAppConfig => ({
   // Every page passes through these, outermost first: the top chrome
