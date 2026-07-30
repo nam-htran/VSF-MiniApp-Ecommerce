@@ -1,0 +1,8 @@
+# Dataset REES46 (~15GB)
+ai-recommendation/dataset/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Office temp files
+~$*
