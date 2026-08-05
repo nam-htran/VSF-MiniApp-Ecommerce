@@ -5,13 +5,13 @@
       "source": "v-open-platform/v-mini-app-skills",
       "sourceType": "github",
       "skillPath": "SKILL.md",
-      "computedHash": "aa3be383cc28ff237720b91d5d56b649b06f23eda17fbf3a86cd5b92254188b9"
+      "computedHash": "1106bea19cebf51817d55ed812e65fb032d50b33b87f1cbc28b849e826ade564"
     },
     "v-miniapp-ui-react": {
       "source": "v-open-platform/ui-react-skills",
       "sourceType": "github",
       "skillPath": "SKILL.md",
-      "computedHash": "9107049e918e04323381a2fe79333c93293ef9a6ecc03a3d15ea9723b6aaba4b"
+      "computedHash": "f3016c531ff96dcade903a808412b0ad1941afd48fdb869929767ff5fadef4ff"
     }
   }
 }
