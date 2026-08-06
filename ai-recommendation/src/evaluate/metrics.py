@@ -11,7 +11,10 @@ class TopKAccumulator:
 
     def reset(self):
         self.total = 0
-        self.metrics = defaultdict(int)
+        self.metrics = defaultdict(float)
+        self.metrics["ndcg"] = 0.0
+        for k in self.ks:
+            self.metrics[f"h@{k}"] = 0.0
 
     def accumulate(self, actual: Tensor, top_k: Tensor) -> None:
         B, D = actual.shape
@@ -25,4 +28,6 @@ class TopKAccumulator:
         self.total += B
 
     def reduce(self) -> dict:
+        if self.total == 0:
+            raise ValueError("Cannot reduce metrics before accumulating any examples")
         return {k: v / self.total for k, v in self.metrics.items()}

@@ -2,7 +2,7 @@ from enum import Enum
 
 import gin
 
-from data.vmarket import VMarketItemData
+from data.vmarket import VMarketItemData, VMarketSeqData
 
 
 @gin.constants_from_enum
@@ -19,10 +19,5 @@ class ItemData(VMarketItemData):
         super().__init__(*args, **kwargs)
 
 
-class SeqData:
-    """Reserved for the V-Market generative-retrieval stage."""
-
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(
-            "V-Market session loading belongs to the decoder stage and is not implemented yet."
-        )
+class SeqData(VMarketSeqData):
+    """Compatibility wrapper used by the Transformer trainer."""

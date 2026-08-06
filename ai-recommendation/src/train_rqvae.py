@@ -19,8 +19,12 @@ from modules.tokenizer.semids import SemanticIdTokenizer
 from modules.utils import parse_config
 
 
-def semantic_id_metrics(corpus_ids: torch.Tensor, n_layers: int, codebook_size: int):
-    raw_ids = corpus_ids[:, :n_layers]
+def semantic_id_metrics(corpus_ids: torch.Tensor, codebook_sizes):
+    codebook_sizes = tuple(int(size) for size in codebook_sizes)
+    n_layers = len(codebook_sizes)
+    if corpus_ids.ndim != 2 or corpus_ids.shape[1] != n_layers:
+        raise ValueError(f"Expected cluster SIDs with shape [N, {n_layers}]")
+    raw_ids = corpus_ids
     unique_ids, counts = torch.unique(raw_ids, dim=0, return_counts=True)
     probabilities = counts.to(torch.float64) / len(raw_ids)
     colliding_counts = counts[counts > 1]
@@ -40,7 +44,7 @@ def semantic_id_metrics(corpus_ids: torch.Tensor, n_layers: int, codebook_size: 
         "max_collision_bucket_size": int(counts.max().item()),
         "sid_entropy": float((-(probabilities * torch.log(probabilities))).sum().item()),
     }
-    for layer in range(n_layers):
+    for layer, codebook_size in enumerate(codebook_sizes):
         metrics[f"codebook_usage_{layer}"] = (
             torch.unique(raw_ids[:, layer]).numel() / codebook_size
         )
@@ -55,12 +59,13 @@ def export_semantic_ids(
 ):
     if len(corpus_ids) != len(item_dataset.index_frame):
         raise ValueError("Semantic IDs and the global product index have different row counts")
+    if corpus_ids.ndim != 2 or corpus_ids.shape[1] != n_layers:
+        raise ValueError(f"Expected cluster SIDs with shape [N, {n_layers}]")
 
     output = item_dataset.index_frame[["product_index", "product_id"]].copy()
     ids = corpus_ids.cpu().numpy()
     for layer in range(n_layers):
         output[f"sid_{layer}"] = ids[:, layer].astype(np.int16)
-    output["collision_index"] = ids[:, n_layers].astype(np.int32)
     output.to_parquet(output_path, index=False, compression="zstd")
     return output
 
@@ -88,17 +93,21 @@ def train(
     vae_input_dim=256,
     vae_embed_dim=32,
     vae_hidden_dims=(256, 128, 64),
-    vae_codebook_size=256,
+    vae_codebook_sizes=(128, 64, 32),
     vae_codebook_normalize=False,
     vae_codebook_mode=QuantizeForwardMode.STE,
     vae_sim_vq=False,
-    vae_n_layers=3,
     eval_fraction=0.05,
     split_seed=2026,
     embedding_filename="global_product_embeddings.f16.npy",
     index_filename="global_embedding_index.parquet",
     semantic_ids_filename="semantic_ids.parquet",
 ):
+    vae_codebook_sizes = tuple(int(size) for size in vae_codebook_sizes)
+    if not vae_codebook_sizes or any(size <= 0 for size in vae_codebook_sizes):
+        raise ValueError("vae_codebook_sizes must contain positive integers")
+    vae_n_layers = len(vae_codebook_sizes)
+
     np.random.seed(split_seed)
     torch.manual_seed(split_seed)
     if torch.cuda.is_available():
@@ -152,12 +161,11 @@ def train(
         input_dim=vae_input_dim,
         embed_dim=vae_embed_dim,
         hidden_dims=list(vae_hidden_dims),
-        codebook_size=vae_codebook_size,
+        codebook_sizes=list(vae_codebook_sizes),
         codebook_kmeans_init=use_kmeans_init and pretrained_rqvae_path is None,
         codebook_normalize=vae_codebook_normalize,
         codebook_sim_vq=vae_sim_vq,
         codebook_mode=vae_codebook_mode,
-        n_layers=vae_n_layers,
         n_cat_features=vae_n_cat_feats,
         commitment_weight=commitment_weight,
     )
@@ -182,7 +190,7 @@ def train(
                 "input_dim": vae_input_dim,
                 "hidden_dims": list(vae_hidden_dims),
                 "embed_dim": vae_embed_dim,
-                "codebook_size": vae_codebook_size,
+                "codebook_sizes": list(vae_codebook_sizes),
                 "n_layers": vae_n_layers,
                 "commitment_weight": commitment_weight,
                 "eval_fraction": eval_fraction,
@@ -273,7 +281,7 @@ def train(
                         "input_dim": vae_input_dim,
                         "embed_dim": vae_embed_dim,
                         "hidden_dims": list(vae_hidden_dims),
-                        "codebook_size": vae_codebook_size,
+                        "codebook_sizes": list(vae_codebook_sizes),
                         "codebook_normalize": vae_codebook_normalize,
                         "codebook_sim_vq": vae_sim_vq,
                         "codebook_mode": vae_codebook_mode.name,
@@ -295,8 +303,7 @@ def train(
             input_dim=vae_input_dim,
             hidden_dims=list(vae_hidden_dims),
             output_dim=vae_embed_dim,
-            codebook_size=vae_codebook_size,
-            n_layers=vae_n_layers,
+            codebook_sizes=list(vae_codebook_sizes),
             n_cat_feats=vae_n_cat_feats,
             rqvae_codebook_normalize=vae_codebook_normalize,
             rqvae_sim_vq=vae_sim_vq,
@@ -305,7 +312,7 @@ def train(
         tokenizer.rq_vae.eval()
         corpus_ids = tokenizer.precompute_corpus_ids(index_dataset)
 
-        metrics = semantic_id_metrics(corpus_ids, vae_n_layers, vae_codebook_size)
+        metrics = semantic_id_metrics(corpus_ids, vae_codebook_sizes)
         semantic_ids_path = output_dir / semantic_ids_filename
         export_semantic_ids(corpus_ids, index_dataset, semantic_ids_path, vae_n_layers)
         (output_dir / "semantic_id_metrics.json").write_text(

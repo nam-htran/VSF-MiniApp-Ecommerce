@@ -1,0 +1,35 @@
+train.iterations=100000
+train.batch_size=256
+train.learning_rate=0.001
+train.weight_decay=0.01
+
+train.session_root="/kaggle/input/vmarket-phase2-preprocessed"
+train.semantic_ids_path="/kaggle/input/vmarket-rqvae/semantic_ids.parquet"
+train.session_cache_root="/kaggle/working/vmarket_transformer_session_cache"
+train.save_dir_root="/kaggle/working/vmarket_transformer"
+
+train.codebook_sizes=[128, 64, 32]
+train.max_sequence_length=20
+train.force_session_cache=False
+train.num_workers=2
+
+train.amp=True
+train.mixed_precision_type="fp16"
+train.gradient_accumulate_every=1
+train.max_grad_norm=1.0
+train.warmup_steps=10000
+
+train.save_model_every=10000
+train.eval_every=2000
+train.full_eval_every=10000
+train.max_eval_batches=200
+train.wandb_logging=False
+
+train.t5_d_model=128
+train.t5_num_heads=4
+train.t5_d_ff=512
+train.t5_num_layers=4
+train.top_k_for_generation=10
+train.should_add_sep_token=True
+train.top_k_eval_list=[1, 5, 10]
+train.seed=2026
