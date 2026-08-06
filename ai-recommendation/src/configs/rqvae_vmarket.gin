@@ -1,8 +1,8 @@
 import data.processed
 import modules.quantize
 
-train.iterations=5000
-train.learning_rate=0.001
+train.iterations=50000
+train.learning_rate=0.0001
 train.weight_decay=0.0001
 train.batch_size=640
 
@@ -23,8 +23,7 @@ train.commitment_weight=0.25
 
 train.use_kmeans_init=True
 train.do_eval=True
-train.eval_every=2500
+train.eval_every=5000
 train.save_model_every=5000
-train.amp=True
-train.mixed_precision_type="fp16"
+train.amp=False
 train.wandb_logging=True
