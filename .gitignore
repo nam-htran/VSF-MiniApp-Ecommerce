@@ -6,3 +6,4 @@ ai-recommendation/dataset/
 
 # Office temp files
 ~$*
+.env
