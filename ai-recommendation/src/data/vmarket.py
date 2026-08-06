@@ -79,12 +79,12 @@ class VMarketItemData(Dataset):
             raise ValueError("At least two products are required for a train/eval split")
 
         if train_test_split == "all":
-            self._row_indices = np.arange(num_items, dtype=np.int64)
+            self._split_rows = np.arange(num_items, dtype=np.int64)
         else:
             generator = np.random.default_rng(split_seed)
             permutation = generator.permutation(num_items)
             eval_size = min(num_items - 1, max(1, int(np.ceil(num_items * eval_fraction))))
-            self._row_indices = (
+            self._split_rows = (
                 permutation[eval_size:]
                 if train_test_split == "train"
                 else permutation[:eval_size]
@@ -94,7 +94,7 @@ class VMarketItemData(Dataset):
         self.input_dim = int(self._embeddings.shape[1])
 
     def __len__(self) -> int:
-        return len(self._row_indices)
+        return len(self._split_rows)
 
     @staticmethod
     def _to_numpy_indices(index: IndexLike) -> tuple[np.ndarray, bool]:
@@ -105,15 +105,15 @@ class VMarketItemData(Dataset):
         return np.atleast_1d(array).astype(np.int64, copy=False), is_scalar
 
     def __getitem__(self, index: IndexLike) -> SeqBatch:
-        local_indices, is_scalar = self._to_numpy_indices(index)
-        row_indices = self._row_indices[local_indices]
+        positions, is_scalar = self._to_numpy_indices(index)
+        file_rows = self._split_rows[positions]
         embeddings = np.array(
-            self._embeddings[row_indices],
+            self._embeddings[file_rows],
             dtype=np.float32,
             copy=True,
         )
 
-        item_ids = torch.from_numpy(row_indices.astype(np.int64, copy=False)).unsqueeze(-1)
+        item_ids = torch.from_numpy(file_rows.astype(np.int64, copy=False)).unsqueeze(-1)
         x = torch.from_numpy(embeddings)
         batch = SeqBatch(
             user_ids=torch.full_like(item_ids, -1),
