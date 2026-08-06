@@ -91,6 +91,7 @@ class SeqData(Dataset):
         is_train: bool = True,
         max_seq_len: int = 20,
         session_root: str | None = None,
+        index_path: str | None = None,
         index_filename: str = "global_embedding_index.parquet",
         **_,
     ) -> None:
@@ -105,8 +106,9 @@ class SeqData(Dataset):
             else "model_sessions_validation.parquet"
         )
 
+        index_path = Path(index_path) if index_path else root / index_filename
         index = pd.read_parquet(
-            root / index_filename,
+            index_path,
             columns=["product_index", "product_id"],
         )
         product_to_index = dict(

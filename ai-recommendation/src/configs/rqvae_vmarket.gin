@@ -8,7 +8,7 @@ train.batch_size=640
 
 train.dataset_folder="/kaggle/input/vmarket-phase2-embeddings"
 train.dataset=%data.processed.RecDataset.VMARKET
-train.save_dir_root="/kaggle/working/vmarket_rqvae/"
+train.save_dir_root="/kaggle/working/rq-vae/"
 
 train.vae_input_dim=256
 train.vae_n_cat_feats=0
@@ -27,3 +27,5 @@ train.eval_every=5000
 train.save_model_every=5000
 train.amp=False
 train.wandb_logging=True
+train.wandb_project="vmarket-rqvae"
+train.wandb_run_name_prefix="rotation-256x3-50k"

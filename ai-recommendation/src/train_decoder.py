@@ -1,10 +1,14 @@
 import os
+
 import gin
+import numpy as np
+import pandas as pd
 import torch
 import wandb
 
 from accelerate import Accelerator
-from data.processed import ItemData
+from datetime import datetime
+from datetime import timezone
 from data.processed import RecDataset
 from data.processed import SeqData
 from data.utils import batch_to
@@ -13,10 +17,8 @@ from data.utils import next_batch
 from evaluate.metrics import TopKAccumulator
 from modules.model import EncoderDecoderRetrievalModel
 from modules.scheduler.inv_sqrt import InverseSquareRootScheduler
-from modules.tokenizer.semids import SemanticIdTokenizer
-from modules.utils import compute_debug_metrics
+from modules.tokenizer.semids import PrecomputedSemanticIdTokenizer
 from modules.utils import parse_config
-from huggingface_hub import login
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -28,30 +30,23 @@ def train(
     batch_size=64,
     learning_rate=0.001,
     weight_decay=0.01,
-    dataset_folder="dataset/vmarket",
+    semantic_ids_path="output/rq-vae/semantic_ids.parquet",
     session_folder=None,
     save_dir_root="out/",
     dataset=RecDataset.VMARKET,
-    pretrained_rqvae_path=None,
     pretrained_decoder_path=None,
     split_batches=True,
     amp=False,
     wandb_logging=False,
+    wandb_project="gen-retrieval-decoder-training",
+    wandb_run_name_prefix="transformer",
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
     save_model_every=1000000,
     partial_eval_every=1000,
     full_eval_every=10000,
-    vae_input_dim=18,
-    vae_embed_dim=16,
-    vae_hidden_dims=[18, 18],
-    vae_codebook_size=32,
-    vae_codebook_normalize=False,
-    vae_sim_vq=False,
-    vae_n_cat_feats=18,
+    vae_codebook_size=256,
     vae_n_layers=3,
-    push_vae_to_hf=False,
-    vae_hf_model_name="edobotta/rqvae-amazon-beauty",
     max_grad_norm=None,
     t5_d_model=128,
     t5_num_heads=6,
@@ -69,25 +64,39 @@ def train(
         split_batches=split_batches,
         mixed_precision=mixed_precision_type if amp else "no",
     )
-
     device = accelerator.device
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(project="gen-retrieval-decoder-training", config=params)
+        run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        wandb.init(
+            project=wandb_project,
+            name=f"{wandb_run_name_prefix}-{run_timestamp}",
+            config=params,
+        )
 
-    item_dataset = ItemData(
-        root=dataset_folder,
-        dataset=dataset,
+    semantic_ids = pd.read_parquet(semantic_ids_path)
+    sid_columns = [f"sid_{index}" for index in range(vae_n_layers)]
+    if not np.array_equal(
+        semantic_ids["product_index"].to_numpy(),
+        np.arange(len(semantic_ids)),
+    ):
+        raise ValueError("product_index must match the Semantic ID row order")
+    codebooks = torch.from_numpy(
+        semantic_ids[sid_columns].to_numpy(dtype=np.int16, copy=True)
     )
+    del semantic_ids
+
     train_dataset = SeqData(
-        root=dataset_folder,
+        root=session_folder,
+        index_path=semantic_ids_path,
         session_root=session_folder,
         dataset=dataset,
         is_train=True,
     )
     eval_dataset = SeqData(
-        root=dataset_folder,
+        root=session_folder,
+        index_path=semantic_ids_path,
         session_root=session_folder,
         dataset=dataset,
         is_train=False,
@@ -101,25 +110,8 @@ def train(
         train_dataloader, eval_dataloader
     )
 
-    tokenizer = SemanticIdTokenizer(
-        input_dim=vae_input_dim,
-        hidden_dims=vae_hidden_dims,
-        output_dim=vae_embed_dim,
-        codebook_size=vae_codebook_size,
-        n_layers=vae_n_layers,
-        n_cat_feats=vae_n_cat_feats,
-        rqvae_weights_path=pretrained_rqvae_path,
-        rqvae_codebook_normalize=vae_codebook_normalize,
-        rqvae_sim_vq=vae_sim_vq,
-    )
+    tokenizer = PrecomputedSemanticIdTokenizer(codebooks)
     tokenizer = accelerator.prepare(tokenizer)
-    tokenizer.precompute_corpus_ids(item_dataset)
-
-    if push_vae_to_hf:
-        login()
-        tokenizer.rq_vae.push_to_hub(vae_hf_model_name)
-
-    codebooks = tokenizer.cached_ids.cpu()
 
     model = EncoderDecoderRetrievalModel(
         codebooks=codebooks,
@@ -138,7 +130,6 @@ def train(
     optimizer = AdamW(
         params=model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
-
     lr_scheduler = InverseSquareRootScheduler(optimizer=optimizer, warmup_steps=10000)
 
     start_iter = 0
@@ -167,7 +158,7 @@ def train(
             model.train()
             total_loss = 0.0
             optimizer.zero_grad()
-            train_debug_metrics = {}
+            train_layer_loss = torch.zeros(vae_n_layers)
 
             for _ in range(gradient_accumulate_every):
                 data = next_batch(train_dataloader, device)
@@ -178,14 +169,11 @@ def train(
                     loss = model_output.loss / gradient_accumulate_every
 
                 total_loss += loss.detach().item()
-
-                if wandb_logging and accelerator.is_main_process:
-                    train_debug_metrics = compute_debug_metrics(tokenized_data)
+                train_layer_loss += model_output.loss_d.cpu()
 
                 accelerator.backward(loss)
 
             assert model.item_sid_embedding_table.weight.grad is not None
-
             pbar.set_description(f"loss: {total_loss:.4f}")
 
             accelerator.wait_for_everyone()
@@ -197,17 +185,33 @@ def train(
 
             accelerator.wait_for_everyone()
 
+            step_metrics = {
+                f"loss_sid_{layer}": (
+                    train_layer_loss[layer].item() / gradient_accumulate_every
+                )
+                for layer in range(vae_n_layers)
+            }
+
             if (iter + 1) % partial_eval_every == 0:
                 model.eval()
-                eval_loss = 0.0
+                eval_loss_sum = 0.0
+                eval_layer_loss_sum = torch.zeros(vae_n_layers)
+                eval_examples = 0
                 for batch in eval_dataloader:
                     data = batch_to(batch, device)
                     tokenized_data = tokenizer(data)
                     with torch.no_grad():
-                        eval_loss = model(tokenized_data).loss.item()
+                        eval_output = model(tokenized_data)
+                    batch_size = tokenized_data.sem_ids_fut.shape[0]
+                    eval_loss_sum += eval_output.loss.item() * batch_size
+                    eval_layer_loss_sum += eval_output.loss_d.cpu() * batch_size
+                    eval_examples += batch_size
 
-                if wandb_logging and accelerator.is_main_process:
-                    wandb.log({"eval_loss": eval_loss})
+                step_metrics["eval_loss"] = eval_loss_sum / eval_examples
+                for layer in range(vae_n_layers):
+                    step_metrics[f"eval_loss_sid_{layer}"] = (
+                        eval_layer_loss_sum[layer].item() / eval_examples
+                    )
 
             if (iter + 1) % full_eval_every == 0:
                 model.eval()
@@ -232,8 +236,7 @@ def train(
 
                 eval_metrics = metrics_accumulator.reduce()
                 print(eval_metrics)
-                if accelerator.is_main_process and wandb_logging:
-                    wandb.log(eval_metrics)
+                step_metrics.update(eval_metrics)
                 metrics_accumulator.reset()
 
             if accelerator.is_main_process:
@@ -255,8 +258,9 @@ def train(
                         {
                             "learning_rate": optimizer.param_groups[0]["lr"],
                             "total_loss": total_loss,
-                            **train_debug_metrics,
-                        }
+                            **step_metrics,
+                        },
+                        step=iter + 1,
                     )
 
             pbar.update(1)

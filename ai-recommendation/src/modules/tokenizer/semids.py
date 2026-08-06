@@ -18,6 +18,34 @@ from torch.utils.data import SequentialSampler
 BATCH_SIZE = 16
 
 
+class PrecomputedSemanticIdTokenizer(nn.Module):
+    def __init__(self, corpus_ids: Tensor) -> None:
+        super().__init__()
+        self.register_buffer("cached_ids", corpus_ids)
+
+    @torch.no_grad
+    def forward(self, batch: SeqBatch) -> TokenizedSeqBatch:
+        batch_size, sequence_length = batch.ids.shape
+        num_layers = self.cached_ids.shape[1]
+
+        sem_ids = self.cached_ids[batch.ids.clamp_min(0)].reshape(
+            batch_size, -1
+        ).long()
+        seq_mask = batch.seq_mask.repeat_interleave(num_layers, dim=1)
+        sem_ids[~seq_mask] = -1
+        sem_ids_fut = self.cached_ids[batch.ids_fut].reshape(batch_size, -1).long()
+
+        token_types = torch.arange(num_layers, device=batch.ids.device)
+        return TokenizedSeqBatch(
+            user_ids=batch.user_ids,
+            sem_ids=sem_ids,
+            sem_ids_fut=sem_ids_fut,
+            seq_mask=seq_mask,
+            token_type_ids=token_types.repeat(batch_size, sequence_length),
+            token_type_ids_fut=token_types.repeat(batch_size, 1),
+        )
+
+
 class SemanticIdTokenizer(nn.Module):
     """
     Tokenizes a batch of sequences of item features into a batch of sequences of semantic ids.

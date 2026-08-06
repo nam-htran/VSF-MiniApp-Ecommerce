@@ -50,7 +50,15 @@ class EncoderDecoderRetrievalModel(nn.Module):
         self.num_hierarchies = num_hierarchies
         self.num_embeddings_per_hierarchy = num_embeddings_per_hierarchy
         self.top_k_for_generation = top_k_for_generation
-        self.register_buffer("codebooks", codebooks)
+
+        codebooks = codebooks.long()
+        for depth in range(1, num_hierarchies + 1):
+            keys = self._encode_prefix(codebooks[:, :depth])
+            self.register_buffer(
+                f"valid_prefix_keys_{depth}",
+                torch.unique(keys, sorted=True),
+                persistent=False,
+            )
 
         encoder_config = T5Config(
             vocab_size=num_embeddings_per_hierarchy * num_hierarchies,
@@ -144,20 +152,20 @@ class EncoderDecoderRetrievalModel(nn.Module):
             batch_size, -1
         )
 
-    def _check_valid_prefix(
-        self, prefix: torch.Tensor, batch_size: int = 100000
-    ) -> torch.Tensor:
-        """Return a boolean mask indicating which prefixes exist in the corpus codebook."""
-        if prefix.device != self.codebooks.device:
-            self.codebooks = self.codebooks.to(prefix.device)
-        trimmed = self.codebooks[:, : prefix.shape[1]]
-        results = []
-        for i in range(0, prefix.shape[0], batch_size):
-            batch = prefix[i : i + batch_size]
-            results.append(
-                (trimmed.unsqueeze(1) == batch.unsqueeze(0)).all(dim=2).any(dim=0)
-            )
-        return torch.cat(results)
+    def _encode_prefix(self, prefix: torch.Tensor) -> torch.Tensor:
+        depth = prefix.shape[1]
+        powers = torch.arange(depth - 1, -1, -1, device=prefix.device)
+        multipliers = self.num_embeddings_per_hierarchy**powers
+        return (prefix.long() * multipliers).sum(dim=1)
+
+    def _check_valid_prefix(self, prefix: torch.Tensor) -> torch.Tensor:
+        """Return a boolean mask indicating which prefixes exist in the corpus."""
+        valid_keys = getattr(self, f"valid_prefix_keys_{prefix.shape[1]}")
+        keys = self._encode_prefix(prefix)
+        positions = torch.searchsorted(valid_keys, keys)
+        in_range = positions < len(valid_keys)
+        positions = positions.clamp_max(len(valid_keys) - 1)
+        return in_range & (valid_keys[positions] == keys)
 
     def encoder_forward_pass(self, attention_mask, input_ids, user_id=None):
         shifted = self._add_repeating_offset_to_rows(

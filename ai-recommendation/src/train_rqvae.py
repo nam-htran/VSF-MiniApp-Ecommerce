@@ -5,6 +5,8 @@ import numpy as np
 import wandb
 
 from accelerate import Accelerator
+from datetime import datetime
+from datetime import timezone
 from data.processed import ItemData
 from data.processed import RecDataset
 from data.utils import batch_to
@@ -35,6 +37,8 @@ def train(
     split_batches=True,
     amp=False,
     wandb_logging=False,
+    wandb_project="rq-vae-training",
+    wandb_run_name_prefix="rqvae",
     do_eval=True,
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
@@ -131,7 +135,12 @@ def train(
 
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
-        run = wandb.init(project="rq-vae-training", config=params)
+        run_timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        wandb.init(
+            project=wandb_project,
+            name=f"{wandb_run_name_prefix}-{run_timestamp}",
+            config=params,
+        )
 
     start_iter = 0
     if pretrained_rqvae_path is not None:
@@ -223,7 +232,7 @@ def train(
                     "reconstruction_loss": model_output.reconstruction_loss.cpu().item(),
                     "rqvae_loss": model_output.rqvae_loss.cpu().item(),
                     "temperature": t,
-                    "p_unique_ids": model_output.p_unique_ids.cpu().item(),
+                    "batch_unique_sid_rate": model_output.p_unique_ids.cpu().item(),
                     **emb_norms_avg_log,
                 }
 
@@ -268,14 +277,18 @@ def train(
                     model.eval()
 
                     corpus_ids = tokenizer.precompute_corpus_ids(index_dataset)
-                    _, counts = torch.unique(corpus_ids, dim=0, return_counts=True)
-                    p = counts / corpus_ids.shape[0]
+                    _, sid_counts = torch.unique(
+                        corpus_ids, dim=0, return_counts=True
+                    )
+                    p = sid_counts / corpus_ids.shape[0]
                     rqvae_entropy = -(p * torch.log(p)).sum()
 
                     for cid in range(vae_n_layers):
-                        _, counts = torch.unique(corpus_ids[:, cid], return_counts=True)
+                        _, layer_counts = torch.unique(
+                            corpus_ids[:, cid], return_counts=True
+                        )
                         id_diversity_log[f"codebook_usage_{cid}"] = (
-                            len(counts) / vae_codebook_size
+                            len(layer_counts) / vae_codebook_size
                         )
 
                     id_diversity_log["rqvae_entropy"] = rqvae_entropy.cpu().item()
