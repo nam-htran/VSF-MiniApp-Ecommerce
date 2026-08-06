@@ -23,28 +23,6 @@ class GenerationOutput(NamedTuple):
     log_probas: Tensor
 
 
-def _strip_dedup_col(
-    tensor: torch.Tensor, sem_ids_dim: int, n_layers: int
-) -> torch.Tensor:
-    """Strip the deduplication column appended by SemanticIdTokenizer.
-
-    Args:
-        tensor:      [B, N * sem_ids_dim]  where sem_ids_dim = n_layers + 1
-        sem_ids_dim: tokens per item including the dedup column
-        n_layers:    number of RQ-VAE codebook levels
-
-    Returns:
-        [B, N * n_layers]
-    """
-    B, total = tensor.shape
-    N = total // sem_ids_dim
-    return (
-        tensor.view(B, N, sem_ids_dim)[:, :, :n_layers]
-        .contiguous()
-        .view(B, N * n_layers)
-    )
-
-
 class EncoderDecoderRetrievalModel(nn.Module):
     """HuggingFace T5 encoder-decoder for sequential recommendation.
 
@@ -268,11 +246,8 @@ class EncoderDecoderRetrievalModel(nn.Module):
         return out.last_hidden_state
 
     def forward(self, batch: TokenizedSeqBatch) -> ModelOutput:
-        sem_ids_dim = self.num_hierarchies + 1
-        input_ids = _strip_dedup_col(batch.sem_ids, sem_ids_dim, self.num_hierarchies)
-        attention_mask = _strip_dedup_col(
-            batch.seq_mask.long(), sem_ids_dim, self.num_hierarchies
-        )
+        input_ids = batch.sem_ids
+        attention_mask = batch.seq_mask.long()
         fut_ids = batch.sem_ids_fut[:, : self.num_hierarchies]
 
         encoder_output, attention_mask_for_encoder = self.encoder_forward_pass(
@@ -397,11 +372,8 @@ class EncoderDecoderRetrievalModel(nn.Module):
         top_k: bool = True,
         temperature: int = 1,
     ) -> GenerationOutput:
-        sem_ids_dim = self.num_hierarchies + 1
-        input_ids = _strip_dedup_col(batch.sem_ids, sem_ids_dim, self.num_hierarchies)
-        attention_mask = _strip_dedup_col(
-            batch.seq_mask.long(), sem_ids_dim, self.num_hierarchies
-        )
+        input_ids = batch.sem_ids
+        attention_mask = batch.seq_mask.long()
         generated_ids, log_probas = self.generate(
             attention_mask=attention_mask,
             input_ids=input_ids,

@@ -119,7 +119,7 @@ def train(
         login()
         tokenizer.rq_vae.push_to_hub(vae_hf_model_name)
 
-    codebooks = tokenizer.cached_ids[:, :vae_n_layers].cpu()
+    codebooks = tokenizer.cached_ids.cpu()
 
     model = EncoderDecoderRetrievalModel(
         codebooks=codebooks,

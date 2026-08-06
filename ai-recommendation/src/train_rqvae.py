@@ -266,11 +266,7 @@ def train(
                     model.eval()
 
                     corpus_ids = tokenizer.precompute_corpus_ids(index_dataset)
-                    max_duplicates = corpus_ids[:, -1].max() / corpus_ids.shape[0]
-
-                    _, counts = torch.unique(
-                        corpus_ids[:, :-1], dim=0, return_counts=True
-                    )
+                    _, counts = torch.unique(corpus_ids, dim=0, return_counts=True)
                     p = counts / corpus_ids.shape[0]
                     rqvae_entropy = -(p * torch.log(p)).sum()
 
@@ -281,7 +277,6 @@ def train(
                         )
 
                     id_diversity_log["rqvae_entropy"] = rqvae_entropy.cpu().item()
-                    id_diversity_log["max_id_duplicates"] = max_duplicates.cpu().item()
 
                 if wandb_logging:
                     wandb.log({**train_log, **id_diversity_log})
