@@ -24,13 +24,17 @@ class RqVaeOutput(NamedTuple):
     residuals: Tensor
     sem_ids: Tensor
     quantize_loss: Tensor
+    quantize_loss_per_layer: Tensor
 
 
 class RqVaeComputedLosses(NamedTuple):
     loss: Tensor
     reconstruction_loss: Tensor
     rqvae_loss: Tensor
-    embs_norm: Tensor
+    quantize_loss_per_layer: Tensor
+    residual_norm_per_layer: Tensor
+    selected_code_norm_per_layer: Tensor
+    codebook_norm_per_layer: Tensor
     p_unique_ids: Tensor
 
 
@@ -134,22 +138,25 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         res = self.encode(x)
 
         quantize_loss = 0
-        embs, residuals, sem_ids = [], [], []
+        embs, residuals, sem_ids, quantize_losses = [], [], [], []
 
         for layer in self.layers:
             residuals.append(res)
             quantized = layer(res, temperature=gumbel_t)
             quantize_loss += quantized.loss
+            quantize_losses.append(quantized.loss)
             emb, id = quantized.embeddings, quantized.ids
             res = res - emb
             sem_ids.append(id)
             embs.append(emb)
 
+        quantize_loss_per_layer = torch.stack(quantize_losses, dim=-1)
         return RqVaeOutput(
             embeddings=rearrange(embs, "b h d -> h d b"),
             residuals=rearrange(residuals, "b h d -> h d b"),
             sem_ids=rearrange(sem_ids, "b d -> d b"),
             quantize_loss=quantize_loss,
+            quantize_loss_per_layer=quantize_loss_per_layer,
         )
 
     @torch.compile(mode="reduce-overhead")
@@ -168,8 +175,15 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         loss = (reconstuction_loss + rqvae_loss).mean()
 
         with torch.no_grad():
-            # Compute debug ID statistics
-            embs_norm = embs.norm(dim=1)
+            quantize_loss_per_layer = quantized.quantize_loss_per_layer.mean(dim=0)
+            residual_norm_per_layer = residuals.norm(dim=1).mean(dim=0)
+            selected_code_norm_per_layer = embs.norm(dim=1).mean(dim=0)
+            codebook_norm_per_layer = torch.stack(
+                [
+                    layer.out_proj(layer.embedding.weight).norm(dim=1).mean()
+                    for layer in self.layers
+                ]
+            )
             p_unique_ids = (
                 ~torch.triu(
                     (
@@ -184,6 +198,9 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
             loss=loss,
             reconstruction_loss=reconstuction_loss.mean(),
             rqvae_loss=rqvae_loss.mean(),
-            embs_norm=embs_norm,
+            quantize_loss_per_layer=quantize_loss_per_layer,
+            residual_norm_per_layer=residual_norm_per_layer,
+            selected_code_norm_per_layer=selected_code_norm_per_layer,
+            codebook_norm_per_layer=codebook_norm_per_layer,
             p_unique_ids=p_unique_ids,
         )
