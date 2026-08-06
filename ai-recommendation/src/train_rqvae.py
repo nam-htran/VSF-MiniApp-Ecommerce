@@ -157,13 +157,15 @@ def train(
     )
     tokenizer.rq_vae = model
 
+    end_iter = start_iter + iterations
+
     with tqdm(
         initial=start_iter,
-        total=start_iter + iterations,
+        total=end_iter,
         disable=not accelerator.is_main_process,
     ) as pbar:
         losses = [[], [], []]
-        for iter in range(start_iter, start_iter + 1 + iterations):
+        for iter in range(start_iter, end_iter):
             model.train()
             total_loss = 0
             t = 0.2
@@ -225,7 +227,7 @@ def train(
                     **emb_norms_avg_log,
                 }
 
-            if do_eval and ((iter + 1) % eval_every == 0 or iter + 1 == iterations):
+            if do_eval and ((iter + 1) % eval_every == 0 or iter + 1 == end_iter):
                 model.eval()
                 with tqdm(
                     eval_dataloader, desc=f"Eval {iter + 1}", disable=True
@@ -248,7 +250,7 @@ def train(
                     id_diversity_log["eval_rqvae_loss"] = eval_losses[2]
 
             if accelerator.is_main_process:
-                if (iter + 1) % save_model_every == 0 or iter + 1 == iterations:
+                if (iter + 1) % save_model_every == 0 or iter + 1 == end_iter:
                     state = {
                         "iter": iter,
                         "model": model.state_dict(),
@@ -261,7 +263,7 @@ def train(
 
                     torch.save(state, save_dir_root + f"checkpoint_{iter}.pt")
 
-                if (iter + 1) % eval_every == 0 or iter + 1 == iterations:
+                if (iter + 1) % eval_every == 0 or iter + 1 == end_iter:
                     tokenizer.reset()
                     model.eval()
 
@@ -277,6 +279,21 @@ def train(
                         )
 
                     id_diversity_log["rqvae_entropy"] = rqvae_entropy.cpu().item()
+
+                    if iter + 1 == end_iter:
+                        semantic_ids = index_dataset.index[
+                            ["product_index", "product_id"]
+                        ].copy()
+                        corpus_ids = corpus_ids.cpu().numpy()
+                        for cid in range(vae_n_layers):
+                            semantic_ids[f"sid_{cid}"] = corpus_ids[:, cid].astype(
+                                np.int16
+                            )
+                        semantic_ids_path = os.path.join(
+                            save_dir_root, "semantic_ids.parquet"
+                        )
+                        semantic_ids.to_parquet(semantic_ids_path, index=False)
+                        print(f"Semantic IDs saved to {semantic_ids_path}")
 
                 if wandb_logging:
                     wandb.log({**train_log, **id_diversity_log})
