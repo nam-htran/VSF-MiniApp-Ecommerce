@@ -83,6 +83,9 @@ def train(
     use_kmeans_init=True,
     amp=True,
     wandb_logging=False,
+    wandb_project="vmarket-rqvae-training",
+    wandb_entity=None,
+    wandb_run_name=None,
     do_eval=True,
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
@@ -181,7 +184,9 @@ def train(
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
         wandb.init(
-            project="vmarket-rqvae-training",
+            project=wandb_project,
+            entity=wandb_entity,
+            name=wandb_run_name,
             config={
                 "iterations": iterations,
                 "batch_size": batch_size,

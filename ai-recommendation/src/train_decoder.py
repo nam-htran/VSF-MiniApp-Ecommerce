@@ -69,6 +69,9 @@ def train(
     warmup_steps=10_000,
     pretrained_decoder_path=None,
     wandb_logging=False,
+    wandb_project="vmarket-transformer-training",
+    wandb_entity=None,
+    wandb_run_name=None,
     max_grad_norm=1.0,
     t5_d_model=128,
     t5_num_heads=4,
@@ -186,7 +189,9 @@ def train(
     if wandb_logging and accelerator.is_main_process:
         wandb.login()
         wandb.init(
-            project="vmarket-transformer-training",
+            project=wandb_project,
+            entity=wandb_entity,
+            name=wandb_run_name,
             config={
                 "iterations": iterations,
                 "batch_size": batch_size,

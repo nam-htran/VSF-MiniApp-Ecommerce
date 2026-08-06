@@ -32,3 +32,6 @@ train.use_kmeans_init=True
 train.amp=True
 train.mixed_precision_type="fp16"
 train.wandb_logging=False
+train.wandb_project="vmarket-rqvae-training"
+train.wandb_entity=None
+train.wandb_run_name=None

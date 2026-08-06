@@ -30,6 +30,11 @@ python train_rqvae.py configs/rqvae_vmarket.gin
 Change `train.dataset_folder` in the Gin config if the artifacts are mounted at a
 different path.
 
+Notebooks 03 and 04 support Weights & Biases through a Kaggle Secret named
+`WANDB_API_KEY`. Project, entity, and run name are configurable in the notebooks
+and are passed to the trainers through Gin; the API key is never written to a
+config or output artifact.
+
 ## Output contract
 
 Training writes checkpoints and these final artifacts:
