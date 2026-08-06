@@ -28,15 +28,15 @@ def train(
     batch_size=64,
     learning_rate=0.001,
     weight_decay=0.01,
-    dataset_folder="dataset/ml-1m",
+    dataset_folder="dataset/vmarket",
+    session_folder=None,
     save_dir_root="out/",
-    dataset=RecDataset.ML_1M,
+    dataset=RecDataset.VMARKET,
     pretrained_rqvae_path=None,
     pretrained_decoder_path=None,
     split_batches=True,
     amp=False,
     wandb_logging=False,
-    force_dataset_process=False,
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
     save_model_every=1000000,
@@ -50,9 +50,7 @@ def train(
     vae_sim_vq=False,
     vae_n_cat_feats=18,
     vae_n_layers=3,
-    dataset_split="beauty",
     push_vae_to_hf=False,
-    train_data_subsample=True,
     vae_hf_model_name="edobotta/rqvae-amazon-beauty",
     max_grad_norm=None,
     t5_d_model=128,
@@ -64,9 +62,6 @@ def train(
     num_user_bins=None,
     top_k_eval_list=[1, 5, 10],
 ):
-    if dataset != RecDataset.AMAZON:
-        raise Exception(f"Dataset currently not supported: {dataset}.")
-
     if wandb_logging:
         params = locals()
 
@@ -84,22 +79,18 @@ def train(
     item_dataset = ItemData(
         root=dataset_folder,
         dataset=dataset,
-        force_process=force_dataset_process,
-        split=dataset_split,
     )
     train_dataset = SeqData(
         root=dataset_folder,
+        session_root=session_folder,
         dataset=dataset,
         is_train=True,
-        subsample=train_data_subsample,
-        split=dataset_split,
     )
     eval_dataset = SeqData(
         root=dataset_folder,
+        session_root=session_folder,
         dataset=dataset,
         is_train=False,
-        subsample=False,
-        split=dataset_split,
     )
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)

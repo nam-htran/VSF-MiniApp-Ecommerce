@@ -27,8 +27,8 @@ def train(
     batch_size=64,
     learning_rate=0.0001,
     weight_decay=0.01,
-    dataset_folder="dataset/ml-1m",
-    dataset=RecDataset.ML_1M,
+    dataset_folder="dataset/vmarket",
+    dataset=RecDataset.VMARKET,
     pretrained_rqvae_path=None,
     save_dir_root="out/",
     use_kmeans_init=True,
@@ -36,7 +36,6 @@ def train(
     amp=False,
     wandb_logging=False,
     do_eval=True,
-    force_dataset_process=False,
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
     save_model_every=1000000,
@@ -51,7 +50,6 @@ def train(
     vae_codebook_mode=QuantizeForwardMode.GUMBEL_SOFTMAX,
     vae_sim_vq=False,
     vae_n_layers=3,
-    dataset_split="beauty",
 ):
     if wandb_logging:
         params = locals()
@@ -75,9 +73,7 @@ def train(
     train_dataset = ItemData(
         root=dataset_folder,
         dataset=dataset,
-        force_process=force_dataset_process,
         train_test_split="train" if do_eval else "all",
-        split=dataset_split,
     )
     train_sampler = BatchSampler(RandomSampler(train_dataset), batch_size, False)
     train_dataloader = DataLoader(
@@ -92,9 +88,7 @@ def train(
         eval_dataset = ItemData(
             root=dataset_folder,
             dataset=dataset,
-            force_process=False,
             train_test_split="eval",
-            split=dataset_split,
         )
         eval_sampler = BatchSampler(RandomSampler(eval_dataset), batch_size, False)
         eval_dataloader = DataLoader(
@@ -108,9 +102,7 @@ def train(
         ItemData(
             root=dataset_folder,
             dataset=dataset,
-            force_process=False,
             train_test_split="all",
-            split=dataset_split,
         )
         if do_eval
         else train_dataset
