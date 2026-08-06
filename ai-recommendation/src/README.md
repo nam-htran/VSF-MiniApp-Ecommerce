@@ -35,6 +35,11 @@ Notebooks 03 and 04 support Weights & Biases through a Kaggle Secret named
 and are passed to the trainers through Gin; the API key is never written to a
 config or output artifact.
 
+The same notebooks clone the current training source from
+`nam-htran/VSF-MiniApp-Ecommerce` by reading a Kaggle Secret named `GITHUB_TOKEN`.
+Authentication is passed through a temporary `GIT_ASKPASS` helper, so the token is
+not embedded in the repository URL, command output, or Git configuration.
+
 ## Output contract
 
 Training writes checkpoints and these final artifacts:
