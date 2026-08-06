@@ -40,11 +40,12 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         input_dim: int,
         embed_dim: int,
         hidden_dims: List[int],
-        codebook_sizes: List[int],
+        codebook_size: int,
         codebook_kmeans_init: bool = True,
         codebook_normalize: bool = False,
         codebook_sim_vq: bool = False,
         codebook_mode: QuantizeForwardMode = QuantizeForwardMode.GUMBEL_SOFTMAX,
+        n_layers: int = 3,
         commitment_weight: float = 0.25,
         n_cat_features: int = 18,
     ) -> None:
@@ -55,10 +56,8 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.hidden_dims = hidden_dims
-        self.codebook_sizes = tuple(int(size) for size in codebook_sizes)
-        if not self.codebook_sizes or any(size <= 0 for size in self.codebook_sizes):
-            raise ValueError("codebook_sizes must contain positive integers")
-        self.n_layers = len(self.codebook_sizes)
+        self.n_layers = n_layers
+        self.codebook_size = codebook_size
         self.commitment_weight = commitment_weight
         self.n_cat_feats = n_cat_features
 
@@ -73,7 +72,7 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
                     sim_vq=codebook_sim_vq,
                     commitment_weight=commitment_weight,
                 )
-                for i, codebook_size in enumerate(self.codebook_sizes)
+                for i in range(n_layers)
             ]
         )
 
@@ -115,19 +114,6 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
 
     def decode(self, x: Tensor) -> Tensor:
         return self.decoder(x)
-
-    @torch.no_grad()
-    def initialize_codebooks(self, x: Tensor) -> None:
-        """Initialize every residual codebook without building the training loss graph."""
-        x = x.to(next(self.encoder.parameters()).dtype)
-        residual = self.encode(x)
-        was_training = self.training
-        self.eval()
-        for layer in self.layers:
-            layer._kmeans_init(residual)
-            quantized = layer(residual, temperature=0.2)
-            residual = residual - quantized.embeddings
-        self.train(was_training)
 
     def get_semantic_ids(self, x: Tensor, gumbel_t: float = 0.001) -> RqVaeOutput:
         x = x.to(next(self.encoder.parameters()).dtype)

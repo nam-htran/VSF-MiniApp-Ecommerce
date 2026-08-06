@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from data.schemas import TokenizedSeqBatch
-from typing import NamedTuple, Optional, Sequence
+from typing import NamedTuple, Optional
 from torch import Tensor
 from transformers import T5EncoderModel
 from transformers.models.t5.modeling_t5 import T5Config, T5Stack
@@ -23,19 +23,42 @@ class GenerationOutput(NamedTuple):
     log_probas: Tensor
 
 
+def _strip_dedup_col(
+    tensor: torch.Tensor, sem_ids_dim: int, n_layers: int
+) -> torch.Tensor:
+    """Strip the deduplication column appended by SemanticIdTokenizer.
+
+    Args:
+        tensor:      [B, N * sem_ids_dim]  where sem_ids_dim = n_layers + 1
+        sem_ids_dim: tokens per item including the dedup column
+        n_layers:    number of RQ-VAE codebook levels
+
+    Returns:
+        [B, N * n_layers]
+    """
+    B, total = tensor.shape
+    N = total // sem_ids_dim
+    return (
+        tensor.view(B, N, sem_ids_dim)[:, :, :n_layers]
+        .contiguous()
+        .view(B, N * n_layers)
+    )
+
+
 class EncoderDecoderRetrievalModel(nn.Module):
     """HuggingFace T5 encoder-decoder for sequential recommendation.
 
     Uses T5EncoderModel for encoding and T5Stack for decoding. Per-hierarchy
     linear output heads project decoder hidden states to codebook logits.
-    Beam search uses deterministic top candidates with log-probability accumulation
+    Beam search uses multinomial sampling with log-probability accumulation
     and a float("-inf") mask for invalid SID prefixes.
     """
 
     def __init__(
         self,
         codebooks: torch.Tensor,
-        codebook_sizes: Sequence[int],
+        num_hierarchies: int,
+        num_embeddings_per_hierarchy: int,
         t5_d_model: int = 128,
         t5_num_heads: int = 6,
         t5_d_ff: int = 1024,
@@ -46,42 +69,13 @@ class EncoderDecoderRetrievalModel(nn.Module):
     ):
         super().__init__()
 
-        self.codebook_sizes = tuple(int(size) for size in codebook_sizes)
-        if not self.codebook_sizes or any(size <= 0 for size in self.codebook_sizes):
-            raise ValueError("codebook_sizes must contain positive integers")
-        self.num_hierarchies = len(self.codebook_sizes)
-        if codebooks.ndim != 2 or codebooks.shape[1] != self.num_hierarchies:
-            raise ValueError(
-                f"Expected codebooks with shape [N, {self.num_hierarchies}]"
-            )
+        self.num_hierarchies = num_hierarchies
+        self.num_embeddings_per_hierarchy = num_embeddings_per_hierarchy
         self.top_k_for_generation = top_k_for_generation
         self.register_buffer("codebooks", codebooks)
-        for hierarchy, codebook_size in enumerate(self.codebook_sizes):
-            values = codebooks[:, hierarchy]
-            if values.min().item() < 0 or values.max().item() >= codebook_size:
-                raise ValueError(
-                    f"Hierarchy {hierarchy} contains IDs outside [0, {codebook_size - 1}]"
-                )
-        for prefix_length in range(1, self.num_hierarchies + 1):
-            prefix_keys = self._encode_prefix(codebooks[:, :prefix_length])
-            self.register_buffer(
-                f"valid_prefix_keys_{prefix_length}",
-                torch.unique(prefix_keys, sorted=True),
-                persistent=False,
-            )
-
-        hierarchy_offsets = [0]
-        for size in self.codebook_sizes[:-1]:
-            hierarchy_offsets.append(hierarchy_offsets[-1] + size)
-        self.register_buffer(
-            "hierarchy_offsets",
-            torch.tensor(hierarchy_offsets, dtype=torch.long),
-            persistent=False,
-        )
-        vocabulary_size = sum(self.codebook_sizes)
 
         encoder_config = T5Config(
-            vocab_size=vocabulary_size,
+            vocab_size=num_embeddings_per_hierarchy * num_hierarchies,
             d_model=t5_d_model,
             num_heads=t5_num_heads,
             d_ff=t5_d_ff,
@@ -91,7 +85,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
         self.encoder = T5EncoderModel(encoder_config)
 
         decoder_config = T5Config(
-            vocab_size=vocabulary_size,
+            vocab_size=num_embeddings_per_hierarchy * num_hierarchies,
             d_model=t5_d_model,
             num_heads=t5_num_heads,
             d_ff=t5_d_ff,
@@ -103,14 +97,14 @@ class EncoderDecoderRetrievalModel(nn.Module):
         self.bos_token = nn.Parameter(torch.randn(1, t5_d_model), requires_grad=True)
         self.decoder_mlp = nn.ModuleList(
             [
-                nn.Linear(t5_d_model, codebook_size, bias=False)
-                for codebook_size in self.codebook_sizes
+                nn.Linear(t5_d_model, num_embeddings_per_hierarchy, bias=False)
+                for _ in range(num_hierarchies)
             ]
         )
 
-        # Each hierarchy occupies a non-overlapping range in one shared token table.
+        # Shared embedding table; hierarchy h, token t maps to index h * codebook_size + t.
         self.item_sid_embedding_table = nn.Embedding(
-            num_embeddings=vocabulary_size,
+            num_embeddings=num_embeddings_per_hierarchy * num_hierarchies,
             embedding_dim=t5_d_model,
         )
 
@@ -135,18 +129,22 @@ class EncoderDecoderRetrievalModel(nn.Module):
     def _add_repeating_offset_to_rows(
         self,
         input_sids: torch.Tensor,
+        codebook_size: int,
+        num_hierarchies: int,
         attention_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Add per-hierarchy offsets so a single embedding table covers all hierarchies."""
         if input_sids.ndim != 2:
             raise ValueError("Input tensor must be 2-dimensional.")
         _, num_cols = input_sids.shape
-        offsets = self.hierarchy_offsets.to(input_sids.device)
-        num_repeats = (num_cols + self.num_hierarchies - 1) // self.num_hierarchies
+        offsets = (
+            torch.arange(num_hierarchies, device=input_sids.device) * codebook_size
+        )
+        num_repeats = (num_cols + num_hierarchies - 1) // num_hierarchies
         repeated_offsets = offsets.repeat(num_repeats)[:num_cols]
         result = input_sids + repeated_offsets
         if attention_mask is not None:
-            result = torch.where(attention_mask.bool(), result, torch.zeros_like(result))
+            result = result * attention_mask
         return result
 
     def _inject_sep_token_between_sids(
@@ -168,26 +166,26 @@ class EncoderDecoderRetrievalModel(nn.Module):
             batch_size, -1
         )
 
-    def _encode_prefix(self, prefix: torch.Tensor) -> torch.Tensor:
-        if prefix.ndim != 2 or not 1 <= prefix.shape[1] <= self.num_hierarchies:
-            raise ValueError("Invalid SID prefix shape")
-        keys = torch.zeros(prefix.shape[0], dtype=torch.long, device=prefix.device)
-        for hierarchy in range(prefix.shape[1]):
-            keys = keys * self.codebook_sizes[hierarchy] + prefix[:, hierarchy].long()
-        return keys
-
-    def _check_valid_prefix(self, prefix: torch.Tensor) -> torch.Tensor:
-        """Return whether each mixed-radix SID prefix occurs in the catalog."""
-        valid_keys = getattr(self, f"valid_prefix_keys_{prefix.shape[1]}")
-        query_keys = self._encode_prefix(prefix)
-        positions = torch.searchsorted(valid_keys, query_keys)
-        in_bounds = positions < len(valid_keys)
-        safe_positions = positions.clamp_max(len(valid_keys) - 1)
-        return in_bounds & valid_keys[safe_positions].eq(query_keys)
+    def _check_valid_prefix(
+        self, prefix: torch.Tensor, batch_size: int = 100000
+    ) -> torch.Tensor:
+        """Return a boolean mask indicating which prefixes exist in the corpus codebook."""
+        if prefix.device != self.codebooks.device:
+            self.codebooks = self.codebooks.to(prefix.device)
+        trimmed = self.codebooks[:, : prefix.shape[1]]
+        results = []
+        for i in range(0, prefix.shape[0], batch_size):
+            batch = prefix[i : i + batch_size]
+            results.append(
+                (trimmed.unsqueeze(1) == batch.unsqueeze(0)).all(dim=2).any(dim=0)
+            )
+        return torch.cat(results)
 
     def encoder_forward_pass(self, attention_mask, input_ids, user_id=None):
         shifted = self._add_repeating_offset_to_rows(
             input_sids=input_ids,
+            codebook_size=self.num_embeddings_per_hierarchy,
+            num_hierarchies=self.num_hierarchies,
             attention_mask=attention_mask,
         )
         inputs_embeds = self.item_sid_embedding_table(shifted)
@@ -231,6 +229,8 @@ class EncoderDecoderRetrievalModel(nn.Module):
         if future_ids is not None:
             shifted = self._add_repeating_offset_to_rows(
                 input_sids=future_ids,
+                codebook_size=self.num_embeddings_per_hierarchy,
+                num_hierarchies=self.num_hierarchies,
                 attention_mask=torch.ones_like(future_ids)
                 if attention_mask is None
                 else attention_mask,
@@ -268,9 +268,12 @@ class EncoderDecoderRetrievalModel(nn.Module):
         return out.last_hidden_state
 
     def forward(self, batch: TokenizedSeqBatch) -> ModelOutput:
-        input_ids = batch.sem_ids
-        attention_mask = batch.seq_mask.long()
-        fut_ids = batch.sem_ids_fut
+        sem_ids_dim = self.num_hierarchies + 1
+        input_ids = _strip_dedup_col(batch.sem_ids, sem_ids_dim, self.num_hierarchies)
+        attention_mask = _strip_dedup_col(
+            batch.seq_mask.long(), sem_ids_dim, self.num_hierarchies
+        )
+        fut_ids = batch.sem_ids_fut[:, : self.num_hierarchies]
 
         encoder_output, attention_mask_for_encoder = self.encoder_forward_pass(
             attention_mask=attention_mask,
@@ -296,9 +299,9 @@ class EncoderDecoderRetrievalModel(nn.Module):
 
     @torch.no_grad()
     def generate(self, attention_mask, input_ids, user_id=None):
-        """Generate top-k semantic IDs using constrained beam search.
+        """Generate top-k semantic IDs using sampling-based beam search.
 
-        For each hierarchy level, selects the highest-probability candidate tokens,
+        For each hierarchy level, samples n_candidates tokens via multinomial,
         scores them using cumulative log-probabilities with a float("-inf") mask for
         invalid SID prefixes, and keeps the top-k highest-scoring candidates.
 
@@ -308,6 +311,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
         """
         B = input_ids.size(0)
         k = self.top_k_for_generation
+        n_cands = min(64, self.num_embeddings_per_hierarchy)
 
         enc_out, enc_mask = self.encoder_forward_pass(
             attention_mask=attention_mask,
@@ -322,7 +326,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         past_kv = EncoderDecoderCache(DynamicCache(), DynamicCache())
 
         for h in range(self.num_hierarchies):
-            n_cands = self.codebook_sizes[h]
             if generated is not None:
                 cur_enc, cur_mask = rep_enc, rep_mask
                 squeezed = generated.reshape(-1, h)
@@ -339,7 +342,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
             )
 
             probas = F.softmax(self.decoder_mlp[h](dec_out[:, -1, :]), dim=-1)
-            samples = torch.topk(probas, k=n_cands, dim=-1).indices
+            samples = torch.multinomial(probas, num_samples=n_cands)
             samp_log_p = torch.log(torch.gather(probas, 1, samples))
 
             if generated is None:
@@ -394,8 +397,11 @@ class EncoderDecoderRetrievalModel(nn.Module):
         top_k: bool = True,
         temperature: int = 1,
     ) -> GenerationOutput:
-        input_ids = batch.sem_ids
-        attention_mask = batch.seq_mask.long()
+        sem_ids_dim = self.num_hierarchies + 1
+        input_ids = _strip_dedup_col(batch.sem_ids, sem_ids_dim, self.num_hierarchies)
+        attention_mask = _strip_dedup_col(
+            batch.seq_mask.long(), sem_ids_dim, self.num_hierarchies
+        )
         generated_ids, log_probas = self.generate(
             attention_mask=attention_mask,
             input_ids=input_ids,
