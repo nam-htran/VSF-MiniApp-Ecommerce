@@ -4,6 +4,10 @@ ai-recommendation/dataset/
 # Jupyter
 .ipynb_checkpoints/
 
+# Python
+__pycache__/
+*.py[cod]
+
 # Office temp files
 ~$*
 .env
