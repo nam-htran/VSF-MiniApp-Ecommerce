@@ -6,7 +6,7 @@ train.learning_rate=0.001
 train.weight_decay=0.0001
 train.batch_size=1024
 
-train.dataset_folder="/kaggle/working/vmarket_phase2_embeddings"
+train.dataset_folder="/kaggle/input/vmarket-phase2-embeddings"
 train.dataset=%data.processed.RecDataset.VMARKET
 train.save_dir_root="/kaggle/working/vmarket_rqvae"
 train.embedding_filename="global_product_embeddings.f16.npy"
@@ -31,7 +31,7 @@ train.save_model_every=5000
 train.use_kmeans_init=True
 train.amp=True
 train.mixed_precision_type="fp16"
-train.wandb_logging=False
+train.wandb_logging=True
 train.wandb_project="vmarket-rqvae-training"
 train.wandb_entity=None
 train.wandb_run_name=None
