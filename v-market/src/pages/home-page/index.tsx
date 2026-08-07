@@ -4,6 +4,7 @@ import { listAllProducts, type ApiProductListItem } from '@/api/products';
 import { FlashSaleSection } from '@/components/flash-sale-section';
 import { ProductGridSection } from '@/components/product-grid-section';
 import { PromoSection } from '@/components/promo-section';
+import { RecommendedSection } from '@/components/recommended-section';
 import type { ProductCardData } from '@/lib/product-card';
 
 const toCard = (item: ApiProductListItem): ProductCardData => ({
@@ -101,6 +102,9 @@ const HomePage = () => {
         ) : (
           <>
             <FlashSaleSection products={products} />
+            {/* Fetches on its own rather than sharing the page's feed —
+                the server picks these products, not the client. */}
+            <RecommendedSection />
             <ProductGridSection products={products} />
           </>
         )}

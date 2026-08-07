@@ -16,6 +16,7 @@ import {
   type ApiVariant,
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
+import { recordProductView } from '@/api/recommendations';
 import { ProductStrip } from '@/components/product-strip';
 import { ShopPreview } from '@/components/shop-preview';
 import { ReviewsSection, Stars } from '@/components/reviews-section';
@@ -103,6 +104,10 @@ const ProductPage = () => {
       .catch(() => {
         if (!passed) setMissing(true);
       });
+    // Opening the page is the signal the recommender runs on. Sent from
+    // here rather than inferred from GET /products/{id}, so a prefetch or
+    // the seller checking their own listing does not count as interest.
+    recordProductView(id);
     listAddresses()
       .then(list => {
         const chosen = list.find(a => a.isDefault) ?? list[0];

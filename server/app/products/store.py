@@ -76,6 +76,12 @@ class Product(Base):
     # HIDDEN keeps a product out of the storefront without deleting it —
     # past orders still reference it.
     status: Mapped[str] = mapped_column(default="ACTIVE")
+    # The product's Semantic ID from the RQ-VAE, coarse to fine. Written by
+    # the seed from semantic_ids.parquet, never by a seller — a hand-listed
+    # product has none and simply drops out of SID recall.
+    sid_0: Mapped[int | None] = mapped_column(default=None)
+    sid_1: Mapped[int | None] = mapped_column(default=None)
+    sid_2: Mapped[int | None] = mapped_column(default=None)
 
 
 class ProductVariant(Base):
@@ -289,6 +295,67 @@ async def list_active(
         }
         for product, shop_name, province, avg, cnt, sold_qty in rows.all()
     ]
+
+
+def _storefront_query():
+    """The listing join every storefront read shares: product, its shop, and
+    the rating/sold metrics. Callers add their own filter and ordering."""
+    from app.shops.store import Shop
+
+    rating, sold = _metric_subqueries()
+    return (
+        select(Product, Shop.name, Shop.province, rating.c.avg, rating.c.cnt, sold.c.sold)
+        .join(Shop, Shop.id == Product.shop_id)
+        .outerjoin(rating, rating.c.pid == Product.id)
+        .outerjoin(sold, sold.c.pid == Product.id)
+        .where(Product.status == "ACTIVE", Shop.status == "ACTIVE"),
+        sold,
+    )
+
+
+def _rows(result) -> list[dict]:
+    return [
+        {
+            "product": product,
+            "shopName": shop_name,
+            "shopProvince": province,
+            **_metrics(avg, cnt, sold_qty),
+        }
+        for product, shop_name, province, avg, cnt, sold_qty in result.all()
+    ]
+
+
+async def list_by_ids(session: AsyncSession, ids: list[str]) -> list[dict]:
+    """Storefront rows for specific products, in the order asked for.
+
+    The recommender decides the ranking; the database must not re-sort it,
+    so the rows come back keyed by id and are re-ordered here. Products that
+    have since been hidden or archived simply drop out.
+    """
+    if not ids:
+        return []
+
+    query, _ = _storefront_query()
+    result = await session.execute(query.where(Product.id.in_(ids)))
+    found = {row["product"].id: row for row in _rows(result)}
+    return [found[product_id] for product_id in ids if product_id in found]
+
+
+async def list_popular(
+    session: AsyncSession, limit: int, exclude: list[str] | None = None
+) -> list[dict]:
+    """Best sellers — what a shopper with no history gets shown.
+
+    Ordered by units actually paid for, so a product cannot climb the strip
+    by being listed often or priced oddly.
+    """
+    query, sold = _storefront_query()
+    if exclude:
+        query = query.where(Product.id.not_in(exclude))
+    result = await session.execute(
+        query.order_by(sold.c.sold.desc().nullslast(), Product.id).limit(limit)
+    )
+    return _rows(result)
 
 
 async def list_for_shop(

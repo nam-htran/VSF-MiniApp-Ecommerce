@@ -525,6 +525,41 @@ async def truncate() -> None:
     await engine.dispose()
 
 
+async def write_semantic_ids(skus: list[str]) -> int:
+    """Copy each product's Semantic ID from the RQ-VAE output into its row.
+
+    Straight SQL rather than the API: a SID is model output, not something a
+    seller types, so no endpoint accepts one. The recommender reads these
+    columns to find products near what a shopper has been looking at.
+    """
+    import pyarrow.parquet as pq
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from app.config import settings
+
+    wanted = set(skus)
+    updates = []
+    columns = ["product_id", "sid_0", "sid_1", "sid_2"]
+    for batch in pq.ParquetFile(SEMANTIC_IDS).iter_batches(columns=columns, batch_size=65536):
+        rows = batch.to_pydict()
+        for product_id, a, b, c in zip(*(rows[name] for name in columns)):
+            if product_id in wanted:
+                updates.append({"sku": product_id, "a": int(a), "b": int(b), "c": int(c)})
+
+    if not updates:
+        return 0
+    engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE products SET sid_0 = :a, sid_1 = :b, sid_2 = :c WHERE sku = :sku"),
+            updates,
+        )
+    await engine.dispose()
+    return len(updates)
+
+
 def seed_shops(catalogue: list[dict]) -> list[dict]:
     buckets = [[] for _ in SHOPS]
     for entry in catalogue:
@@ -647,6 +682,9 @@ if __name__ == "__main__":
 
     asyncio.run(truncate())
     listed = seed_shops(catalogue)
+
+    tagged = asyncio.run(write_semantic_ids([entry["sku"] for entry in catalogue]))
+    print(f"  tagged {tagged} products with a Semantic ID")
 
     if args.skip_reviews:
         print(f"\nDone: {len(SHOPS)} shops, {len(listed)} products.")
