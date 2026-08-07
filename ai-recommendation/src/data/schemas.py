@@ -4,8 +4,14 @@ from torch import Tensor
 FUT_SUFFIX = "_fut"
 
 
+# No user field. Amazon-M2 sessions are anonymous — sessions_train.csv holds
+# only prev_items, next_item and locale — so there is no identity to carry.
+# This makes the task session-based recommendation rather than sequential
+# recommendation: the collaborative signal comes from patterns across many
+# sessions, not from a per-user parameter.
+
+
 class SeqBatch(NamedTuple):
-    user_ids: Tensor
     ids: Tensor
     ids_fut: Tensor
     x: Tensor
@@ -14,7 +20,6 @@ class SeqBatch(NamedTuple):
 
 
 class TokenizedSeqBatch(NamedTuple):
-    user_ids: Tensor
     sem_ids: Tensor
     sem_ids_fut: Tensor
     seq_mask: Tensor

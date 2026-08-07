@@ -24,12 +24,21 @@ class GenerationOutput(NamedTuple):
 
 
 class EncoderDecoderRetrievalModel(nn.Module):
-    """HuggingFace T5 encoder-decoder for sequential recommendation.
+    """HuggingFace T5 encoder-decoder for session-based recommendation.
 
     Uses T5EncoderModel for encoding and T5Stack for decoding. Per-hierarchy
-    linear output heads project decoder hidden states to codebook logits.
-    Beam search uses multinomial sampling with log-probability accumulation
-    and a float("-inf") mask for invalid SID prefixes.
+    linear output heads project decoder hidden states to codebook logits —
+    one head per level rather than a single softmax over the whole vocabulary,
+    because only codebook h's tokens are legal at step h. Beam search uses
+    multinomial sampling with log-probability accumulation and a
+    float("-inf") mask for invalid SID prefixes.
+
+    Session-based, not sequential: there is no user embedding. TIGER hashes a
+    user id into 2000 buckets and prepends it to the input, but Amazon-M2
+    sessions carry no identity to hash, and TIGER's own ablation (Table 8)
+    puts the gain at +0.015% Recall@10 — smaller than the seed-to-seed spread
+    in their Table 9. Whose history gets fed in is what personalises the
+    result, not a per-user parameter.
     """
 
     def __init__(
@@ -43,7 +52,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         t5_num_layers: int = 4,
         top_k_for_generation: int = 10,
         should_add_sep_token: bool = True,
-        num_user_bins: Optional[int] = None,
     ):
         super().__init__()
 
@@ -94,9 +102,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
             embedding_dim=t5_d_model,
         )
 
-        self.user_embedding = (
-            nn.Embedding(num_user_bins, t5_d_model) if num_user_bins else None
-        )
         self.sep_token = (
             nn.Parameter(torch.randn(1, t5_d_model), requires_grad=True)
             if should_add_sep_token
@@ -167,7 +172,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
         positions = positions.clamp_max(len(valid_keys) - 1)
         return in_range & (valid_keys[positions] == keys)
 
-    def encoder_forward_pass(self, attention_mask, input_ids, user_id=None):
+    def encoder_forward_pass(self, attention_mask, input_ids):
         shifted = self._add_repeating_offset_to_rows(
             input_sids=input_ids,
             codebook_size=self.num_embeddings_per_hierarchy,
@@ -182,19 +187,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
                 attention_mask=attention_mask,
                 sep_token=self.sep_token,
                 num_hierarchies=self.num_hierarchies,
-            )
-
-        if user_id is not None and self.user_embedding is not None:
-            user_embeds = self.user_embedding(
-                torch.remainder(user_id[:, 0], self.user_embedding.num_embeddings)
-            )
-            inputs_embeds = torch.cat([user_embeds.unsqueeze(1), inputs_embeds], dim=1)
-            attention_mask = torch.cat(
-                [
-                    torch.ones(attention_mask.size(0), 1, device=attention_mask.device),
-                    attention_mask,
-                ],
-                dim=1,
             )
 
         encoder_output = self.encoder(
@@ -261,7 +253,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         encoder_output, attention_mask_for_encoder = self.encoder_forward_pass(
             attention_mask=attention_mask,
             input_ids=input_ids,
-            user_id=batch.user_ids,
         )
         decoder_output = self.decoder_forward_pass(
             future_ids=fut_ids,
@@ -281,7 +272,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
         return ModelOutput(loss=total_loss, logits=None, loss_d=torch.stack(loss_d))
 
     @torch.no_grad()
-    def generate(self, attention_mask, input_ids, user_id=None):
+    def generate(self, attention_mask, input_ids):
         """Generate top-k semantic IDs using sampling-based beam search.
 
         For each hierarchy level, samples n_candidates tokens via multinomial,
@@ -299,7 +290,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         enc_out, enc_mask = self.encoder_forward_pass(
             attention_mask=attention_mask,
             input_ids=input_ids,
-            user_id=user_id,
         )
         rep_enc = enc_out.repeat_interleave(k, dim=0)
         rep_mask = enc_mask.repeat_interleave(k, dim=0)
@@ -385,6 +375,5 @@ class EncoderDecoderRetrievalModel(nn.Module):
         generated_ids, log_probas = self.generate(
             attention_mask=attention_mask,
             input_ids=input_ids,
-            user_id=batch.user_ids,
         )
         return GenerationOutput(sem_ids=generated_ids, log_probas=log_probas)

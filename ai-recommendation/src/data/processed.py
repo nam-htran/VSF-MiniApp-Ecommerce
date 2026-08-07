@@ -73,7 +73,6 @@ class ItemData(Dataset):
             np.asarray(self.embeddings[row_ids], dtype=np.float32).copy()
         )
         batch = SeqBatch(
-            user_ids=torch.full_like(item_ids, -1),
             ids=item_ids,
             ids_fut=torch.full_like(item_ids, -1),
             x=x,
@@ -136,7 +135,6 @@ class SeqData(Dataset):
         item_ids = torch.from_numpy(self.ids[index].astype(np.int64))
         target = torch.tensor([self.targets[index]], dtype=torch.long)
         return SeqBatch(
-            user_ids=torch.tensor(-1, dtype=torch.long),
             ids=item_ids,
             ids_fut=target,
             x=torch.empty(0),

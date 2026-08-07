@@ -55,7 +55,6 @@ def train(
     t5_num_layers=4,
     top_k_for_generation=10,
     should_add_sep_token=True,
-    num_user_bins=None,
     top_k_eval_list=[1, 5, 10],
 ):
     if wandb_logging:
@@ -124,7 +123,6 @@ def train(
         t5_num_layers=t5_num_layers,
         top_k_for_generation=top_k_for_generation,
         should_add_sep_token=should_add_sep_token,
-        num_user_bins=num_user_bins,
     )
     model = torch.compile(model)
 
