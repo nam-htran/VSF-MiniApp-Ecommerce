@@ -126,6 +126,30 @@ export function listOnSale(limit = 50) {
   return apiRequest<ProductPage>(`/products?onSale=true&limit=${limit}`);
 }
 
+/** The server caps a page at 50, so "everything" is a walk, not a request. */
+const MAX_PAGE = 50;
+
+/** Stops a bad `hasMore` from looping forever — 100 pages is 5000 products,
+ *  well past anything this marketplace holds. */
+const MAX_PAGES = 100;
+
+/**
+ * Public — every active product, fetched a page at a time until the server
+ * says there is no more. The storefront renders the whole catalogue rather
+ * than a first page, so it has to ask for the whole catalogue.
+ */
+export async function listAllProducts(q?: string) {
+  const items: ApiProductListItem[] = [];
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const next = await listProducts(MAX_PAGE, items.length, q);
+    items.push(...next.items);
+    // An empty page ends the walk too: hasMore is `page === limit`, so a
+    // catalogue that divides evenly by 50 reports one more page than exists.
+    if (!next.hasMore || next.items.length === 0) break;
+  }
+  return items;
+}
+
 // --- Seller-facing (bearer required) ---
 
 export type NewProduct = {

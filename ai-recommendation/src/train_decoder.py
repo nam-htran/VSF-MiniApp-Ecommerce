@@ -16,12 +16,12 @@ from data.utils import cycle
 from data.utils import next_batch
 from evaluate.metrics import TopKAccumulator
 from modules.model import EncoderDecoderRetrievalModel
-from modules.scheduler.inv_sqrt import InverseSquareRootScheduler
 from modules.tokenizer.semids import PrecomputedSemanticIdTokenizer
 from modules.utils import parse_config
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers import get_inverse_sqrt_schedule
 
 
 @gin.configurable
@@ -29,6 +29,7 @@ def train(
     iterations=500000,
     batch_size=64,
     learning_rate=0.001,
+    warmup_steps=10000,
     weight_decay=0.01,
     semantic_ids_path="output/rq-vae/semantic_ids.parquet",
     session_folder=None,
@@ -130,9 +131,13 @@ def train(
     optimizer = AdamW(
         params=model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
-    lr_scheduler = InverseSquareRootScheduler(optimizer=optimizer, warmup_steps=10000)
+    lr_scheduler = get_inverse_sqrt_schedule(
+        optimizer,
+        num_warmup_steps=warmup_steps,
+    )
 
     start_iter = 0
+    best_ndcg = float("-inf")
     if pretrained_decoder_path is not None:
         checkpoint = torch.load(
             pretrained_decoder_path, map_location=device, weights_only=False
@@ -142,6 +147,7 @@ def train(
         if "scheduler" in checkpoint:
             lr_scheduler.load_state_dict(checkpoint["scheduler"])
         start_iter = checkpoint["iter"] + 1
+        best_ndcg = checkpoint.get("best_ndcg", best_ndcg)
 
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
@@ -157,6 +163,7 @@ def train(
         for iter in range(iterations):
             model.train()
             total_loss = 0.0
+            is_best_checkpoint = False
             optimizer.zero_grad()
             train_layer_loss = torch.zeros(vae_n_layers)
 
@@ -239,19 +246,33 @@ def train(
                 step_metrics.update(eval_metrics)
                 metrics_accumulator.reset()
 
+                if eval_metrics["ndcg"] > best_ndcg:
+                    best_ndcg = eval_metrics["ndcg"]
+                    is_best_checkpoint = True
+                step_metrics["best_ndcg"] = best_ndcg
+
             if accelerator.is_main_process:
-                if (iter + 1) % save_model_every == 0 or iter + 1 == iterations:
+                should_save = (
+                    (iter + 1) % save_model_every == 0
+                    or iter + 1 == iterations
+                    or is_best_checkpoint
+                )
+                if should_save:
                     state = {
                         "iter": iter,
                         "model": model.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "scheduler": lr_scheduler.state_dict(),
+                        "best_ndcg": best_ndcg,
                     }
 
                     if not os.path.exists(save_dir_root):
                         os.makedirs(save_dir_root)
 
-                    torch.save(state, save_dir_root + f"checkpoint_{iter}.pt")
+                    if (iter + 1) % save_model_every == 0 or iter + 1 == iterations:
+                        torch.save(state, save_dir_root + f"checkpoint_{iter}.pt")
+                    if is_best_checkpoint:
+                        torch.save(state, save_dir_root + "best_checkpoint.pt")
 
                 if wandb_logging:
                     wandb.log(

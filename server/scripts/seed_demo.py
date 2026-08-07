@@ -303,6 +303,24 @@ def load_metadata(product_ids: list[str]) -> dict:
     return {product_id: row for product_id, (_, row) in best.items()}
 
 
+def sale_original_price(price: int, product_id: str) -> int | None:
+    """The struck-through price, for about a third of the catalogue.
+
+    The seed needs enough discounted items that the home page's flash-sale
+    strip fills its row instead of showing two lonely cards. Derived from
+    the product id so a reseed marks down the same items.
+
+    Returns None when the item is not on sale, or when rounding would land
+    on the selling price — the server rejects a "sale" that saves nothing.
+    """
+    roll = _stable_number(product_id + ":sale") % 100
+    if roll >= 35:
+        return None
+    percent = 10 + roll % 41
+    original = int(round(price / (1 - percent / 100) / 1_000)) * 1_000
+    return original if original > price else None
+
+
 def to_vnd(row: dict, product_id: str) -> int:
     try:
         price = float(_clean(row.get("price")))
@@ -464,6 +482,7 @@ def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dic
             with_image += 1 if image else 0
             time.sleep(0.2)
 
+        price = to_vnd(row, product_id)
         catalogue.append({
             "sku": product_id,
             "name": name,
@@ -471,7 +490,8 @@ def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dic
             # Every field the server bounds gets cut to fit. Amazon brands run
             # long — one is a 62-character list of house brands.
             "unit": brand[:60] or None,
-            "price": to_vnd(row, product_id),
+            "price": price,
+            "originalPrice": sale_original_price(price, product_id),
             "stock": 20 + _stable_number(product_id) % 81,
             "image": image,
             "shopIndex": _stable_number(brand or product_id) % len(SHOPS),
@@ -530,6 +550,7 @@ def seed_shops(catalogue: list[dict]) -> list[dict]:
                 "description": entry["description"],
                 "unit": entry["unit"],
                 "price": entry["price"],
+                "originalPrice": entry["originalPrice"],
                 "stock": entry["stock"],
                 "imageUrl": entry["image"],
                 "imageUrls": [entry["image"]] if entry["image"] else None,

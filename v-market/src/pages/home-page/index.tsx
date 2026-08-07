@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, PullToRefresh, Toast } from '@v-miniapp/ui-react';
-import { listProducts, type ApiProductListItem } from '@/api/products';
+import { listAllProducts, type ApiProductListItem } from '@/api/products';
 import { FlashSaleSection } from '@/components/flash-sale-section';
 import { ProductGridSection } from '@/components/product-grid-section';
 import { PromoSection } from '@/components/promo-section';
@@ -30,8 +30,12 @@ type Feed =
   | { status: 'failed'; message: string };
 
 /**
- * The database is the only source: one fetch of GET /products feeds the
- * grid with everything and the flash strip with the discounted items.
+ * The database is the only source: one walk of GET /products feeds the grid
+ * with everything and the flash strip with the discounted items. The
+ * storefront shows the whole catalogue, so it fetches the whole catalogue —
+ * the server caps a page at 50, which is why listAllProducts pages until the
+ * server says it is done.
+ *
  * While loading the sections show skeletons; on failure the page says so
  * and offers a retry instead of pretending with fake content.
  *
@@ -46,10 +50,8 @@ const HomePage = () => {
   // the error page — there is nothing on screen to protect.
   const load = () => {
     setFeed({ status: 'loading' });
-    listProducts()
-      .then(page =>
-        setFeed({ status: 'ready', products: page.items.map(toCard) })
-      )
+    listAllProducts()
+      .then(items => setFeed({ status: 'ready', products: items.map(toCard) }))
       .catch(error =>
         setFeed({
           status: 'failed',
@@ -63,10 +65,8 @@ const HomePage = () => {
   // stay put while the new ones arrive; a failure keeps what's on screen and
   // only warns, rather than blanking a page the seller was already reading.
   const refresh = () =>
-    listProducts()
-      .then(page =>
-        setFeed({ status: 'ready', products: page.items.map(toCard) })
-      )
+    listAllProducts()
+      .then(items => setFeed({ status: 'ready', products: items.map(toCard) }))
       .catch(() =>
         Toast.show({
           type: 'negative',
