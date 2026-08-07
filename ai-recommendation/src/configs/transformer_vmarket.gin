@@ -24,9 +24,8 @@ train.top_k_eval_list=[1, 5, 10]
 
 train.gradient_accumulate_every=1
 train.max_grad_norm=1.0
-train.partial_eval_every=2000
-train.full_eval_every=10000
-train.save_model_every=2000
+train.eval_every=20000
+train.save_model_every=10000
 
 train.amp=True
 train.mixed_precision_type="fp16"

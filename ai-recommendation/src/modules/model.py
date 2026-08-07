@@ -29,9 +29,9 @@ class EncoderDecoderRetrievalModel(nn.Module):
     Uses T5EncoderModel for encoding and T5Stack for decoding. Per-hierarchy
     linear output heads project decoder hidden states to codebook logits —
     one head per level rather than a single softmax over the whole vocabulary,
-    because only codebook h's tokens are legal at step h. Beam search uses
-    multinomial sampling with log-probability accumulation and a
-    float("-inf") mask for invalid SID prefixes.
+    because only codebook h's tokens are legal at step h. Decoding is
+    constrained beam search: cumulative log-probabilities over the full
+    codebook with a float("-inf") mask for SID prefixes no item uses.
 
     Session-based, not sequential: there is no user embedding. TIGER hashes a
     user id into 2000 buckets and prepends it to the input, but Amazon-M2
@@ -272,12 +272,17 @@ class EncoderDecoderRetrievalModel(nn.Module):
         return ModelOutput(loss=total_loss, logits=None, loss_d=torch.stack(loss_d))
 
     @torch.no_grad()
-    def generate(self, attention_mask, input_ids):
-        """Generate top-k semantic IDs using sampling-based beam search.
+    def generate(self, attention_mask, input_ids, temperature: float = 1.0):
+        """Generate top-k semantic IDs using constrained beam search.
 
-        For each hierarchy level, samples n_candidates tokens via multinomial,
-        scores them using cumulative log-probabilities with a float("-inf") mask for
-        invalid SID prefixes, and keeps the top-k highest-scoring candidates.
+        Every code in the codebook is scored at every level, prefixes no
+        catalogue item uses are masked to float("-inf"), and the k beams with
+        the highest cumulative log-probability survive. Scoring the full
+        codebook instead of a preselected subset costs nothing extra — the
+        per-hierarchy head already emits all V logits — and it is what makes
+        the deepest level work: only ~4% of codes continue a real 2-prefix, so
+        preselecting by probability before the validity mask discards exactly
+        the rare continuations the mask would have promoted.
 
         Returns:
             generated_ids: [B, top_k, num_hierarchies]
@@ -285,7 +290,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
         """
         B = input_ids.size(0)
         k = self.top_k_for_generation
-        n_cands = min(64, self.num_embeddings_per_hierarchy)
+        V = self.num_embeddings_per_hierarchy
 
         enc_out, enc_mask = self.encoder_forward_pass(
             attention_mask=attention_mask,
@@ -314,38 +319,33 @@ class EncoderDecoderRetrievalModel(nn.Module):
                 past_key_values=past_kv,
             )
 
-            probas = F.softmax(self.decoder_mlp[h](dec_out[:, -1, :]), dim=-1)
-            samples = torch.multinomial(probas, num_samples=n_cands)
-            samp_log_p = torch.log(torch.gather(probas, 1, samples))
+            # float32 keeps the -inf mask distinct from fp16 underflow and keeps
+            # the log-probas comparable once they are summed across hierarchies.
+            logits = self.decoder_mlp[h](dec_out[:, -1, :]).float()
+            log_p = F.log_softmax(logits / temperature, dim=-1)
+            codes = torch.arange(V, device=log_p.device)
 
             if generated is None:
-                is_valid = self._check_valid_prefix(samples.reshape(-1, 1)).reshape(
-                    B, n_cands
-                )
-                scores, idx = samp_log_p.masked_fill(~is_valid, float("-inf")).sort(
-                    -1, descending=True
-                )
-                top_k_idx = idx[:, :k]
-                generated = torch.gather(samples, 1, top_k_idx).unsqueeze(
-                    -1
-                )  # [B, k, 1]
-                log_probas = scores[:, :k]
+                is_valid = self._check_valid_prefix(
+                    codes.repeat(B).unsqueeze(-1)
+                ).reshape(B, V)
+                scores = log_p.masked_fill(~is_valid, float("-inf"))
+                # Column index is the code id, so topk returns the codes directly.
+                log_probas, top_idx = scores.topk(k, dim=-1)
+                generated = top_idx.unsqueeze(-1)  # [B, k, 1]
                 past_kv = EncoderDecoderCache(DynamicCache(), DynamicCache())
             else:
-                prev = generated.reshape(-1, h).repeat_interleave(n_cands, dim=0)
-                prefix = torch.cat([prev, samples.reshape(-1, 1)], dim=1)
-                is_valid = self._check_valid_prefix(prefix).reshape(B, k * n_cands)
-                scores, idx = (
-                    (
-                        samp_log_p.reshape(B, k * n_cands)
-                        + log_probas.repeat_interleave(n_cands, dim=1)
-                    )
-                    .masked_fill(~is_valid, float("-inf"))
-                    .sort(-1, descending=True)
-                )
+                # Row b*k*V + beam*V + code: every surviving beam times every code.
+                prev = generated.reshape(-1, h).repeat_interleave(V, dim=0)
+                prefix = torch.cat([prev, codes.repeat(B * k).unsqueeze(-1)], dim=1)
+                is_valid = self._check_valid_prefix(prefix).reshape(B, k * V)
 
-                top_k_idx = idx[:, :k]
-                parent_beam_idx = top_k_idx // n_cands
+                scores = (
+                    log_p.reshape(B, k * V) + log_probas.repeat_interleave(V, dim=1)
+                ).masked_fill(~is_valid, float("-inf"))
+                log_probas, top_idx = scores.topk(k, dim=-1)
+
+                parent_beam_idx = top_idx // V
                 parent_global = (
                     parent_beam_idx
                     + torch.arange(B, device=parent_beam_idx.device).unsqueeze(1) * k
@@ -355,11 +355,8 @@ class EncoderDecoderRetrievalModel(nn.Module):
                 parent_ids = torch.gather(
                     generated, 1, parent_beam_idx.unsqueeze(-1).expand(-1, -1, h)
                 )
-                new_ids = torch.gather(
-                    samples.reshape(B, k * n_cands), 1, top_k_idx
-                ).unsqueeze(-1)
+                new_ids = (top_idx % V).unsqueeze(-1)
                 generated = torch.cat([parent_ids, new_ids], dim=-1)  # [B, k, h+1]
-                log_probas = scores[:, :k]
 
         return generated, log_probas
 
@@ -367,13 +364,13 @@ class EncoderDecoderRetrievalModel(nn.Module):
     def generate_next_sem_id(
         self,
         batch: TokenizedSeqBatch,
-        top_k: bool = True,
-        temperature: int = 1,
+        temperature: float = 1.0,
     ) -> GenerationOutput:
         input_ids = batch.sem_ids
         attention_mask = batch.seq_mask.long()
         generated_ids, log_probas = self.generate(
             attention_mask=attention_mask,
             input_ids=input_ids,
+            temperature=temperature,
         )
         return GenerationOutput(sem_ids=generated_ids, log_probas=log_probas)

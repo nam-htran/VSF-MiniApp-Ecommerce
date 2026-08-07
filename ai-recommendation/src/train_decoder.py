@@ -44,8 +44,7 @@ def train(
     mixed_precision_type="fp16",
     gradient_accumulate_every=1,
     save_model_every=1000000,
-    partial_eval_every=1000,
-    full_eval_every=10000,
+    eval_every=20000,
     vae_codebook_size=256,
     vae_n_layers=3,
     max_grad_norm=None,
@@ -104,7 +103,7 @@ def train(
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     train_dataloader = cycle(train_dataloader)
-    eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=True)
+    eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False)
 
     train_dataloader, eval_dataloader = accelerator.prepare(
         train_dataloader, eval_dataloader
@@ -197,29 +196,11 @@ def train(
                 for layer in range(vae_n_layers)
             }
 
-            if (iter + 1) % partial_eval_every == 0:
+            if (iter + 1) % eval_every == 0 or iter + 1 == iterations:
                 model.eval()
                 eval_loss_sum = 0.0
                 eval_layer_loss_sum = torch.zeros(vae_n_layers)
                 eval_examples = 0
-                for batch in eval_dataloader:
-                    data = batch_to(batch, device)
-                    tokenized_data = tokenizer(data)
-                    with torch.no_grad():
-                        eval_output = model(tokenized_data)
-                    batch_size = tokenized_data.sem_ids_fut.shape[0]
-                    eval_loss_sum += eval_output.loss.item() * batch_size
-                    eval_layer_loss_sum += eval_output.loss_d.cpu() * batch_size
-                    eval_examples += batch_size
-
-                step_metrics["eval_loss"] = eval_loss_sum / eval_examples
-                for layer in range(vae_n_layers):
-                    step_metrics[f"eval_loss_sid_{layer}"] = (
-                        eval_layer_loss_sum[layer].item() / eval_examples
-                    )
-
-            if (iter + 1) % full_eval_every == 0:
-                model.eval()
                 with tqdm(
                     eval_dataloader,
                     desc=f"Eval {iter + 1}",
@@ -230,14 +211,26 @@ def train(
                         tokenized_data = tokenizer(data)
 
                         with torch.no_grad():
-                            generated = model.generate_next_sem_id(
-                                tokenized_data, top_k=True, temperature=1
-                            )
+                            eval_output = model(tokenized_data)
+                            generated = model.generate_next_sem_id(tokenized_data)
+
+                        eval_batch_size = tokenized_data.sem_ids_fut.shape[0]
+                        eval_loss_sum += eval_output.loss.item() * eval_batch_size
+                        eval_layer_loss_sum += (
+                            eval_output.loss_d.cpu() * eval_batch_size
+                        )
+                        eval_examples += eval_batch_size
 
                         actual = tokenized_data.sem_ids_fut[:, :vae_n_layers]
                         metrics_accumulator.accumulate(
                             actual=actual, top_k=generated.sem_ids
                         )
+
+                step_metrics["eval_loss"] = eval_loss_sum / eval_examples
+                for layer in range(vae_n_layers):
+                    step_metrics[f"eval_loss_sid_{layer}"] = (
+                        eval_layer_loss_sum[layer].item() / eval_examples
+                    )
 
                 eval_metrics = metrics_accumulator.reduce()
                 print(eval_metrics)
