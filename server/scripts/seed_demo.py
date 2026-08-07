@@ -195,8 +195,15 @@ def call(base, path, payload=None, token=None, method=None):
         headers["Authorization"] = f"Bearer {token}"
     data = json.dumps(payload).encode() if payload is not None else None
     request = urllib.request.Request(base + path, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(request) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        # A 422 names the field it rejected, but only in the body, which the
+        # traceback throws away. Print it before re-raising.
+        if error.code == 422:
+            print(f"  {path} rejected: {error.read().decode('utf-8', 'ignore')[:400]}")
+        raise
 
 
 def token_for(name: str) -> str:
@@ -461,7 +468,9 @@ def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dic
             "sku": product_id,
             "name": name,
             "description": description,
-            "unit": brand or None,
+            # Every field the server bounds gets cut to fit. Amazon brands run
+            # long — one is a 62-character list of house brands.
+            "unit": brand[:60] or None,
             "price": to_vnd(row, product_id),
             "stock": 20 + _stable_number(product_id) % 81,
             "image": image,
