@@ -2,7 +2,7 @@ import data.processed
 
 train.iterations=100000
 train.batch_size=256
-train.learning_rate=0.0003
+train.learning_rate=0.0001
 train.weight_decay=0.0001
 
 train.session_folder="/kaggle/input/vmarket-phase2-preprocessed"
@@ -23,12 +23,12 @@ train.top_k_eval_list=[1, 5, 10]
 
 train.gradient_accumulate_every=1
 train.max_grad_norm=1.0
-train.partial_eval_every=10000
-train.full_eval_every=50000
-train.save_model_every=10000
+train.partial_eval_every=2000
+train.full_eval_every=10000
+train.save_model_every=2000
 
 train.amp=True
 train.mixed_precision_type="fp16"
 train.wandb_logging=True
 train.wandb_project="vmarket-transformer"
-train.wandb_run_name_prefix="cluster-sid-t5-384-lr3e4-100k"
+train.wandb_run_name_prefix="cluster-sid-t5-384-lr1e4-100k"
