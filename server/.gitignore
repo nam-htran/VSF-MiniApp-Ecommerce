@@ -6,3 +6,6 @@ __pycache__/
 
 # Uploaded product images (runtime, not source)
 /uploads/
+
+# Amazon-M2 translation cache used by scripts/seed_demo.py
+/scripts/.amazon-m2-cache/

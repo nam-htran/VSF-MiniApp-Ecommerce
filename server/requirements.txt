@@ -12,3 +12,6 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 python-multipart==0.0.32
 alembic==1.18.5
+deep-translator==1.11.4
+icrawler==0.6.10
+pyarrow==21.0.0
