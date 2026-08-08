@@ -49,12 +49,12 @@ def train(
     vae_input_dim=18,
     vae_embed_dim=16,
     vae_hidden_dims=[18, 18],
-    vae_codebook_size=32,
+    vae_codebook_sizes=[128, 64, 32],
     vae_codebook_normalize=False,
     vae_codebook_mode=QuantizeForwardMode.GUMBEL_SOFTMAX,
     vae_sim_vq=False,
-    vae_n_layers=3,
 ):
+    vae_n_layers = len(vae_codebook_sizes)
     if wandb_logging:
         params = locals()
 
@@ -119,12 +119,11 @@ def train(
         input_dim=vae_input_dim,
         embed_dim=vae_embed_dim,
         hidden_dims=vae_hidden_dims,
-        codebook_size=vae_codebook_size,
+        codebook_sizes=vae_codebook_sizes,
         codebook_kmeans_init=use_kmeans_init and pretrained_rqvae_path is None,
         codebook_normalize=vae_codebook_normalize,
         codebook_sim_vq=vae_sim_vq,
         codebook_mode=vae_codebook_mode,
-        n_layers=vae_n_layers,
         n_cat_features=vae_n_cat_feats,
         commitment_weight=commitment_weight,
     )
@@ -157,8 +156,7 @@ def train(
         input_dim=vae_input_dim,
         hidden_dims=vae_hidden_dims,
         output_dim=vae_embed_dim,
-        codebook_size=vae_codebook_size,
-        n_layers=vae_n_layers,
+        codebook_sizes=vae_codebook_sizes,
         n_cat_feats=vae_n_cat_feats,
         rqvae_weights_path=pretrained_rqvae_path,
         rqvae_codebook_normalize=vae_codebook_normalize,
@@ -288,7 +286,7 @@ def train(
                             corpus_ids[:, cid], return_counts=True
                         )
                         id_diversity_log[f"codebook_usage_{cid}"] = (
-                            len(layer_counts) / vae_codebook_size
+                            len(layer_counts) / vae_codebook_sizes[cid]
                         )
 
                     id_diversity_log["rqvae_entropy"] = rqvae_entropy.cpu().item()

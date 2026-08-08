@@ -55,8 +55,7 @@ class SemanticIdTokenizer(nn.Module):
         input_dim: int,
         output_dim: int,
         hidden_dims: List[int],
-        codebook_size: int,
-        n_layers: int = 3,
+        codebook_sizes: List[int],
         n_cat_feats: int = 18,
         commitment_weight: float = 0.25,
         rqvae_weights_path: Optional[str] = None,
@@ -69,11 +68,10 @@ class SemanticIdTokenizer(nn.Module):
             input_dim=input_dim,
             embed_dim=output_dim,
             hidden_dims=hidden_dims,
-            codebook_size=codebook_size,
+            codebook_sizes=codebook_sizes,
             codebook_kmeans_init=False,
             codebook_normalize=rqvae_codebook_normalize,
             codebook_sim_vq=rqvae_sim_vq,
-            n_layers=n_layers,
             n_cat_features=n_cat_feats,
             commitment_weight=commitment_weight,
         )
@@ -83,8 +81,8 @@ class SemanticIdTokenizer(nn.Module):
 
         self.rq_vae.eval()
 
-        self.codebook_size = codebook_size
-        self.n_layers = n_layers
+        self.codebook_sizes = list(codebook_sizes)
+        self.n_layers = len(self.codebook_sizes)
         self.reset()
 
     def reset(self):

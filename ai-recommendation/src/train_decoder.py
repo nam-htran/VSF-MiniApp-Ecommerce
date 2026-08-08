@@ -45,8 +45,7 @@ def train(
     gradient_accumulate_every=1,
     save_model_every=1000000,
     eval_every=20000,
-    vae_codebook_size=256,
-    vae_n_layers=3,
+    vae_codebook_sizes=[128, 64, 32],
     max_grad_norm=None,
     t5_d_model=128,
     t5_num_heads=6,
@@ -56,6 +55,7 @@ def train(
     should_add_sep_token=True,
     top_k_eval_list=[1, 5, 10],
 ):
+    vae_n_layers = len(vae_codebook_sizes)
     if wandb_logging:
         params = locals()
 
@@ -84,6 +84,11 @@ def train(
     codebooks = torch.from_numpy(
         semantic_ids[sid_columns].to_numpy(dtype=np.int16, copy=True)
     )
+    for layer, size in enumerate(vae_codebook_sizes):
+        if codebooks[:, layer].min() < 0 or codebooks[:, layer].max() >= size:
+            raise ValueError(
+                f"sid_{layer} contains values outside its codebook range [0, {size})"
+            )
     del semantic_ids
 
     train_dataset = SeqData(
@@ -114,8 +119,7 @@ def train(
 
     model = EncoderDecoderRetrievalModel(
         codebooks=codebooks,
-        num_hierarchies=vae_n_layers,
-        num_embeddings_per_hierarchy=vae_codebook_size,
+        codebook_sizes=vae_codebook_sizes,
         t5_d_model=t5_d_model,
         t5_num_heads=t5_num_heads,
         t5_d_ff=t5_d_ff,

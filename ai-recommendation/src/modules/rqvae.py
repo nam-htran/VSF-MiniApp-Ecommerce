@@ -40,12 +40,11 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         input_dim: int,
         embed_dim: int,
         hidden_dims: List[int],
-        codebook_size: int,
+        codebook_sizes: List[int],
         codebook_kmeans_init: bool = True,
         codebook_normalize: bool = False,
         codebook_sim_vq: bool = False,
         codebook_mode: QuantizeForwardMode = QuantizeForwardMode.GUMBEL_SOFTMAX,
-        n_layers: int = 3,
         commitment_weight: float = 0.25,
         n_cat_features: int = 18,
     ) -> None:
@@ -56,8 +55,10 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         self.input_dim = input_dim
         self.embed_dim = embed_dim
         self.hidden_dims = hidden_dims
-        self.n_layers = n_layers
-        self.codebook_size = codebook_size
+        self.codebook_sizes = list(codebook_sizes)
+        if not self.codebook_sizes or any(size <= 0 for size in self.codebook_sizes):
+            raise ValueError("codebook sizes must be positive")
+        self.n_layers = len(self.codebook_sizes)
         self.commitment_weight = commitment_weight
         self.n_cat_feats = n_cat_features
 
@@ -65,14 +66,14 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
             modules=[
                 Quantize(
                     embed_dim=embed_dim,
-                    n_embed=codebook_size,
+                    n_embed=self.codebook_sizes[i],
                     forward_mode=codebook_mode,
                     do_kmeans_init=codebook_kmeans_init,
                     codebook_normalize=i == 0 and codebook_normalize,
                     sim_vq=codebook_sim_vq,
                     commitment_weight=commitment_weight,
                 )
-                for i in range(n_layers)
+                for i in range(self.n_layers)
             ]
         )
 
