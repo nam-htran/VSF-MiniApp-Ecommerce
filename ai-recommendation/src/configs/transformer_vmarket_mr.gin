@@ -1,6 +1,6 @@
 import data.processed
 
-train.iterations=100000
+train.iterations=200000
 train.batch_size=256
 train.learning_rate=0.0002
 train.warmup_steps=5000
