@@ -54,6 +54,10 @@ def train(
     top_k_for_generation=10,
     should_add_sep_token=True,
     top_k_eval_list=[1, 5, 10],
+    content_embeddings_path=None,
+    content_dim=256,
+    vrm_weight=1.0,
+    vrm_temperature=0.07,
 ):
     vae_n_layers = len(vae_codebook_sizes)
     if wandb_logging:
@@ -117,6 +121,12 @@ def train(
     tokenizer = PrecomputedSemanticIdTokenizer(codebooks)
     tokenizer = accelerator.prepare(tokenizer)
 
+    content_embeddings = None
+    if content_embeddings_path is not None:
+        content_embeddings = torch.from_numpy(
+            np.load(content_embeddings_path).astype(np.float16)
+        )
+
     model = EncoderDecoderRetrievalModel(
         codebooks=codebooks,
         codebook_sizes=vae_codebook_sizes,
@@ -126,6 +136,10 @@ def train(
         t5_num_layers=t5_num_layers,
         top_k_for_generation=top_k_for_generation,
         should_add_sep_token=should_add_sep_token,
+        content_embeddings=content_embeddings,
+        content_dim=content_dim,
+        vrm_weight=vrm_weight,
+        vrm_temperature=vrm_temperature,
     )
     model = torch.compile(model)
 
@@ -143,7 +157,11 @@ def train(
         checkpoint = torch.load(
             pretrained_decoder_path, map_location=device, weights_only=False
         )
-        model.load_state_dict(checkpoint["model"])
+        missing, unexpected = model.load_state_dict(
+            checkpoint["model"], strict=False
+        )
+        if missing:
+            print(f"New parameters (randomly initialized): {missing}")
         optimizer.load_state_dict(checkpoint["optimizer"])
         if "scheduler" in checkpoint:
             lr_scheduler.load_state_dict(checkpoint["scheduler"])
@@ -173,7 +191,10 @@ def train(
                 tokenized_data = tokenizer(data)
 
                 with accelerator.autocast():
-                    model_output = model(tokenized_data)
+                    model_output = model(
+                        tokenized_data,
+                        item_ids_fut=data.ids_fut.squeeze(-1),
+                    )
                     loss = model_output.loss / gradient_accumulate_every
 
                 total_loss += loss.detach().item()
@@ -199,6 +220,8 @@ def train(
                 )
                 for layer in range(vae_n_layers)
             }
+            if model_output.vrm_loss is not None:
+                step_metrics["vrm_loss"] = model_output.vrm_loss.item()
 
             if (iter + 1) % eval_every == 0 or iter + 1 == iterations:
                 model.eval()

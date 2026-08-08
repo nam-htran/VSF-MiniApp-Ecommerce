@@ -56,9 +56,11 @@ class Quantize(nn.Module):
         embed_dim: int,
         n_embed: int,
         do_kmeans_init: bool = True,
+        balanced_kmeans: bool = False,
         codebook_normalize: bool = False,
         sim_vq: bool = False,  # https://arxiv.org/pdf/2411.02038
         commitment_weight: float = 0.25,
+        entropy_weight: float = 0.0,
         forward_mode: QuantizeForwardMode = QuantizeForwardMode.GUMBEL_SOFTMAX,
         distance_mode: QuantizeDistance = QuantizeDistance.L2,
     ) -> None:
@@ -70,7 +72,9 @@ class Quantize(nn.Module):
         self.forward_mode = forward_mode
         self.distance_mode = distance_mode
         self.do_kmeans_init = do_kmeans_init
+        self.balanced_kmeans = balanced_kmeans
         self.kmeans_initted = False
+        self.entropy_weight = entropy_weight
 
         self.out_proj = nn.Sequential(
             nn.Linear(embed_dim, embed_dim, bias=False) if sim_vq else nn.Identity(),
@@ -95,7 +99,7 @@ class Quantize(nn.Module):
 
     @torch.no_grad
     def _kmeans_init(self, x) -> None:
-        kmeans_init_(self.embedding.weight, x=x)
+        kmeans_init_(self.embedding.weight, x=x, balanced=self.balanced_kmeans)
         self.kmeans_initted = True
 
     def get_item_embeddings(self, item_ids) -> Tensor:
@@ -155,6 +159,11 @@ class Quantize(nn.Module):
                 raise Exception("Unsupported Quantize forward mode.")
 
             loss = self.quantize_loss(query=x, value=emb)
+
+            if self.entropy_weight > 0:
+                avg_usage = F.softmax(-dist, dim=-1).mean(dim=0)
+                entropy = -(avg_usage * torch.log(avg_usage + 1e-10)).sum()
+                loss = loss - self.entropy_weight * entropy
 
         else:
             emb_out = self.get_item_embeddings(ids)
