@@ -55,6 +55,7 @@ def train(
     vae_sim_vq=False,
     vae_balanced_kmeans=False,
     vae_entropy_weight=0.0,
+    vae_entropy_temperature=1.0,
 ):
     vae_n_layers = len(vae_codebook_sizes)
     if wandb_logging:
@@ -130,6 +131,7 @@ def train(
         n_cat_features=vae_n_cat_feats,
         commitment_weight=commitment_weight,
         entropy_weight=vae_entropy_weight,
+        entropy_temperature=vae_entropy_temperature,
     )
 
     optimizer = AdamW(

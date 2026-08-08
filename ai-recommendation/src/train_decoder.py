@@ -238,7 +238,10 @@ def train(
                         tokenized_data = tokenizer(data)
 
                         with torch.no_grad():
-                            eval_output = model(tokenized_data)
+                            eval_output = model(
+                                tokenized_data,
+                                item_ids_fut=data.ids_fut.squeeze(-1),
+                            )
                             generated = model.generate_next_sem_id(tokenized_data)
 
                         eval_batch_size = tokenized_data.sem_ids_fut.shape[0]

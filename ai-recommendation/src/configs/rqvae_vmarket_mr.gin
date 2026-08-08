@@ -21,7 +21,8 @@ train.vae_codebook_mode=%modules.quantize.QuantizeForwardMode.ROTATION_TRICK
 train.commitment_weight=0.25
 
 train.vae_balanced_kmeans=True
-train.vae_entropy_weight=0.1
+train.vae_entropy_weight=0.01
+train.vae_entropy_temperature=1.0
 
 train.use_kmeans_init=True
 train.do_eval=True

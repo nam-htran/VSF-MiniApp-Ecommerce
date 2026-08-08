@@ -48,6 +48,7 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
         codebook_mode: QuantizeForwardMode = QuantizeForwardMode.GUMBEL_SOFTMAX,
         commitment_weight: float = 0.25,
         entropy_weight: float = 0.0,
+        entropy_temperature: float = 1.0,
         n_cat_features: int = 18,
     ) -> None:
         self._config = locals()
@@ -76,6 +77,7 @@ class RqVae(nn.Module, PyTorchModelHubMixin):
                     sim_vq=codebook_sim_vq,
                     commitment_weight=commitment_weight,
                     entropy_weight=entropy_weight,
+                    entropy_temperature=entropy_temperature,
                 )
                 for i in range(self.n_layers)
             ]
