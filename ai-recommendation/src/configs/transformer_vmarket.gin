@@ -30,4 +30,4 @@ train.amp=True
 train.mixed_precision_type="fp16"
 train.wandb_logging=True
 train.wandb_project="vmarket-transformer"
-train.wandb_run_name_prefix="cluster-sid-128x64x32-balanced-t5-384-lr2e4-200k"
+train.wandb_run_name_prefix="cluster-sid-128x64x32-t5-384-lr2e4-200k"

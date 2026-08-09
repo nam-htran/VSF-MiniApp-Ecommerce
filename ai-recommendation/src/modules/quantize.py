@@ -56,7 +56,6 @@ class Quantize(nn.Module):
         embed_dim: int,
         n_embed: int,
         do_kmeans_init: bool = True,
-        balanced_kmeans: bool = False,
         codebook_normalize: bool = False,
         sim_vq: bool = False,  # https://arxiv.org/pdf/2411.02038
         commitment_weight: float = 0.25,
@@ -71,7 +70,6 @@ class Quantize(nn.Module):
         self.forward_mode = forward_mode
         self.distance_mode = distance_mode
         self.do_kmeans_init = do_kmeans_init
-        self.balanced_kmeans = balanced_kmeans
         self.kmeans_initted = False
 
         self.out_proj = nn.Sequential(
@@ -97,7 +95,7 @@ class Quantize(nn.Module):
 
     @torch.no_grad
     def _kmeans_init(self, x) -> None:
-        kmeans_init_(self.embedding.weight, x=x, balanced=self.balanced_kmeans)
+        kmeans_init_(self.embedding.weight, x=x)
         self.kmeans_initted = True
 
     def get_item_embeddings(self, item_ids) -> Tensor:

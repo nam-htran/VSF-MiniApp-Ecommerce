@@ -53,7 +53,6 @@ def train(
     vae_codebook_normalize=False,
     vae_codebook_mode=QuantizeForwardMode.GUMBEL_SOFTMAX,
     vae_sim_vq=False,
-    vae_balanced_kmeans=False,
 ):
     vae_n_layers = len(vae_codebook_sizes)
     if wandb_logging:
@@ -122,7 +121,6 @@ def train(
         hidden_dims=vae_hidden_dims,
         codebook_sizes=vae_codebook_sizes,
         codebook_kmeans_init=use_kmeans_init and pretrained_rqvae_path is None,
-        codebook_balanced_kmeans=vae_balanced_kmeans,
         codebook_normalize=vae_codebook_normalize,
         codebook_sim_vq=vae_sim_vq,
         codebook_mode=vae_codebook_mode,
