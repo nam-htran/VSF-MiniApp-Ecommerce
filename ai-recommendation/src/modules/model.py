@@ -84,8 +84,17 @@ class EncoderDecoderRetrievalModel(nn.Module):
         if not self.codebook_sizes or any(size <= 0 for size in self.codebook_sizes):
             raise ValueError("Codebook sizes must be positive")
         self.num_hierarchies = len(self.codebook_sizes)
-        if top_k_for_generation > min(self.codebook_sizes):
-            raise ValueError("top_k_for_generation cannot exceed a codebook size")
+        # Only the first hierarchy constrains the beam: its topk runs over the
+        # codebook's V columns, so k <= codebook_sizes[0]. Every later level
+        # picks k out of k*V candidates, which is never the binding limit.
+        # Guarding on min() instead caps the beam at the *smallest* codebook —
+        # harmless when every codebook is 256 as in TIGER, but with a
+        # multi-resolution layout (1024, 256, 64) it silently clamps k to 64,
+        # throttling exactly the recall that the wide first codebook buys.
+        if top_k_for_generation > self.codebook_sizes[0]:
+            raise ValueError(
+                "top_k_for_generation cannot exceed the first codebook size"
+            )
         self.top_k_for_generation = top_k_for_generation
 
         embedding_offsets = [0]
