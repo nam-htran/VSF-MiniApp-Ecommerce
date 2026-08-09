@@ -13,11 +13,6 @@ train.dataset=%data.processed.RecDataset.VMARKET
 
 train.vae_codebook_sizes=[128, 64, 32]
 
-train.content_embeddings_path="/kaggle/input/vmarket-phase2-embeddings/global_product_embeddings.f16.npy"
-train.content_dim=256
-train.vrm_weight=1.0
-train.vrm_temperature=0.07
-
 train.t5_d_model=384
 train.t5_num_heads=6
 train.t5_d_ff=1024

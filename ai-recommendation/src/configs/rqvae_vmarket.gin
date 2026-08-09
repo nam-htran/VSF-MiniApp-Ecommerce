@@ -21,6 +21,7 @@ train.vae_codebook_mode=%modules.quantize.QuantizeForwardMode.ROTATION_TRICK
 train.commitment_weight=0.25
 
 train.use_kmeans_init=True
+train.vae_balanced_kmeans=True
 train.do_eval=True
 train.eval_every=5000
 train.save_model_every=5000

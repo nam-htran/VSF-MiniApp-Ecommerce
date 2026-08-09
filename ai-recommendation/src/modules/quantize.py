@@ -1,5 +1,4 @@
 import gin
-import math
 import torch
 
 from distributions.gumbel import gumbel_softmax_sample
@@ -61,8 +60,6 @@ class Quantize(nn.Module):
         codebook_normalize: bool = False,
         sim_vq: bool = False,  # https://arxiv.org/pdf/2411.02038
         commitment_weight: float = 0.25,
-        entropy_weight: float = 0.0,
-        entropy_temperature: float = 1.0,
         forward_mode: QuantizeForwardMode = QuantizeForwardMode.GUMBEL_SOFTMAX,
         distance_mode: QuantizeDistance = QuantizeDistance.L2,
     ) -> None:
@@ -76,8 +73,6 @@ class Quantize(nn.Module):
         self.do_kmeans_init = do_kmeans_init
         self.balanced_kmeans = balanced_kmeans
         self.kmeans_initted = False
-        self.entropy_weight = entropy_weight
-        self.entropy_temperature = entropy_temperature
 
         self.out_proj = nn.Sequential(
             nn.Linear(embed_dim, embed_dim, bias=False) if sim_vq else nn.Identity(),
@@ -107,28 +102,6 @@ class Quantize(nn.Module):
 
     def get_item_embeddings(self, item_ids) -> Tensor:
         return self.out_proj(self.embedding(item_ids))
-
-    def _entropy_penalty(self, dist: Tensor) -> Tensor:
-        """Anti-collapse regulariser: sharp per-sample codes, uniform overall usage.
-
-        Two terms, each divided by log(n_embed) so both land in [0, 1] and the
-        weight means the same thing whatever the codebook size:
-
-          + mean_i H(p_i)   pushes each sample towards one code
-          - H(mean_i p_i)   pushes the batch to spread across every code
-
-        `dist` is an unnormalised squared L2, so the temperature sets how peaked
-        the soft assignment is — at too high a temperature p is already uniform,
-        the entropy sits at its maximum and the gradient vanishes.
-        """
-        log_probs = F.log_softmax(-dist / self.entropy_temperature, dim=-1)
-        probs = log_probs.exp()
-        norm = math.log(self.n_embed)
-
-        sample_entropy = -(probs * log_probs).sum(dim=-1).mean() / norm
-        avg_probs = probs.mean(dim=0)
-        avg_entropy = -(avg_probs * (avg_probs + 1e-10).log()).sum() / norm
-        return sample_entropy - avg_entropy
 
     def forward(self, x, temperature) -> QuantizeOutput:
         assert x.shape[-1] == self.embed_dim
@@ -184,9 +157,6 @@ class Quantize(nn.Module):
                 raise Exception("Unsupported Quantize forward mode.")
 
             loss = self.quantize_loss(query=x, value=emb)
-
-            if self.entropy_weight > 0:
-                loss = loss + self.entropy_weight * self._entropy_penalty(dist)
 
         else:
             emb_out = self.get_item_embeddings(ids)

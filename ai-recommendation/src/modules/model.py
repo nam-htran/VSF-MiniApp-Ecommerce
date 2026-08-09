@@ -16,33 +16,11 @@ class ModelOutput(NamedTuple):
     loss: Tensor
     logits: Tensor
     loss_d: Tensor
-    vrm_loss: Optional[Tensor] = None
 
 
 class GenerationOutput(NamedTuple):
     sem_ids: Tensor
     log_probas: Tensor
-
-
-class VRMHead(nn.Module):
-    """Dual-encoder reranker trained with InfoNCE (in-batch negatives).
-
-    Scores each candidate item against the session context using a dot product
-    in a learned projection space. Lightweight: two bias-free Linear layers.
-    """
-
-    def __init__(self, d_model: int, content_dim: int, temperature: float = 0.07):
-        super().__init__()
-        self.content_proj = nn.Linear(content_dim, d_model, bias=False)
-        self.context_proj = nn.Linear(d_model, d_model, bias=False)
-        self.temperature = temperature
-
-    def forward(self, context: Tensor, candidate_embs: Tensor) -> Tensor:
-        ctx = F.normalize(self.context_proj(context), dim=-1)
-        cand = F.normalize(self.content_proj(candidate_embs), dim=-1)
-        if cand.ndim == 2:
-            return ctx @ cand.T / self.temperature
-        return torch.einsum("bd,bnd->bn", ctx, cand) / self.temperature
 
 
 class EncoderDecoderRetrievalModel(nn.Module):
@@ -73,10 +51,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         t5_num_layers: int = 4,
         top_k_for_generation: int = 10,
         should_add_sep_token: bool = True,
-        content_embeddings: Optional[torch.Tensor] = None,
-        content_dim: int = 256,
-        vrm_weight: float = 1.0,
-        vrm_temperature: float = 0.07,
     ):
         super().__init__()
 
@@ -84,17 +58,10 @@ class EncoderDecoderRetrievalModel(nn.Module):
         if not self.codebook_sizes or any(size <= 0 for size in self.codebook_sizes):
             raise ValueError("Codebook sizes must be positive")
         self.num_hierarchies = len(self.codebook_sizes)
-        # Only the first hierarchy constrains the beam: its topk runs over the
-        # codebook's V columns, so k <= codebook_sizes[0]. Every later level
-        # picks k out of k*V candidates, which is never the binding limit.
-        # Guarding on min() instead caps the beam at the *smallest* codebook —
-        # harmless when every codebook is 256 as in TIGER, but with a
-        # multi-resolution layout (1024, 256, 64) it silently clamps k to 64,
-        # throttling exactly the recall that the wide first codebook buys.
+        # Only hierarchy 0 binds: its topk runs over the codebook's V columns.
+        # Later levels pick k out of k*V, which is never the smaller number.
         if top_k_for_generation > self.codebook_sizes[0]:
-            raise ValueError(
-                "top_k_for_generation cannot exceed the first codebook size"
-            )
+            raise ValueError("top_k_for_generation cannot exceed the first codebook")
         self.top_k_for_generation = top_k_for_generation
 
         embedding_offsets = [0]
@@ -162,16 +129,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
             else None
         )
 
-        self.vrm_weight = vrm_weight
-        if content_embeddings is not None:
-            self.register_buffer(
-                "content_embeddings", content_embeddings, persistent=False
-            )
-            self.vrm_head = VRMHead(t5_d_model, content_dim, vrm_temperature)
-        else:
-            self.content_embeddings = None
-            self.vrm_head = None
-
     @property
     def device(self) -> torch.device:
         return next(self.parameters()).device
@@ -232,19 +189,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
         in_range = positions < len(valid_keys)
         positions = positions.clamp_max(len(valid_keys) - 1)
         return in_range & (valid_keys[positions] == keys)
-
-    def _pool_encoder(self, encoder_output: Tensor, encoder_mask: Tensor) -> Tensor:
-        mask = encoder_mask.unsqueeze(-1).float()
-        return (encoder_output * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
-
-    def _compute_vrm_loss(
-        self, encoder_output: Tensor, encoder_mask: Tensor, item_ids: Tensor
-    ) -> Tensor:
-        context = self._pool_encoder(encoder_output, encoder_mask)
-        content = self.content_embeddings[item_ids.long()].to(context.dtype)
-        scores = self.vrm_head(context, content)
-        labels = torch.arange(scores.size(0), device=scores.device)
-        return F.cross_entropy(scores, labels)
 
     def encoder_forward_pass(self, attention_mask, input_ids):
         shifted = self._add_repeating_offset_to_rows(
@@ -315,11 +259,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
             return out.last_hidden_state, out.past_key_values
         return out.last_hidden_state
 
-    def forward(
-        self,
-        batch: TokenizedSeqBatch,
-        item_ids_fut: Optional[Tensor] = None,
-    ) -> ModelOutput:
+    def forward(self, batch: TokenizedSeqBatch) -> ModelOutput:
         input_ids = batch.sem_ids
         attention_mask = batch.seq_mask.long()
         fut_ids = batch.sem_ids_fut[:, : self.num_hierarchies]
@@ -343,17 +283,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
             total_loss = total_loss + h_loss
             loss_d.append(h_loss.detach())
 
-        vrm_loss = None
-        if self.vrm_head is not None and item_ids_fut is not None:
-            vrm_loss = self._compute_vrm_loss(
-                encoder_output, attention_mask_for_encoder, item_ids_fut
-            )
-            total_loss = total_loss + self.vrm_weight * vrm_loss
-            vrm_loss = vrm_loss.detach()
-
-        return ModelOutput(
-            loss=total_loss, logits=None, loss_d=torch.stack(loss_d), vrm_loss=vrm_loss
-        )
+        return ModelOutput(loss=total_loss, logits=None, loss_d=torch.stack(loss_d))
 
     @torch.no_grad()
     def generate(self, attention_mask, input_ids, temperature: float = 1.0):
@@ -439,29 +369,6 @@ class EncoderDecoderRetrievalModel(nn.Module):
                 generated = torch.cat([parent_ids, new_ids], dim=-1)  # [B, k, h+1]
 
         return generated, log_probas
-
-    @torch.no_grad()
-    def vrm_rerank(
-        self,
-        encoder_output: Tensor,
-        encoder_mask: Tensor,
-        candidate_ids: Tensor,
-    ) -> Tensor:
-        """Score candidate items against session context.
-
-        Args:
-            encoder_output: [B, seq_len, d_model]
-            encoder_mask: [B, seq_len]
-            candidate_ids: [B, N] product indices
-
-        Returns:
-            scores: [B, N]
-        """
-        if self.vrm_head is None:
-            raise RuntimeError("VRM head not initialized")
-        context = self._pool_encoder(encoder_output, encoder_mask)
-        content = self.content_embeddings[candidate_ids.long()].to(context.dtype)
-        return self.vrm_head(context, content)
 
     @torch.no_grad()
     def generate_next_sem_id(
