@@ -20,6 +20,7 @@ from modules.tokenizer.semids import PrecomputedSemanticIdTokenizer
 from modules.utils import parse_config
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from torch.utils.data import Subset
 from tqdm import tqdm
 from transformers import get_inverse_sqrt_schedule
 
@@ -45,6 +46,8 @@ def train(
     gradient_accumulate_every=1,
     save_model_every=1000000,
     eval_every=20000,
+    eval_subset_size=20000,
+    eval_subset_seed=2026,
     vae_codebook_sizes=[128, 64, 32],
     max_grad_norm=None,
     t5_d_model=128,
@@ -110,8 +113,27 @@ def train(
     train_dataloader = cycle(train_dataloader)
     eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False)
 
-    train_dataloader, eval_dataloader = accelerator.prepare(
-        train_dataloader, eval_dataloader
+    # Beam search across all 360k validation sessions takes 42 minutes a pass.
+    # Ten of those was 6.32 of the last 200k run's 7.06 hours — 89% of the wall
+    # clock — against 44 minutes for the 200k training steps themselves. The
+    # periodic evals exist to show the shape of a curve, and 20k sessions puts
+    # the standard error on a rate near 0.49 at 0.0035, an order below the
+    # differences those curves get read for. The final eval still sweeps the
+    # whole set, so the number that gets reported is measured as it always was.
+    if eval_subset_size is not None and eval_subset_size < len(eval_dataset):
+        subset_rows = np.random.default_rng(eval_subset_seed).choice(
+            len(eval_dataset), size=eval_subset_size, replace=False
+        )
+        quick_eval_dataloader = DataLoader(
+            Subset(eval_dataset, subset_rows.tolist()),
+            batch_size=batch_size,
+            shuffle=False,
+        )
+    else:
+        quick_eval_dataloader = eval_dataloader
+
+    train_dataloader, eval_dataloader, quick_eval_dataloader = accelerator.prepare(
+        train_dataloader, eval_dataloader, quick_eval_dataloader
     )
 
     tokenizer = PrecomputedSemanticIdTokenizer(codebooks)
@@ -205,9 +227,11 @@ def train(
                 eval_loss_sum = 0.0
                 eval_layer_loss_sum = torch.zeros(vae_n_layers)
                 eval_examples = 0
+                is_final_eval = iter + 1 == iterations
+                eval_loader = eval_dataloader if is_final_eval else quick_eval_dataloader
                 with tqdm(
-                    eval_dataloader,
-                    desc=f"Eval {iter + 1}",
+                    eval_loader,
+                    desc=f"Eval {iter + 1}" + ("" if is_final_eval else " [subset]"),
                     disable=not accelerator.is_main_process,
                 ) as pbar_eval:
                     for batch in pbar_eval:
