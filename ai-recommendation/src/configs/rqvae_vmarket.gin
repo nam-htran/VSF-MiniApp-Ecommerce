@@ -28,4 +28,4 @@ train.save_model_every=5000
 train.amp=False
 train.wandb_logging=True
 train.wandb_project="vmarket-rqvae"
-train.wandb_run_name_prefix="rotation-128x64x32-50k"
+train.wandb_run_name_prefix="rotation-128x64x32-balanced-50k"

@@ -1,6 +1,6 @@
 import data.processed
 
-train.iterations=100000
+train.iterations=200000
 train.batch_size=256
 train.learning_rate=0.0002
 train.warmup_steps=5000
@@ -30,4 +30,4 @@ train.amp=True
 train.mixed_precision_type="fp16"
 train.wandb_logging=True
 train.wandb_project="vmarket-transformer"
-train.wandb_run_name_prefix="cluster-sid-128x64x32-t5-384-lr2e4-100k"
+train.wandb_run_name_prefix="cluster-sid-128x64x32-balanced-t5-384-lr2e4-200k"
