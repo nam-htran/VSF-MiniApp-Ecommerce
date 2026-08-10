@@ -5,9 +5,10 @@ piping stdout stays clean, colour reaches an interactive terminal and nowhere
 else, and NO_COLOR or TERM=dumb turn it off. Redirected output degrades to
 plain ASCII on its own line, which is what a log file or CI wants.
 
-Deliberately no progress bars: the decoder checkpoint is a single torch.load
-with no way to report a fraction, and a bar on one step but not the other
-reads as the bar-less step being stuck.
+Deliberately no progress bars and no transient lines: the decoder checkpoint
+is a single torch.load with no way to report a fraction, and this process
+shares stderr with libraries that log whenever they please, so anything not
+yet terminated by a newline is liable to be written over.
 """
 
 import os
@@ -54,30 +55,25 @@ def _line(marker: str, colour: str, label: str, trailer: str = "") -> None:
 
 @contextmanager
 def loading(label: str, *, enabled: bool = True):
-    """Mark a slow startup step, then report how long it took.
+    """Time a slow startup step and report it once, after the fact.
 
-    On a terminal the pending line is overwritten by the result, so a finished
-    startup is one line per step. Everywhere else only the result is printed —
-    carriage returns in a log file are noise.
+    Nothing is written while the step runs. A pending line overwritten by the
+    result would be tidier, but it assumes this process owns the stream, and
+    it does not — the libraries being waited on log into the same stderr, and
+    the first one to do so lands on top of the half-written line. One line
+    written after the step is the only version that cannot be corrupted by
+    output this module does not control.
     """
     if not enabled:
         yield
         return
 
-    live = _colour()
-    if live:
-        _out().write(_paint("2", f"  · {label}"))
-        _out().flush()
     started = time.perf_counter()
     try:
         yield
     except BaseException:
-        if live:
-            _out().write("\r\x1b[K")
         _line(_glyph("✘", "x"), "31", label, "failed")
         raise
-    if live:
-        _out().write("\r\x1b[K")
     _line(_glyph("✔", "+"), "32", label, f"{time.perf_counter() - started:.1f}s")
 
 

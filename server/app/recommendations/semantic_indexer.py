@@ -16,6 +16,23 @@ EMBEDDING_DIM = 256
 WHITESPACE = re.compile(r"\s+")
 logger = logging.getLogger(__name__)
 
+
+class _DropPromptNotice(logging.Filter):
+    """Silence one line, not a module.
+
+    Building the encoder warns which default prompt the checkpoint carries.
+    It is a property of the checkpoint rather than a choice this code makes,
+    it says the same thing on every --reload, and it is long enough to wrap.
+    It arrives at WARNING, so a level change would have to take the whole
+    module's warnings with it — match the one message instead.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith("Default prompt name is set to")
+
+
+_PROMPT_NOTICE = _DropPromptNotice()
+
 _text_model = None
 _rqvae = None
 _torch = None
@@ -72,10 +89,7 @@ def load() -> None:
     rqvae.load_state_dict(state)
     rqvae.eval()
 
-    # Constructing the encoder logs which default prompt it picked. That is a
-    # property of the checkpoint, not a decision this code makes, and it lands
-    # in the middle of startup progress — drop the chatter, keep the warnings.
-    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+    logging.getLogger("sentence_transformers.base.model").addFilter(_PROMPT_NOTICE)
     text_model = SentenceTransformer(
         settings.semantic_embedding_model,
         revision=settings.semantic_embedding_revision,
