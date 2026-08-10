@@ -15,12 +15,10 @@ const bearer = (): Record<string, string> | undefined => {
 };
 
 /**
- * `source` says which route answered — "semantic-id" when the products come
- * from what the shopper has been looking at, "popular" when there was no
- * history to go on. The strip labels itself from it rather than claiming
- * personalisation it did not do.
+ * `source` says whether the Transformer, SID fallback, or best-seller
+ * fallback answered. The strip does not call popularity personalisation.
  */
-export type RecommendationSource = 'semantic-id' | 'popular';
+export type RecommendationSource = 'transformer' | 'semantic-id' | 'popular';
 
 export type Recommendations = {
   items: ApiProductListItem[];
@@ -31,6 +29,12 @@ export const listRecommendations = (limit = 10) =>
   apiRequest<Recommendations>(`/recommendations?limit=${limit}`, {
     headers: bearer(),
   });
+
+/** Related products need no user session: the current product supplies the SID. */
+export const listRelatedProducts = (productId: string, limit = 10) =>
+  apiRequest<{ items: ApiProductListItem[] }>(
+    `/products/${productId}/related?limit=${limit}`
+  );
 
 /**
  * Tell the server this product was opened. Fire-and-forget: a lost view

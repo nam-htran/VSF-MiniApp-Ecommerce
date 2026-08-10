@@ -12,6 +12,7 @@ import { listItemToCard, type ProductCardData } from '@/lib/product-card';
  *  shopper's own browsing get the personal title; the best-seller fallback
  *  says what it is, because a popularity list is not personalisation. */
 const TITLES: Record<RecommendationSource, string> = {
+  transformer: 'Dành cho bạn',
   'semantic-id': 'Dành cho bạn',
   popular: 'Đang bán chạy',
 };

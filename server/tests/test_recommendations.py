@@ -87,6 +87,14 @@ async def recommendations(base_url: str, token: str, limit: int = 10) -> dict:
     return response.json()
 
 
+async def related(base_url: str, product_id: str, limit: int = 10) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{base_url}/products/{product_id}/related?limit={limit}"
+        )
+    return response.json()
+
+
 async def view(base_url: str, token: str, product_id: str) -> httpx.Response:
     async with httpx.AsyncClient() as client:
         return await client.post(
@@ -147,6 +155,48 @@ async def test_a_closer_semantic_id_ranks_higher(base_url):
     body = await recommendations(base_url, buyer)
 
     assert [item["id"] for item in body["items"]][:2] == [near, far]
+
+
+async def test_transformer_beam_drives_home_recommendations(base_url, monkeypatch):
+    from app.recommendations.predictor import Prediction
+
+    seen, exact, wider = await seller_with_products(
+        base_url, ["Đã xem", "Dự đoán chính xác", "Cùng nhánh dự đoán"]
+    )
+    await set_semantic_id(seen, (9, 9, 9))
+    await set_semantic_id(exact, (7, 6, 5))
+    await set_semantic_id(wider, (7, 6, 4))
+    buyer = await token_for(base_url, USER_B_ID)
+
+    async def predict(history):
+        assert history == [(9, 9, 9), (9, 9, 9)]
+        return [Prediction((7, 6, 5), -0.1)]
+
+    monkeypatch.setattr("app.recommendations.predictor.predict", predict)
+    await view(base_url, buyer, seen)
+    await view(base_url, buyer, seen)
+    body = await recommendations(base_url, buyer)
+
+    assert body["source"] == "transformer"
+    assert [item["id"] for item in body["items"]][:2] == [exact, wider]
+
+
+async def test_product_detail_related_backs_off_by_sid_level(base_url):
+    current, exact, level_two, level_one = await seller_with_products(
+        base_url, ["Hiện tại", "Cùng cụm", "Cùng nhánh", "Cùng ngành"]
+    )
+    await set_semantic_id(current, (9, 8, 7))
+    await set_semantic_id(exact, (9, 8, 7))
+    await set_semantic_id(level_two, (9, 8, 6))
+    await set_semantic_id(level_one, (9, 1, 1))
+
+    body = await related(base_url, current, limit=3)
+
+    assert [item["id"] for item in body["items"]] == [
+        exact,
+        level_two,
+        level_one,
+    ]
 
 
 async def test_viewing_a_product_that_does_not_exist_is_refused(base_url):

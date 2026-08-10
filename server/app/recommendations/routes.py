@@ -20,6 +20,10 @@ router = APIRouter(tags=["Recommendations"])
 Session = Annotated[AsyncSession, Depends(get_session)]
 
 
+def _items(rows: list[dict], live: list, options: dict) -> list[dict]:
+    return [_list_item(row, live, options) for row in rows]
+
+
 @router.post("/products/{product_id}/view", status_code=status.HTTP_204_NO_CONTENT)
 async def record_view(
     product_id: str, session: Session, user: CurrentUser
@@ -60,6 +64,25 @@ async def list_recommendations(
         session, [row["product"].id for row in rows]
     )
     return {
-        "items": [_list_item(row, live, options) for row in rows],
+        "items": _items(rows, live, options),
         "source": source,
     }
+
+
+@router.get("/products/{product_id}/related")
+async def list_related_products(
+    product_id: str,
+    session: Session,
+    limit: Annotated[int, Query(ge=1, le=20)] = 10,
+) -> dict:
+    product = await products.find_by_id(session, product_id)
+    if product is None or product.status == "ARCHIVED":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
+        )
+    rows = await recommendations.related(session, product, limit)
+    live = await vouchers.list_live(session)
+    options = await products.variants_for(
+        session, [row["product"].id for row in rows]
+    )
+    return {"items": _items(rows, live, options)}

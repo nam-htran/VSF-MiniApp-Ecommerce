@@ -11,12 +11,14 @@ import {
 } from '@v-miniapp/ui-react';
 import {
   getProduct,
-  listProducts,
   type ApiProductDetail,
   type ApiVariant,
 } from '@/api/products';
 import { listAddresses } from '@/api/addresses';
-import { recordProductView } from '@/api/recommendations';
+import {
+  listRelatedProducts,
+  recordProductView,
+} from '@/api/recommendations';
 import { ProductStrip } from '@/components/product-strip';
 import { ShopPreview } from '@/components/shop-preview';
 import { ReviewsSection, Stars } from '@/components/reviews-section';
@@ -146,22 +148,15 @@ const Detail = ({
   // answered. The buy bar stays disabled until then.
   const [chosen, setChosen] = useState<ApiVariant | null>(null);
 
-  // "More from this shop" moved into ShopPreview, which fetches its own —
-  // only the cross-shop suggestions are the page's business now.
+  // "More from this shop" lives in ShopPreview. This strip comes from the
+  // current product's Semantic-ID neighbourhood across the marketplace.
   const [similar, setSimilar] = useState<ProductCardData[]>([]);
 
   useEffect(() => {
-    listProducts(16)
-      .then(page =>
-        setSimilar(
-          page.items
-            .filter(p => p.id !== view.id && p.shopId !== view.shopId)
-            .slice(0, 10)
-            .map(listItemToCard)
-        )
-      )
+    listRelatedProducts(view.id)
+      .then(({ items }) => setSimilar(items.map(listItemToCard)))
       .catch(() => setSimilar([]));
-  }, [view.id, view.shopId]);
+  }, [view.id]);
 
   return (
     <div

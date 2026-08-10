@@ -11,11 +11,8 @@ near each other in the embedding space the model learned. So "more like what
 you have been looking at" is a prefix match, and how much of the prefix
 matches is how close the match is.
 
-This is deliberately not the Transformer. The Transformer *generates* the
-next Semantic ID rather than looking one up, which is a stronger claim and
-needs a trained checkpoint. Both answer the same question and both return
-products, so when the checkpoint exists it slots in behind `recommend`
-without the routes or the client noticing.
+When configured, the Transformer generates likely next Semantic IDs. The
+prefix matcher remains the fallback and also powers related products.
 """
 
 import uuid
@@ -28,6 +25,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 from app.products import store as products
 from app.products.store import Product
+from app.recommendations import predictor
 
 # How much history to reason from. Long enough to see a theme, short enough
 # that yesterday's browsing does not drown what they are looking at now.
@@ -60,27 +58,17 @@ async def record_view(session: AsyncSession, user_id: str, product_id: str) -> N
     await session.commit()
 
 
-async def recent_views(
+async def recent_view_events(
     session: AsyncSession, user_id: str, limit: int = HISTORY_DEPTH
 ) -> list[str]:
-    """The last products this shopper opened, newest first, no repeats.
-
-    Deduplicated here rather than in SQL: the rows are few and keeping the
-    "newest occurrence wins" rule in Python is plainer than a window
-    function that says the same thing.
-    """
-    result = await session.execute(
+    """Recent views oldest first, with repeats preserved for the model."""
+    result = await session.scalars(
         select(ProductView.product_id)
         .where(ProductView.user_id == user_id)
         .order_by(ProductView.viewed_at.desc())
-        .limit(limit * 4)
+        .limit(limit)
     )
-    seen: dict[str, None] = {}
-    for (product_id,) in result.all():
-        seen.setdefault(product_id, None)
-        if len(seen) >= limit:
-            break
-    return list(seen)
+    return list(reversed(result.all()))
 
 
 async def _semantic_ids(
@@ -89,11 +77,18 @@ async def _semantic_ids(
     if not product_ids:
         return []
     result = await session.execute(
-        select(Product.sid_0, Product.sid_1, Product.sid_2).where(
-            Product.id.in_(product_ids), Product.sid_0.is_not(None)
+        select(Product.id, Product.sid_0, Product.sid_1, Product.sid_2).where(
+            Product.id.in_(product_ids),
+            Product.sid_0.is_not(None),
+            Product.sid_1.is_not(None),
+            Product.sid_2.is_not(None),
         )
     )
-    return [(a, b, c) for a, b, c in result.all()]
+    by_id = {
+        product_id: (a, b, c)
+        for product_id, a, b, c in result.all()
+    }
+    return [by_id[product_id] for product_id in product_ids if product_id in by_id]
 
 
 def _match_depth(candidate: tuple, seeds: list[tuple[int, int, int]]) -> int:
@@ -114,6 +109,97 @@ def _match_depth(candidate: tuple, seeds: list[tuple[int, int, int]]) -> int:
     return best
 
 
+def _business_order(row: dict) -> tuple:
+    return (-row["sold"], -row["ratingAverage"], row["product"].id)
+
+
+async def _predicted_rows(
+    session: AsyncSession,
+    predictions: list[predictor.Prediction],
+    exclude: list[str],
+    limit: int,
+) -> list[dict]:
+    result = await session.execute(
+        select(Product.id, Product.sid_0, Product.sid_1, Product.sid_2).where(
+            Product.status == "ACTIVE",
+            Product.id.not_in(exclude),
+            Product.sid_0.in_(
+                {prediction.semantic_id[0] for prediction in predictions}
+            ),
+        )
+    )
+    semantic_ids = {
+        product_id: (a, b, c)
+        for product_id, a, b, c in result.all()
+    }
+    rows = await products.list_by_ids(session, list(semantic_ids))
+    by_id = {row["product"].id: row for row in rows}
+
+    pools = []
+    for prediction in predictions:
+        pool = [
+            by_id[product_id]
+            for product_id, semantic_id in semantic_ids.items()
+            if semantic_id == prediction.semantic_id and product_id in by_id
+        ]
+        pools.append(sorted(pool, key=_business_order))
+
+    picked = []
+    for pool in pools:
+        picked += pool[: limit - len(picked)]
+        if len(picked) == limit:
+            break
+    picked_ids = {row["product"].id for row in picked}
+
+    # The demo catalogue is thin. Only after every exact cluster is short do
+    # we widen to a two-code prefix, still respecting beam order.
+    if len(picked) < limit:
+        level_two = []
+        for beam, prediction in enumerate(predictions):
+            for product_id, semantic_id in semantic_ids.items():
+                if product_id in picked_ids or product_id not in by_id:
+                    continue
+                if semantic_id[:2] == prediction.semantic_id[:2]:
+                    level_two.append((beam, by_id[product_id]))
+                    picked_ids.add(product_id)
+        level_two.sort(key=lambda item: (item[0], _business_order(item[1])))
+        picked += [row for _, row in level_two[: limit - len(picked)]]
+    return picked
+
+
+async def _history_rows(
+    session: AsyncSession,
+    seeds: list[tuple[int, int, int]],
+    exclude: list[str],
+    limit: int,
+    min_depth: int = 1,
+) -> list[dict]:
+    if not seeds or limit <= 0:
+        return []
+    result = await session.execute(
+        select(Product.id, Product.sid_0, Product.sid_1, Product.sid_2).where(
+            Product.status == "ACTIVE",
+            Product.id.not_in(exclude),
+            or_(*(Product.sid_0 == seed[0] for seed in seeds)),
+        )
+    )
+    depths = {
+        product_id: _match_depth((a, b, c), seeds)
+        for product_id, a, b, c in result.all()
+    }
+    rows = await products.list_by_ids(
+        session,
+        [product_id for product_id, depth in depths.items() if depth >= min_depth],
+    )
+    return sorted(
+        rows,
+        key=lambda row: (
+            -depths[row["product"].id],
+            _business_order(row),
+        ),
+    )[:limit]
+
+
 async def recommend(
     session: AsyncSession, user_id: str, limit: int
 ) -> tuple[list[dict], str]:
@@ -123,36 +209,45 @@ async def recommend(
     a strip that says why it is there is honest about a cold start instead
     of dressing up the best-seller list as personalisation.
     """
-    history = await recent_views(session, user_id)
-    seeds = await _semantic_ids(session, history)
+    events = await recent_view_events(session, user_id)
+    history = list(dict.fromkeys(reversed(events)))
+    model_history = await _semantic_ids(session, events)
+    seeds = list(dict.fromkeys(reversed(model_history)))
     if not seeds:
         return await products.list_popular(session, limit), "popular"
 
-    # One index-backed read: everything sharing a coarse code with anything
-    # in the history. Narrowing further in SQL would cost a query per seed
-    # for a filter that _match_depth applies anyway.
-    result = await session.execute(
-        select(Product.id, Product.sid_0, Product.sid_1, Product.sid_2).where(
-            Product.status == "ACTIVE",
-            Product.id.not_in(history),
-            or_(*(Product.sid_0 == seed[0] for seed in seeds)),
-        )
+    predictions = await predictor.predict(model_history)
+    rows = (
+        await _predicted_rows(session, predictions, history, limit)
+        if predictions
+        else []
     )
-    ranked = sorted(
-        (
-            (_match_depth((a, b, c), seeds), product_id)
-            for product_id, a, b, c in result.all()
-        ),
-        key=lambda scored: (-scored[0], scored[1]),
-    )
-    picked = [product_id for depth, product_id in ranked if depth > 0][:limit]
-    if not picked:
-        return await products.list_popular(session, limit), "popular"
+    source = "transformer" if rows else None
 
-    rows = await products.list_by_ids(session, picked)
-    # A thin catalogue can leave the strip half empty; best sellers top it
-    # up rather than showing three cards next to seven gaps.
+    if len(rows) < limit:
+        exclude = history + [row["product"].id for row in rows]
+        fallback = await _history_rows(
+            session, seeds, exclude, limit - len(rows), min_depth=2
+        )
+        rows += fallback
+        if fallback and source is None:
+            source = "semantic-id"
     if len(rows) < limit:
         already = [row["product"].id for row in rows] + history
         rows += await products.list_popular(session, limit - len(rows), already)
-    return rows, "semantic-id"
+    return rows, source or "popular"
+
+
+async def related(
+    session: AsyncSession, product: Product, limit: int
+) -> list[dict]:
+    if any(
+        code is None for code in (product.sid_0, product.sid_1, product.sid_2)
+    ):
+        return await products.list_popular(session, limit, [product.id])
+    seed = (product.sid_0, product.sid_1, product.sid_2)
+    rows = await _history_rows(session, [seed], [product.id], limit)
+    if len(rows) < limit:
+        exclude = [product.id] + [row["product"].id for row in rows]
+        rows += await products.list_popular(session, limit - len(rows), exclude)
+    return rows

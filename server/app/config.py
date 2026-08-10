@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # base URL to point at a self-hosted Nominatim later if needed.
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
 
+    recommendation_checkpoint_path: str = ""
+    recommendation_semantic_ids_path: str = ""
+
     # Payment IPN: the mock (standing in for V-App's payment gateway) posts
     # a server-to-server notification here when an order is paid. The shared
     # secret signs it (HMAC); the flag lets verification be turned off while
