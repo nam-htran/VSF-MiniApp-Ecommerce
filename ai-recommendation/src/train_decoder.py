@@ -7,6 +7,7 @@ import torch
 import wandb
 
 from accelerate import Accelerator
+from accelerate.utils import set_seed
 from datetime import datetime
 from datetime import timezone
 from data.processed import RecDataset
@@ -20,6 +21,7 @@ from modules.tokenizer.semids import PrecomputedSemanticIdTokenizer
 from modules.utils import parse_config
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from torch.utils.data import random_split
 from tqdm import tqdm
 from transformers import get_inverse_sqrt_schedule
 
@@ -45,6 +47,8 @@ def train(
     gradient_accumulate_every=1,
     save_model_every=1000000,
     eval_every=20000,
+    eval_subset_size=20000,
+    random_seed=2026,
     vae_codebook_sizes=[128, 64, 32],
     max_grad_norm=None,
     t5_d_model=128,
@@ -56,6 +60,7 @@ def train(
     top_k_eval_list=[1, 5, 10],
 ):
     vae_n_layers = len(vae_codebook_sizes)
+    set_seed(random_seed)
     if wandb_logging:
         params = locals()
 
@@ -110,8 +115,21 @@ def train(
     train_dataloader = cycle(train_dataloader)
     eval_dataloader = DataLoader(eval_dataset, batch_size=batch_size, shuffle=False)
 
-    train_dataloader, eval_dataloader = accelerator.prepare(
-        train_dataloader, eval_dataloader
+    quick_eval_dataset = eval_dataset
+    if eval_subset_size is not None and eval_subset_size < len(eval_dataset):
+        quick_eval_dataset, _ = random_split(
+            eval_dataset,
+            [eval_subset_size, len(eval_dataset) - eval_subset_size],
+            generator=torch.Generator().manual_seed(random_seed),
+        )
+    quick_eval_dataloader = DataLoader(
+        quick_eval_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+    )
+
+    train_dataloader, eval_dataloader, quick_eval_dataloader = accelerator.prepare(
+        train_dataloader, eval_dataloader, quick_eval_dataloader
     )
 
     tokenizer = PrecomputedSemanticIdTokenizer(codebooks)
@@ -202,46 +220,58 @@ def train(
 
             if (iter + 1) % eval_every == 0 or iter + 1 == iterations:
                 model.eval()
-                eval_loss_sum = 0.0
-                eval_layer_loss_sum = torch.zeros(vae_n_layers)
-                eval_examples = 0
+                is_final_eval = iter + 1 == iterations
+                eval_loader = (
+                    eval_dataloader if is_final_eval else quick_eval_dataloader
+                )
+                if is_final_eval:
+                    eval_loss_sum = 0.0
+                    eval_layer_loss_sum = torch.zeros(vae_n_layers)
+                    eval_examples = 0
                 with tqdm(
-                    eval_dataloader,
-                    desc=f"Eval {iter + 1}",
+                    eval_loader,
+                    desc=(
+                        f"Eval {iter + 1}"
+                        + (" [full]" if is_final_eval else " [subset]")
+                    ),
                     disable=not accelerator.is_main_process,
                 ) as pbar_eval:
-                    for batch in pbar_eval:
-                        data = batch_to(batch, device)
-                        tokenized_data = tokenizer(data)
+                    with torch.inference_mode(), accelerator.autocast():
+                        for batch in pbar_eval:
+                            data = batch_to(batch, device)
+                            tokenized_data = tokenizer(data)
+                            if is_final_eval:
+                                eval_output = model(tokenized_data)
+                                eval_batch_size = tokenized_data.sem_ids_fut.shape[0]
+                                eval_loss_sum += (
+                                    eval_output.loss.item() * eval_batch_size
+                                )
+                                eval_layer_loss_sum += (
+                                    eval_output.loss_d.cpu() * eval_batch_size
+                                )
+                                eval_examples += eval_batch_size
 
-                        with torch.no_grad():
-                            eval_output = model(tokenized_data)
                             generated = model.generate_next_sem_id(tokenized_data)
 
-                        eval_batch_size = tokenized_data.sem_ids_fut.shape[0]
-                        eval_loss_sum += eval_output.loss.item() * eval_batch_size
-                        eval_layer_loss_sum += (
-                            eval_output.loss_d.cpu() * eval_batch_size
-                        )
-                        eval_examples += eval_batch_size
+                            actual = tokenized_data.sem_ids_fut[:, :vae_n_layers]
+                            metrics_accumulator.accumulate(
+                                actual=actual, top_k=generated.sem_ids
+                            )
 
-                        actual = tokenized_data.sem_ids_fut[:, :vae_n_layers]
-                        metrics_accumulator.accumulate(
-                            actual=actual, top_k=generated.sem_ids
+                if is_final_eval:
+                    step_metrics["eval_loss"] = eval_loss_sum / eval_examples
+                    for layer in range(vae_n_layers):
+                        step_metrics[f"eval_loss_sid_{layer}"] = (
+                            eval_layer_loss_sum[layer].item() / eval_examples
                         )
-
-                step_metrics["eval_loss"] = eval_loss_sum / eval_examples
-                for layer in range(vae_n_layers):
-                    step_metrics[f"eval_loss_sid_{layer}"] = (
-                        eval_layer_loss_sum[layer].item() / eval_examples
-                    )
 
                 eval_metrics = metrics_accumulator.reduce()
                 print(eval_metrics)
                 step_metrics.update(eval_metrics)
+                step_metrics["eval_is_full"] = int(is_final_eval)
                 metrics_accumulator.reset()
 
-                if eval_metrics["ndcg"] > best_ndcg:
+                if not is_final_eval and eval_metrics["ndcg"] > best_ndcg:
                     best_ndcg = eval_metrics["ndcg"]
                     is_best_checkpoint = True
                 step_metrics["best_ndcg"] = best_ndcg
