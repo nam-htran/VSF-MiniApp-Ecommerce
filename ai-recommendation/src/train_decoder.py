@@ -224,10 +224,9 @@ def train(
                 eval_loader = (
                     eval_dataloader if is_final_eval else quick_eval_dataloader
                 )
-                if is_final_eval:
-                    eval_loss_sum = 0.0
-                    eval_layer_loss_sum = torch.zeros(vae_n_layers)
-                    eval_examples = 0
+                eval_loss_sum = 0.0
+                eval_layer_loss_sum = torch.zeros(vae_n_layers)
+                eval_examples = 0
                 with tqdm(
                     eval_loader,
                     desc=(
@@ -240,16 +239,13 @@ def train(
                         for batch in pbar_eval:
                             data = batch_to(batch, device)
                             tokenized_data = tokenizer(data)
-                            if is_final_eval:
-                                eval_output = model(tokenized_data)
-                                eval_batch_size = tokenized_data.sem_ids_fut.shape[0]
-                                eval_loss_sum += (
-                                    eval_output.loss.item() * eval_batch_size
-                                )
-                                eval_layer_loss_sum += (
-                                    eval_output.loss_d.cpu() * eval_batch_size
-                                )
-                                eval_examples += eval_batch_size
+                            eval_output = model(tokenized_data)
+                            eval_batch_size = tokenized_data.sem_ids_fut.shape[0]
+                            eval_loss_sum += eval_output.loss.item() * eval_batch_size
+                            eval_layer_loss_sum += (
+                                eval_output.loss_d.cpu() * eval_batch_size
+                            )
+                            eval_examples += eval_batch_size
 
                             generated = model.generate_next_sem_id(tokenized_data)
 
@@ -258,12 +254,11 @@ def train(
                                 actual=actual, top_k=generated.sem_ids
                             )
 
-                if is_final_eval:
-                    step_metrics["eval_loss"] = eval_loss_sum / eval_examples
-                    for layer in range(vae_n_layers):
-                        step_metrics[f"eval_loss_sid_{layer}"] = (
-                            eval_layer_loss_sum[layer].item() / eval_examples
-                        )
+                step_metrics["eval_loss"] = eval_loss_sum / eval_examples
+                for layer in range(vae_n_layers):
+                    step_metrics[f"eval_loss_sid_{layer}"] = (
+                        eval_layer_loss_sum[layer].item() / eval_examples
+                    )
 
                 eval_metrics = metrics_accumulator.reduce()
                 print(eval_metrics)
