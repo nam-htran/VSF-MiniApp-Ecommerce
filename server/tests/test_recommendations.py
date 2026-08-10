@@ -12,8 +12,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
+from app.products import store as products
+from app.recommendations.semantic_indexer import build_product_text
 from tests.conftest import USER_A_ID, USER_B_ID, _throwaway_engine
 
 pytestmark = pytest.mark.skipif(
@@ -79,6 +82,21 @@ async def set_semantic_id(product_id: str, sid: tuple[int, int, int]) -> None:
     await engine.dispose()
 
 
+async def semantic_id(product_id: str) -> tuple[int | None, int | None, int | None]:
+    engine = _throwaway_engine()
+    async with engine.connect() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT sid_0, sid_1, sid_2 FROM products WHERE id = :id"
+                ),
+                {"id": product_id},
+            )
+        ).one()
+    await engine.dispose()
+    return tuple(row)
+
+
 async def recommendations(base_url: str, token: str, limit: int = 10) -> dict:
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -100,6 +118,83 @@ async def view(base_url: str, token: str, product_id: str) -> httpx.Response:
         return await client.post(
             f"{base_url}/products/{product_id}/view", headers=auth(token)
         )
+
+
+def test_semantic_text_matches_the_training_contract():
+    assert build_product_text("  Áo\tlen  ", "Mềm\n và ấm") == (
+        "title: Áo len | description: Mềm và ấm"
+    )
+
+
+async def test_only_semantic_edits_clear_an_existing_sid(base_url):
+    product_id = (await seller_with_products(base_url, ["Bàn phím"]))[0]
+    await set_semantic_id(product_id, (7, 6, 5))
+    seller = await token_for(base_url, USER_A_ID)
+
+    async with httpx.AsyncClient() as client:
+        price_edit = await client.patch(
+            f"{base_url}/products/{product_id}",
+            headers=auth(seller),
+            json={"price": 120000},
+        )
+        assert price_edit.status_code == 200
+        assert await semantic_id(product_id) == (7, 6, 5)
+
+        text_edit = await client.patch(
+            f"{base_url}/products/{product_id}",
+            headers=auth(seller),
+            json={"description": "Bàn phím cơ không dây"},
+        )
+        assert text_edit.status_code == 200
+        assert await semantic_id(product_id) == (None, None, None)
+
+
+async def test_stale_semantic_result_cannot_overwrite_new_text(base_url):
+    product_id = (await seller_with_products(base_url, ["Tai nghe"]))[0]
+    engine = _throwaway_engine()
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with sessions() as session:
+        old = (await products.pending_semantic_products(session, limit=1))[0]
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE products SET description = :text WHERE id = :id"),
+            {"id": product_id, "text": "Nội dung seller vừa sửa"},
+        )
+
+    async with sessions() as session:
+        written = await products.write_semantic_ids(
+            session, [(old, (7, 6, 5))]
+        )
+
+    assert written == 0
+    assert await semantic_id(product_id) == (None, None, None)
+    await engine.dispose()
+
+
+async def test_beam_catalogue_contains_only_complete_active_sids(base_url):
+    active, hidden, _pending = await seller_with_products(
+        base_url, ["Active", "Hidden", "Pending"]
+    )
+    await set_semantic_id(active, (7, 6, 5))
+    await set_semantic_id(hidden, (12, 1, 4))
+    seller = await token_for(base_url, USER_A_ID)
+    async with httpx.AsyncClient() as client:
+        response = await client.patch(
+            f"{base_url}/products/{hidden}",
+            headers=auth(seller),
+            json={"status": "HIDDEN"},
+        )
+    assert response.status_code == 200
+
+    engine = _throwaway_engine()
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessions() as session:
+        catalogue = await products.active_semantic_ids(session)
+    await engine.dispose()
+
+    assert set(catalogue) == {(7, 6, 5)}
 
 
 async def test_recommendations_need_a_session(base_url):

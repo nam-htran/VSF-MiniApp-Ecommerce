@@ -128,6 +128,10 @@ def base_url(require_vapp):
     from app.config import settings as app_settings
 
     app_settings.scheduler_enabled = False
+    # Model loading is covered separately; HTTP tests should neither
+    # load the Transformer/download Jina nor race background SID writes.
+    app_settings.recommendation_checkpoint_path = ""
+    app_settings.semantic_rqvae_checkpoint_path = ""
     # One known operator, so the reconciliation screens have someone who
     # can open them.
     app_settings.admin_vapp_user_ids = USER_ADMIN_ID

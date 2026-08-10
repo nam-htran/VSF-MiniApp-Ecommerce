@@ -3,9 +3,7 @@
 import asyncio
 import logging
 import math
-import sys
 from dataclasses import dataclass
-from pathlib import Path
 
 from app.config import settings
 
@@ -24,38 +22,35 @@ _torch = None
 _lock = asyncio.Semaphore(1)
 
 
-def load() -> None:
-    """Load the optional model. Configured paths are treated as required."""
+async def _active_catalogue_sids() -> list[tuple[int, int, int]]:
+    from app.db import SessionFactory
+    from app.products import store as products
+
+    async with SessionFactory() as session:
+        return await products.active_semantic_ids(session)
+
+
+def configured() -> bool:
+    return bool(settings.recommendation_checkpoint_path)
+
+
+async def load() -> None:
+    """Load the optional model with a mask from the live catalogue."""
     global _model, _torch
-    if not settings.recommendation_checkpoint_path:
+    if not configured():
         return
-    if not settings.recommendation_semantic_ids_path:
-        raise RuntimeError(
-            "RECOMMENDATION_SEMANTIC_IDS_PATH is required with a checkpoint"
-        )
+    if ready():
+        await refresh_catalogue()
+        return
 
-    ai_source = Path(__file__).resolve().parents[3] / "ai-recommendation" / "src"
-    sys.path.insert(0, str(ai_source))
-
-    import numpy as np
-    import pyarrow.parquet as pq
     import torch
     from modules.model import EncoderDecoderRetrievalModel
 
-    table = pq.read_table(
-        settings.recommendation_semantic_ids_path,
-        columns=["sid_0", "sid_1", "sid_2"],
-    )
-    codebooks = torch.from_numpy(
-        np.column_stack(
-            [
-                table[column].combine_chunks().to_numpy(zero_copy_only=False)
-                for column in table.column_names
-            ]
-        )
-    ).long()
+    catalogue_sids = torch.tensor(
+        await _active_catalogue_sids(), dtype=torch.long
+    ).reshape(-1, len(CODEBOOK_SIZES))
     model = EncoderDecoderRetrievalModel(
-        codebooks=codebooks,
+        codebooks=catalogue_sids,
         codebook_sizes=CODEBOOK_SIZES,
         t5_d_model=384,
         t5_num_heads=6,
@@ -74,6 +69,17 @@ def load() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     _model = model.to(device).eval()
     _torch = torch
+
+
+async def refresh_catalogue() -> None:
+    """Atomically rebuild beam constraints from ACTIVE products in Postgres."""
+    if not ready():
+        return
+    async with _lock:
+        catalogue_sids = _torch.tensor(
+            await _active_catalogue_sids(), dtype=_torch.long
+        ).reshape(-1, len(CODEBOOK_SIZES))
+        _model.set_catalogue_sids(catalogue_sids)
 
 
 def _plain_key(key: str) -> str:

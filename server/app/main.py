@@ -9,7 +9,7 @@ from app.config import settings
 from app.db import engine
 from app.json_response import SafeJSONResponse
 from app import scheduler
-from app.recommendations import predictor
+from app.recommendations import predictor, semantic_indexer
 from app.addresses.routes import router as addresses_router
 from app.geo.routes import router as geo_router
 from app.orders.routes import router as orders_router
@@ -35,10 +35,13 @@ from app.payments import store as _payment_exceptions  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    predictor.load()
+    await predictor.load()
+    semantic_indexer.load()
+    semantic_indexer.start()
     # Held stock and lost payment webhooks — see app/scheduler.py.
     jobs = scheduler.start()
     yield
+    await semantic_indexer.stop()
     await scheduler.stop(jobs)
     # Hand the Postgres connections back instead of having them cut off.
     await engine.dispose()
@@ -72,6 +75,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "vappBaseUrl": settings.vapp_base_url,
             "recommendationModel": "ready" if predictor.ready() else "disabled",
+            "semanticIndexer": "ready" if semantic_indexer.ready() else "disabled",
         }
 
     app.include_router(auth_router)

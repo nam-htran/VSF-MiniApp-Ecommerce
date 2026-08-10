@@ -18,6 +18,7 @@ from app.db import get_session
 from app.products import store as products
 from app.products.moderation import banned_terms_in
 from app.products.store import Product
+from app.recommendations import predictor, semantic_indexer
 from app.reviews import store as reviews
 from app.shops import store as shops
 from app.vouchers import store as vouchers
@@ -327,6 +328,7 @@ async def create_product(
                 for v in body.variants
             ],
         )
+    semantic_indexer.wake()
     return _with_variants(_serialise(product), saved)
 
 
@@ -348,6 +350,14 @@ async def update_product(
         )
 
     _refuse_banned(body.name, body.description)
+    semantic_changed = (
+        (body.name is not None and body.name != product.name)
+        or (
+            body.description is not None
+            and body.description != product.description
+        )
+    )
+    status_changed = body.status is not None and body.status != product.status
 
     try:
         updated = await products.update_product(
@@ -386,6 +396,10 @@ async def update_product(
     current = (await products.variants_for(session, [updated.id])).get(
         updated.id, []
     )
+    if semantic_changed:
+        semantic_indexer.wake()
+    if semantic_changed or status_changed:
+        await predictor.refresh_catalogue()
     return _with_variants(_serialise(updated), current)
 
 
@@ -412,6 +426,7 @@ async def delete_product(
         )
 
     outcome = await products.delete_product(session, product)
+    await predictor.refresh_catalogue()
     return {"outcome": outcome}
 
 

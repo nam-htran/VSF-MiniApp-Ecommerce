@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
@@ -14,6 +15,7 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    update,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,6 +27,13 @@ from app.db import Base
 #   ARCHIVED — deleted by the seller, but ordered at least once, so the row
 #              survives to keep past order lines valid; gone from every list
 ProductStatus = Literal["ACTIVE", "HIDDEN", "ARCHIVED"]
+
+
+@dataclass(frozen=True)
+class PendingSemanticProduct:
+    id: str
+    name: str
+    description: str
 
 
 class Product(Base):
@@ -76,9 +85,9 @@ class Product(Base):
     # HIDDEN keeps a product out of the storefront without deleting it —
     # past orders still reference it.
     status: Mapped[str] = mapped_column(default="ACTIVE")
-    # The product's Semantic ID from the RQ-VAE, coarse to fine. Written by
-    # the seed from semantic_ids.parquet, never by a seller — a hand-listed
-    # product has none and simply drops out of SID recall.
+    # The product's Semantic ID from the RQ-VAE, coarse to fine. Seeded from
+    # semantic_ids.parquet or filled by the background catalogue indexer;
+    # never accepted from a seller.
     sid_0: Mapped[int | None] = mapped_column(default=None)
     sid_1: Mapped[int | None] = mapped_column(default=None)
     sid_2: Mapped[int | None] = mapped_column(default=None)
@@ -460,6 +469,11 @@ async def update_product(
     category: str | None = None,
     sku: str | None = None,
 ) -> Product:
+    semantic_changed = (
+        (name is not None and name != product.name)
+        or (description is not None and description != product.description)
+    )
+
     # Empty string means "clear it"; None means "leave it alone", so a
     # PATCH that doesn't mention the SKU cannot wipe it.
     if sku is not None:
@@ -482,10 +496,65 @@ async def update_product(
         product.image_url = image_url
     if status is not None:
         product.status = status
+    if semantic_changed:
+        product.sid_0 = None
+        product.sid_1 = None
+        product.sid_2 = None
 
     await session.commit()
     await session.refresh(product)
     return product
+
+
+async def pending_semantic_products(
+    session: AsyncSession, limit: int
+) -> list[PendingSemanticProduct]:
+    rows = await session.execute(
+        select(Product.id, Product.name, Product.description)
+        .where(Product.sid_0.is_(None), Product.status != "ARCHIVED")
+        .order_by(Product.id)
+        .limit(limit)
+    )
+    return [PendingSemanticProduct(*row) for row in rows.all()]
+
+
+async def active_semantic_ids(
+    session: AsyncSession,
+) -> list[tuple[int, int, int]]:
+    rows = await session.execute(
+        select(Product.sid_0, Product.sid_1, Product.sid_2)
+        .distinct()
+        .where(
+            Product.status == "ACTIVE",
+            Product.sid_0.is_not(None),
+            Product.sid_1.is_not(None),
+            Product.sid_2.is_not(None),
+        )
+    )
+    return [tuple(row) for row in rows.all()]
+
+
+async def write_semantic_ids(
+    session: AsyncSession,
+    indexed: list[tuple[PendingSemanticProduct, tuple[int, int, int]]],
+) -> int:
+    """Write a batch unless its product text changed during inference."""
+    written = 0
+    for snapshot, sid in indexed:
+        result = await session.execute(
+            update(Product)
+            .where(
+                Product.id == snapshot.id,
+                Product.name == snapshot.name,
+                Product.description == snapshot.description,
+                Product.status != "ARCHIVED",
+                Product.sid_0.is_(None),
+            )
+            .values(sid_0=sid[0], sid_1=sid[1], sid_2=sid[2])
+        )
+        written += result.rowcount
+    await session.commit()
+    return written
 
 
 async def delete_product(session: AsyncSession, product: Product) -> str:

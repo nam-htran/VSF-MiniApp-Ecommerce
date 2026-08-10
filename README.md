@@ -96,6 +96,17 @@ và ngược lại.
 `Plan.xlsx` có kế hoạch 4 tuần và **ma trận 57 ca kiểm thử**, mỗi ca ghi rõ
 file test chứng minh nó.
 
+### Phase 2 — AI Recommendation
+
+| Tài liệu | Nội dung |
+|---|---|
+| [Proposal_Phase_2.docx](Phase_2_docs/Proposal_Phase_2.docx) | Phạm vi, mô hình, trạng thái và phần còn lại trước release |
+| [Plan_Phase_2.xlsx](Phase_2_docs/Plan_Phase_2.xlsx) | Execution plan và verification matrix đã cập nhật |
+| [Architecture.docx](Phase_2_docs/Architecture.docx) | Kiến trúc offline, semantic indexer, Transformer mask và serving |
+| [Architecture.png](Phase_2_docs/Architecture.png) | Sơ đồ kiến trúc tổng thể |
+| [Architecture_RQ-VAE.png](Phase_2_docs/Architecture_RQ-VAE.png) | Sơ đồ residual quantization ba tầng |
+| [SUMMARY_4PAPER.md](Phase_2_docs/Docs/SUMMARY_4PAPER.md) | Tổng hợp TIGER, GR4AD, CQ-SID và TSGR |
+
 ---
 
 ## Vài quyết định đáng đọc
@@ -119,7 +130,7 @@ Những thứ dễ làm sai và đã được cân nhắc kỹ:
 
 ```bash
 cd server
-.venv/Scripts/python.exe -m pytest              # 135 ca
+.venv/Scripts/python.exe -m pytest              # 150 ca
 .venv/Scripts/python.exe -m pytest -m "not slow"  # bỏ nhóm tải
 ```
 

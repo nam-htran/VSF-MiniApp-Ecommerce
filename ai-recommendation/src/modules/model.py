@@ -73,21 +73,7 @@ class EncoderDecoderRetrievalModel(nn.Module):
             persistent=False,
         )
 
-        codebooks = codebooks.long()
-        if codebooks.ndim != 2 or codebooks.shape[1] != self.num_hierarchies:
-            raise ValueError("codebooks must have one column per hierarchy")
-        for layer, size in enumerate(self.codebook_sizes):
-            if codebooks[:, layer].min() < 0 or codebooks[:, layer].max() >= size:
-                raise ValueError(
-                    f"SID layer {layer} contains values outside [0, {size})"
-                )
-        for depth in range(1, self.num_hierarchies + 1):
-            keys = self._encode_prefix(codebooks[:, :depth])
-            self.register_buffer(
-                f"valid_prefix_keys_{depth}",
-                torch.unique(keys, sorted=True),
-                persistent=False,
-            )
+        self.set_catalogue_sids(codebooks)
 
         encoder_config = T5Config(
             vocab_size=sum(self.codebook_sizes),
@@ -128,6 +114,33 @@ class EncoderDecoderRetrievalModel(nn.Module):
             if should_add_sep_token
             else None
         )
+
+    def set_catalogue_sids(self, catalogue_sids: torch.Tensor) -> None:
+        """Replace beam constraints without reloading the trained weights."""
+        catalogue_sids = catalogue_sids.to(
+            device=self.embedding_offsets.device, dtype=torch.long
+        )
+        if (
+            catalogue_sids.ndim != 2
+            or catalogue_sids.shape[1] != self.num_hierarchies
+        ):
+            raise ValueError("catalogue_sids must have one column per hierarchy")
+        for layer, size in enumerate(self.codebook_sizes):
+            if catalogue_sids.numel() and (
+                catalogue_sids[:, layer].min() < 0
+                or catalogue_sids[:, layer].max() >= size
+            ):
+                raise ValueError(
+                    f"SID layer {layer} contains values outside [0, {size})"
+                )
+        for depth in range(1, self.num_hierarchies + 1):
+            keys = self._encode_prefix(catalogue_sids[:, :depth])
+            name = f"valid_prefix_keys_{depth}"
+            values = torch.unique(keys, sorted=True)
+            if name in self._buffers:
+                setattr(self, name, values)
+            else:
+                self.register_buffer(name, values, persistent=False)
 
     @property
     def device(self) -> torch.device:
@@ -185,6 +198,8 @@ class EncoderDecoderRetrievalModel(nn.Module):
         """Return a boolean mask indicating which prefixes exist in the corpus."""
         valid_keys = getattr(self, f"valid_prefix_keys_{prefix.shape[1]}")
         keys = self._encode_prefix(prefix)
+        if len(valid_keys) == 0:
+            return torch.zeros_like(keys, dtype=torch.bool)
         positions = torch.searchsorted(valid_keys, keys)
         in_range = positions < len(valid_keys)
         positions = positions.clamp_max(len(valid_keys) - 1)
@@ -298,7 +313,16 @@ class EncoderDecoderRetrievalModel(nn.Module):
             log_probas:    [B, top_k]
         """
         B = input_ids.size(0)
-        k = self.top_k_for_generation
+        k = min(self.top_k_for_generation, len(self.valid_prefix_keys_1))
+        if k == 0:
+            return (
+                torch.empty(
+                    (B, 0, self.num_hierarchies),
+                    dtype=torch.long,
+                    device=input_ids.device,
+                ),
+                torch.empty((B, 0), dtype=torch.float32, device=input_ids.device),
+            )
         if temperature <= 0:
             raise ValueError("temperature must be positive")
         enc_out, enc_mask = self.encoder_forward_pass(
