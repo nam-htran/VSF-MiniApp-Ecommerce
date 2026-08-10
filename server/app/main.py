@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.auth.routes import router as auth_router
 from app.config import settings
+from app import console
 from app.db import engine
 from app.json_response import SafeJSONResponse
 from app import scheduler
@@ -35,9 +36,19 @@ from app.payments import store as _payment_exceptions  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await predictor.load()
-    semantic_indexer.load()
+    # Both loads are slow and, without this, silent: the decoder checkpoint is
+    # read off disk and the Jina encoder is fetched from HuggingFace the first
+    # time, and nothing is served until they are in memory. Announcing them is
+    # not cosmetic — v-market/scripts/dev-all.mjs blocks on this very startup
+    # before it seeds, so an unexplained wait here reads as a hung stack.
+    with console.loading("decoder checkpoint", enabled=predictor.configured()):
+        await predictor.load()
+    with console.loading(
+        "Jina encoder", enabled=bool(settings.semantic_rqvae_checkpoint_path)
+    ):
+        semantic_indexer.load()
     semantic_indexer.start()
+    console.ready("backend ready")
     # Held stock and lost payment webhooks — see app/scheduler.py.
     jobs = scheduler.start()
     yield

@@ -72,6 +72,10 @@ def load() -> None:
     rqvae.load_state_dict(state)
     rqvae.eval()
 
+    # Constructing the encoder logs which default prompt it picked. That is a
+    # property of the checkpoint, not a decision this code makes, and it lands
+    # in the middle of startup progress — drop the chatter, keep the warnings.
+    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
     text_model = SentenceTransformer(
         settings.semantic_embedding_model,
         revision=settings.semantic_embedding_revision,
