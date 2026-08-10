@@ -74,6 +74,7 @@ def load() -> None:
 
     text_model = SentenceTransformer(
         settings.semantic_embedding_model,
+        revision=settings.semantic_embedding_revision,
         trust_remote_code=True,
         device="cpu",
     )

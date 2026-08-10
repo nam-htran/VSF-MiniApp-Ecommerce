@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     semantic_embedding_model: str = (
         "jinaai/jina-embeddings-v5-text-nano-clustering"
     )
+    semantic_embedding_revision: str = "1f2f45acee2315af5aba78cf0d09e920727978e0"
     semantic_batch_size: int = 8
     semantic_scan_interval_seconds: float = 60
     semantic_debounce_seconds: float = 1
