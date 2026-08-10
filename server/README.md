@@ -1,93 +1,91 @@
-# server
+# V-Market Backend
 
-V-Market's MiniApp Backend. The docs call this component "MiniApp Backend":
+FastAPI backend là nguồn sự thật cho catalog, tồn kho, đơn hàng, thanh toán và
+recommendation. Client không gửi giá cuối, quyền sở hữu hay trạng thái thanh
+toán; server luôn đọc lại và kiểm tra trong PostgreSQL.
 
+## Chức năng
+
+- Đăng nhập qua V-App `authCode`, phát hành session JWT của V-Market.
+- Shop, sản phẩm, biến thể, tồn kho, voucher, tìm kiếm và đánh giá.
+- Giỏ hàng nhiều shop, báo giá, đặt hàng, giữ tồn kho và xử lý IPN.
+- Địa chỉ giao hàng, reverse geocoding và luồng vận hành seller/admin.
+- Lưu lịch sử xem và trả recommendation cho trang chủ/chi tiết sản phẩm.
+
+Swagger chạy tại <http://127.0.0.1:4000/docs>.
+
+## AI serving
+
+Khi server khởi động:
+
+1. `artifact_paths.py` tìm checkpoint Transformer tốt nhất và RQ-VAE mới nhất.
+2. Transformer load một lần, ưu tiên CUDA nếu khả dụng.
+3. Beam mask được dựng từ Semantic ID của sản phẩm `ACTIVE` trong PostgreSQL.
+4. Jina và frozen RQ-VAE load một lần trên CPU để index sản phẩm mới nền.
+
+Trang chủ dùng 10 lượt xem gần nhất, giữ cả lượt lặp, rồi đi theo thứ tự:
+
+```text
+Transformer Top-10 SID
+→ exact full SID
+→ prefix hai tầng nếu cụm thiếu sản phẩm
+→ Semantic ID gần lịch sử
+→ sản phẩm phổ biến
 ```
-MiniApp  ──authCode──>  server/  ──client_secret──>  V-App Open API
-(React)                          <──── user_id ────
-   <──── JWT ────────────────────
-```
 
-The MiniApp cannot call the Open API itself: the token exchange needs
-`client_secret`, and the docs state `user_id` is only obtainable from the
-backend. The `getUserInfo` JSAPI returns a name and avatar, but deliberately no
-identifier.
+Trong một cụm, sản phẩm được xếp theo số đã bán, rating và ID để kết quả ổn
+định. Related products không cần Transformer: nó lùi từ full SID sang prefix
+hai tầng, một tầng rồi mới dùng popularity.
 
-## Run
+Sản phẩm mới hoặc thay đổi tên/mô tả được ghi với SID rỗng. Worker chạy Jina →
+RQ-VAE theo batch, cập nhật SID có điều kiện để kết quả cũ không ghi đè nội dung
+seller vừa sửa, sau đó refresh mask mà không reload Transformer.
+
+## Cấu hình
+
+Copy file môi trường mẫu:
 
 ```bash
-py -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-copy .env.example .env
-.venv\Scripts\python.exe -m uvicorn app.main:app --port 4000 --reload
+cp .env.example .env
 ```
 
-Swagger: http://127.0.0.1:4000/docs
+Secret và địa chỉ triển khai nằm trong `.env`. Cấu hình model, batch semantic
+và checkpoint resolver nằm trong `app/config.py`. Checkpoint local được tìm tại:
 
-Needs a V-App to talk to. In development that is [`../mock-openAPI`](../mock-openAPI),
-running on port 4001.
-
-## Endpoints
-
-| Method | Path | |
-|---|---|---|
-| POST | `/auth/session` | `{authCode}` → JWT, or `CONSENT_REQUIRED` |
-| GET | `/healthz` | |
-
-## Login flow
-
-```
-getAuthCode(['auth'])  ->  POST /auth/session
-   known user  -> AUTHENTICATED         (silent, no consent screen)
-   new user    -> CONSENT_REQUIRED
-                  -> getAuthCode(['profile','phone'])
-                  -> POST /auth/session -> AUTHENTICATED
+```text
+../ai-recommendation/output/transformer/
+../ai-recommendation/output/rq-vae/
 ```
 
-Consent appears exactly once per user, ever. Source:
-`developer.v-app.vn/backend-api/resources/login-free-system`.
+`requirements.txt` dùng PyTorch 2.10.0 CUDA 12.6, cùng Transformers 5.14.1 và
+Sentence Transformers 5.4.1 đã tạo artifact trên Kaggle.
 
-`role` and `sellerId` are V-Market's data, looked up by `user_id`. V-App has no
-notion of buyer or seller.
+## Chạy riêng backend
 
-## Tests
+Khuyến nghị chạy cả stack bằng `pnpm dev` trong `v-market/`. Nếu chỉ chạy
+backend:
 
 ```bash
-.venv\Scripts\python.exe -m pytest
+docker compose up -d --wait
+
+cd server
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m alembic upgrade head
+.venv/bin/python -m uvicorn app.main:app --port 4000 --reload
 ```
 
-`mock-openAPI` must be running first — the tests skip with instructions if it
-is not. They are not wired to boot it in-process on purpose: the gateway should
-reach V-App over the network, exactly as it will against the real API.
-
-`tests/test_contract.py` runs against whatever `VAPP_BASE_URL` points at, so the
-same suite verifies the real API:
+Backend vẫn cần mock V-App ở `4001` cho login/payment local. Health check:
 
 ```bash
-VAPP_BASE_URL=https://api.v-app.vn VAPP_TEST_AUTH_CODE=<from a device> pytest
+curl http://127.0.0.1:4000/healthz
 ```
 
-All green means the swap is done; a red test points at exactly what differs.
+## Kiểm thử
 
-## Swapping in the real API
+```bash
+.venv/bin/python -m pytest
+```
 
-Change three lines in `.env` — `VAPP_BASE_URL`, `VAPP_CLIENT_ID`,
-`VAPP_CLIENT_SECRET` — and stop running `mock-openAPI`. There is no mock/real
-flag in the code; `app/vapp/gateway.py` is the single implementation and only
-ever sees a URL.
-
-## Migrations (Alembic)
-
-The schema lives in the SQLAlchemy models. Dev and tests build it directly
-with `create_all` for speed; Alembic is the path for a database that must
-evolve without being dropped — a real deployment.
-
-- Baseline: `migrations/versions/` holds the initial schema. A fresh
-  database is brought up to date with `python -m alembic upgrade head`.
-- A database that already has the tables (e.g. this dev one, built by
-  `create_all`) is reconciled once with `python -m alembic stamp head`.
-- After changing a model: `python -m alembic revision --autogenerate -m "..."`,
-  review the generated file, then `python -m alembic upgrade head`.
-
-The URL comes from app settings; override it for a one-off with
-`ALEMBIC_URL=... python -m alembic ...`.
+Test integration cần PostgreSQL và mock-openAPI. Bộ test truncate các bảng nó
+đụng tới; chạy xong cần seed lại nếu muốn tiếp tục dùng catalog demo.

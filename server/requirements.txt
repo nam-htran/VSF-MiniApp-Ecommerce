@@ -1,3 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cu126
+
 fastapi==0.139.2
 uvicorn[standard]==0.51.0
 httpx==0.28.1
@@ -16,8 +18,8 @@ deep-translator==1.11.4
 icrawler==0.6.10
 pyarrow==21.0.0
 numpy>=1.26.0
-torch>=2.5.1
-transformers>=4.46.0
-sentence-transformers==3.3.1
+torch==2.10.0
+transformers==5.14.1
+sentence-transformers==5.4.1
 einops==0.8.0
 gin-config==0.5.0
