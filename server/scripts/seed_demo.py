@@ -25,8 +25,10 @@ truncates every table it touches.
     .venv/bin/python scripts/seed_demo.py
 
 Translation and image search each call out to the network once per product,
-which dominates the runtime. Skip them for a fast run:
+which dominates the runtime. Product preparation runs concurrently; tune it
+when a network starts throttling, or skip the network work for a fast run:
 
+    .venv/bin/python scripts/seed_demo.py --workers 6
     .venv/bin/python scripts/seed_demo.py --skip-images --skip-translation
 """
 
@@ -45,8 +47,10 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from threading import Lock, local
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -340,9 +344,16 @@ def _load_translations() -> dict:
     return json.loads(TRANSLATION_CACHE.read_text(encoding="utf-8")) if TRANSLATION_CACHE.is_file() else {}
 
 
-def _save_translations(cache: dict) -> None:
+def _save_translations(cache: dict, cache_lock: Lock | None = None) -> None:
+    if cache_lock is not None:
+        with cache_lock:
+            snapshot = dict(cache)
+    else:
+        snapshot = cache
     TRANSLATION_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    TRANSLATION_CACHE.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+    TRANSLATION_CACHE.write_text(
+        json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 # Google serves its error page with a 200, and deep-translator hands the body
@@ -351,22 +362,28 @@ def _save_translations(cache: dict) -> None:
 ERROR_PAGE_MARKERS = ("That’s an error", "That's an error", "Server Error", "Error 500")
 
 
-def translate(text: str, translator, cache: dict) -> str:
+def translate(text: str, translator, cache: dict, cache_lock: Lock) -> str:
     text = text.strip()
     if not text or translator is None:
         return text
     key = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    if key not in cache:
-        try:
-            result = translator.translate(text) or text
-        except Exception as error:  # noqa: BLE001
-            print(f"  translation failed: {error}")
-            return text
-        if any(marker in result for marker in ERROR_PAGE_MARKERS):
-            print("  translation failed: Google returned an error page")
-            return text
-        cache[key] = result
-    return cache[key]
+    with cache_lock:
+        if key in cache:
+            return cache[key]
+
+    try:
+        result = translator.translate(text) or text
+    except Exception as error:  # noqa: BLE001
+        print(f"  translation failed: {error}")
+        return text
+    if any(marker in result for marker in ERROR_PAGE_MARKERS):
+        print("  translation failed: Google returned an error page")
+        return text
+
+    # Another worker may have translated the same description while this
+    # request was in flight. Keep whichever completed first; both are valid.
+    with cache_lock:
+        return cache.setdefault(key, result)
 
 
 def quiet_crawler_logs() -> None:
@@ -430,7 +447,9 @@ def crawl_image(product_id: str, title: str, brand: str, model: str) -> str | No
     return None
 
 
-def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dict]:
+def build_catalogue(
+    limit: int, do_translate: bool, do_images: bool, workers: int
+) -> list[dict]:
     from app.products.moderation import banned_terms_in
 
     if do_images:
@@ -439,27 +458,44 @@ def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dic
     product_ids = select_product_ids(limit)
     metadata = load_metadata(product_ids)
 
-    translator = None
+    GoogleTranslator = None
     if do_translate:
-        from deep_translator import GoogleTranslator
+        from deep_translator import GoogleTranslator as Translator
 
-        translator = GoogleTranslator(source="auto", target="vi")
+        GoogleTranslator = Translator
     cache = _load_translations()
+    cache_lock = Lock()
+    worker_state = local()
 
-    catalogue: list[dict] = []
-    with_image = 0
-    for product_id in product_ids:
+    def translator_for_worker():
+        if GoogleTranslator is None:
+            return None
+        translator = getattr(worker_state, "translator", None)
+        if translator is None:
+            # deep-translator keeps request state on the instance, so each
+            # worker owns one instead of sharing it across threads.
+            translator = GoogleTranslator(source="auto", target="vi")
+            worker_state.translator = translator
+        return translator
+
+    def prepare(product_id: str) -> dict | None:
         row = metadata.get(product_id)
         if row is None:
-            continue
+            return None
         raw_title = _clean(row.get("title"))
         if not raw_title:
-            continue
+            return None
 
         brand = _clean(row.get("brand"))
         model = _clean(row.get("model"))
-        name = translate(raw_title, translator, cache)[:200]
-        description = translate(_clean(row.get("desc"))[:3000] or raw_title, translator, cache)
+        translator = translator_for_worker()
+        name = translate(raw_title, translator, cache, cache_lock)[:200]
+        description = translate(
+            _clean(row.get("desc"))[:3000] or raw_title,
+            translator,
+            cache,
+            cache_lock,
+        )
 
         details = [
             ("Thương hiệu", brand),
@@ -474,37 +510,53 @@ def build_catalogue(limit: int, do_translate: bool, do_images: bool) -> list[dic
             description = f"{description}\n\n{spec}."
         description = description[:4000]
         if banned_terms_in(name, description):
-            continue
+            return None
 
         image = None
         if do_images:
             image = crawl_image(product_id, raw_title, brand, model)
-            with_image += 1 if image else 0
+            # A small per-worker pause is enough courtesy once several
+            # products are in flight; it no longer serialises the catalogue.
             time.sleep(0.2)
 
         price = to_vnd(row, product_id)
-        catalogue.append({
+        return {
             "sku": product_id,
             "name": name,
             "description": description,
-            # Every field the server bounds gets cut to fit. Amazon brands run
-            # long — one is a 62-character list of house brands.
             "unit": brand[:60] or None,
             "price": price,
             "originalPrice": sale_original_price(price, product_id),
             "stock": 20 + _stable_number(product_id) % 81,
             "image": image,
             "shopIndex": _stable_number(brand or product_id) % len(SHOPS),
-        })
+        }
 
-        if len(catalogue) % 10 == 0:
-            _save_translations(cache)
-            suffix = f", {with_image} with an image" if do_images else ""
-            print(f"  prepared {len(catalogue)}/{limit} products{suffix}")
-        if len(catalogue) >= limit:
-            break
+    catalogue: list[dict] = []
+    with_image = 0
+    # Bounded batches matter here: product_ids contains fallbacks for rows
+    # rejected by moderation. Submitting the whole list would keep fetching
+    # thousands of unnecessary images after the requested limit was reached.
+    batch_size = max(workers * 3, 1)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        for start in range(0, len(product_ids), batch_size):
+            batch = product_ids[start : start + batch_size]
+            for entry in executor.map(prepare, batch):
+                if entry is None:
+                    continue
+                catalogue.append(entry)
+                with_image += 1 if entry["image"] else 0
 
-    _save_translations(cache)
+                if len(catalogue) % 10 == 0:
+                    _save_translations(cache, cache_lock)
+                    suffix = f", {with_image} with an image" if do_images else ""
+                    print(f"  prepared {len(catalogue)}/{limit} products{suffix}")
+                if len(catalogue) >= limit:
+                    break
+            if len(catalogue) >= limit:
+                break
+
+    _save_translations(cache, cache_lock)
     if len(catalogue) < limit:
         print(f"Warning: prepared {len(catalogue)} of the {limit} products requested")
     return catalogue
@@ -560,7 +612,7 @@ async def write_semantic_ids(skus: list[str]) -> int:
     return len(updates)
 
 
-def seed_shops(catalogue: list[dict]) -> list[dict]:
+def seed_shops(catalogue: list[dict], workers: int) -> list[dict]:
     buckets = [[] for _ in SHOPS]
     for entry in catalogue:
         buckets[entry["shopIndex"] % len(SHOPS)].append(entry)
@@ -578,7 +630,7 @@ def seed_shops(catalogue: list[dict]) -> list[dict]:
             "logoUrl": _logo_uri(name, index),
         }, token)
 
-        for entry in buckets[index]:
+        def create_product(entry: dict) -> dict:
             created = call(BACKEND, "/products", {
                 "sku": entry["sku"],
                 "name": entry["name"],
@@ -590,7 +642,12 @@ def seed_shops(catalogue: list[dict]) -> list[dict]:
                 "imageUrl": entry["image"],
                 "imageUrls": [entry["image"]] if entry["image"] else None,
             }, token)
-            listed.append({"id": created["id"], "name": created["name"]})
+            return {"id": created["id"], "name": created["name"]}
+
+        # Product creation is independent inside a shop. A small pool keeps
+        # the local API and Postgres busy without overrunning their pools.
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            listed.extend(executor.map(create_product, buckets[index]))
 
         codes = []
         for template in VOUCHERS[index]:
@@ -658,6 +715,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed the V-Market demo database")
     parser.add_argument("--limit", type=int, default=5000,
                         help="Number of Amazon-M2 products to seed")
+    parser.add_argument("--workers", type=int, default=6,
+                        help="Concurrent preparation/API workers")
     parser.add_argument("--skip-translation", action="store_true",
                         help="Keep the original Amazon-M2 title and description")
     parser.add_argument("--skip-images", action="store_true",
@@ -667,6 +726,8 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.limit < 1:
         parser.error("--limit must be at least 1")
+    if not 1 <= args.workers <= 16:
+        parser.error("--workers must be between 1 and 16")
     return args
 
 
@@ -678,10 +739,11 @@ if __name__ == "__main__":
         limit=args.limit,
         do_translate=not args.skip_translation,
         do_images=not args.skip_images,
+        workers=args.workers,
     )
 
     asyncio.run(truncate())
-    listed = seed_shops(catalogue)
+    listed = seed_shops(catalogue, workers=args.workers)
 
     tagged = asyncio.run(write_semantic_ids([entry["sku"] for entry in catalogue]))
     print(f"  tagged {tagged} products with a Semantic ID")
