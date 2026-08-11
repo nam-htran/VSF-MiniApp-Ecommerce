@@ -62,6 +62,7 @@ SESSION_ROOT = REPO_ROOT / "ai-recommendation/dataset/preprocessed"
 SEMANTIC_IDS = REPO_ROOT / "ai-recommendation/output/rq-vae/semantic_ids.parquet"
 IMAGE_DIR = REPO_ROOT / "server/uploads/amazon-m2"
 TRANSLATION_CACHE = Path(__file__).resolve().parent / ".amazon-m2-cache/translations.json"
+IMAGE_MANIFEST = Path(__file__).resolve().parent / ".amazon-m2-cache/image-manifest.json"
 
 # Same data every run, so a reseed doesn't quietly change the numbers the
 # screenshots were taken against.
@@ -356,6 +357,28 @@ def _save_translations(cache: dict, cache_lock: Lock | None = None) -> None:
     )
 
 
+def _load_image_manifest() -> dict:
+    if not IMAGE_MANIFEST.is_file():
+        return {}
+    try:
+        data = json.loads(IMAGE_MANIFEST.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _save_image_manifest(manifest: dict, manifest_lock: Lock) -> None:
+    """Atomically persist a progress checkpoint for resumable image work."""
+    with manifest_lock:
+        snapshot = dict(manifest)
+        IMAGE_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+        temporary = IMAGE_MANIFEST.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary.replace(IMAGE_MANIFEST)
+
+
 # Google serves its error page with a 200, and deep-translator hands the body
 # back as if it were a translation. Without this check a single 500 gets
 # cached as a product name and stays there for every later run.
@@ -396,54 +419,119 @@ def quiet_crawler_logs() -> None:
     logging.getLogger("downloader").setLevel(logging.CRITICAL)
 
 
-def crawl_image(product_id: str, title: str, brand: str, model: str) -> str | None:
-    """Find one product photo, or return None and let the product go without.
+AMAZON_DOMAINS = {
+    "DE": "amazon.de",
+    "ES": "amazon.es",
+    "FR": "amazon.fr",
+    "IT": "amazon.it",
+    "JP": "amazon.co.jp",
+    "UK": "amazon.co.uk",
+}
 
-    Bing rather than Google: Google Images now serves a JavaScript shell with
-    no image URLs in the HTML, so icrawler's parser finds nothing whatever the
-    query is. Bing still returns parseable markup.
-    """
+
+def _image_queries(
+    product_id: str, title: str, brand: str, model: str, locale: str
+) -> list[str]:
+    amazon_domain = AMAZON_DOMAINS.get(locale.upper(), "amazon.com")
+    product_terms = " ".join(
+        part for part in (product_id, brand, model, title[:100]) if part
+    )
+    candidates = [
+        f"site:{amazon_domain} {product_terms}",
+        f"site:amazon.com {product_terms}",
+        product_terms,
+        " ".join(part for part in (product_id, brand, title[:100]) if part),
+        " ".join(part for part in (model, brand, title[:120]) if part),
+    ]
+    return list(dict.fromkeys(query.strip() for query in candidates if query.strip()))
+
+
+def _query_signature(queries: list[str]) -> str:
+    payload = json.dumps(queries, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def crawl_image(
+    product_id: str,
+    title: str,
+    brand: str,
+    model: str,
+    locale: str,
+    manifest: dict,
+    manifest_lock: Lock,
+) -> str | None:
+    """Take the first valid Bing photo and remember it for the next run."""
     from icrawler.builtin import BingImageCrawler
     from PIL import Image
 
     safe_id = "".join(c for c in product_id if c.isalnum() or c in "-_")
-    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-    existing = sorted(IMAGE_DIR.glob(f"{safe_id}.*"))
-    if existing:
-        return f"{BACKEND}/uploads/amazon-m2/{existing[0].name}"
+    queries = _image_queries(product_id, title, brand, model, locale)
+    signature = _query_signature(queries)
+    with manifest_lock:
+        cached = manifest.get(product_id)
+    if cached and cached.get("querySignature") == signature:
+        if cached.get("status") == "missing":
+            return None
+        selected = cached.get("selected") or {}
+        cached_file = IMAGE_DIR / str(selected.get("file") or "")
+        if cached_file.is_file():
+            return f"{BACKEND}/uploads/amazon-m2/{cached_file.name}"
 
-    # The ASIN used to lead the query as an exact phrase, which drove most
-    # searches to zero results. Brand, model and title are what a shopper
-    # would actually type.
-    query = " ".join(part for part in (brand, model, title) if part)
+    IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    selected = None
     try:
         with tempfile.TemporaryDirectory(prefix=f"amazon-m2-{safe_id}-") as temp:
-            # One keyword per call, so extra feeder and parser threads would
-            # idle; the three candidates are what benefits from parallelism.
-            BingImageCrawler(
-                storage={"root_dir": temp}, downloader_threads=4, log_level=logging.ERROR
-            ).crawl(
-                keyword=query,
-                filters={"type": "photo", "size": "medium"},
-                max_num=3,
-                min_size=(300, 300),
-            )
-            for downloaded in sorted(Path(temp).iterdir()):
-                try:
-                    with Image.open(downloaded) as image:
-                        image.verify()
-                        suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
-                            (image.format or "JPEG").lower()
-                        )
-                except Exception:  # noqa: BLE001
-                    continue
-                if suffix is None:
-                    continue
-                destination = IMAGE_DIR / f"{safe_id}{suffix}"
-                shutil.copyfile(downloaded, destination)
-                return f"{BACKEND}/uploads/amazon-m2/{destination.name}"
+            temp_path = Path(temp)
+            for query_index, query in enumerate(queries):
+                query_dir = temp_path / str(query_index)
+                BingImageCrawler(
+                    storage={"root_dir": str(query_dir)},
+                    downloader_threads=3,
+                    log_level=logging.ERROR,
+                ).crawl(
+                    keyword=query,
+                    filters={"type": "photo", "size": "medium"},
+                    max_num=4,
+                    min_size=(300, 300),
+                )
+
+                for downloaded in sorted(query_dir.glob("*")):
+                    try:
+                        with Image.open(downloaded) as image:
+                            image.verify()
+                            width, height = image.size
+                            image_format = (image.format or "JPEG").lower()
+                    except Exception:  # noqa: BLE001
+                        continue
+                    suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
+                        image_format
+                    )
+                    if suffix is None:
+                        continue
+                    destination = IMAGE_DIR / f"{safe_id}{suffix}"
+                    shutil.copyfile(downloaded, destination)
+                    selected = {
+                        "file": destination.name,
+                        "query": query,
+                        "width": width,
+                        "height": height,
+                    }
+                    break
+                if selected:
+                    break
     except Exception as error:  # noqa: BLE001
         print(f"  image failed for {product_id}: {error}")
+
+    entry = {
+        "status": "accepted" if selected else "missing",
+        "querySignature": signature,
+        "queries": queries,
+        "selected": selected,
+    }
+    with manifest_lock:
+        manifest[product_id] = entry
+    if selected:
+        return f"{BACKEND}/uploads/amazon-m2/{selected['file']}"
     return None
 
 
@@ -465,6 +553,8 @@ def build_catalogue(
         GoogleTranslator = Translator
     cache = _load_translations()
     cache_lock = Lock()
+    image_manifest = _load_image_manifest()
+    image_manifest_lock = Lock()
     worker_state = local()
 
     def translator_for_worker():
@@ -488,6 +578,7 @@ def build_catalogue(
 
         brand = _clean(row.get("brand"))
         model = _clean(row.get("model"))
+        locale = _clean(row.get("locale"))
         translator = translator_for_worker()
         name = translate(raw_title, translator, cache, cache_lock)[:200]
         description = translate(
@@ -514,7 +605,15 @@ def build_catalogue(
 
         image = None
         if do_images:
-            image = crawl_image(product_id, raw_title, brand, model)
+            image = crawl_image(
+                product_id,
+                raw_title,
+                brand,
+                model,
+                locale,
+                image_manifest,
+                image_manifest_lock,
+            )
             # A small per-worker pause is enough courtesy once several
             # products are in flight; it no longer serialises the catalogue.
             time.sleep(0.2)
@@ -549,6 +648,8 @@ def build_catalogue(
 
                 if len(catalogue) % 10 == 0:
                     _save_translations(cache, cache_lock)
+                    if do_images:
+                        _save_image_manifest(image_manifest, image_manifest_lock)
                     suffix = f", {with_image} with an image" if do_images else ""
                     print(f"  prepared {len(catalogue)}/{limit} products{suffix}")
                 if len(catalogue) >= limit:
@@ -557,6 +658,8 @@ def build_catalogue(
                 break
 
     _save_translations(cache, cache_lock)
+    if do_images:
+        _save_image_manifest(image_manifest, image_manifest_lock)
     if len(catalogue) < limit:
         print(f"Warning: prepared {len(catalogue)} of the {limit} products requested")
     return catalogue
