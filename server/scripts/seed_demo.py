@@ -33,24 +33,27 @@ when a network starts throttling, or skip the network work for a fast run:
 """
 
 import argparse
+import atexit
 import asyncio
 import base64
 import csv
 import hashlib
-import html
 import json
+import logging
 import math
 import random
-import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from io import BytesIO
 from pathlib import Path
 from threading import Lock, local
+from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -63,15 +66,7 @@ SEMANTIC_IDS = REPO_ROOT / "ai-recommendation/output/rq-vae/semantic_ids.parquet
 IMAGE_DIR = REPO_ROOT / "server/uploads/amazon-m2"
 TRANSLATION_CACHE = Path(__file__).resolve().parent / ".amazon-m2-cache/translations.json"
 IMAGE_MANIFEST = Path(__file__).resolve().parent / ".amazon-m2-cache/image-manifest.json"
-
-AMAZON_MARKETPLACES = {
-    "DE": "www.amazon.de",
-    "ES": "www.amazon.es",
-    "FR": "www.amazon.fr",
-    "IT": "www.amazon.it",
-    "JP": "www.amazon.co.jp",
-    "UK": "www.amazon.co.uk",
-}
+MOCK_ROOT = REPO_ROOT / "mock-openAPI"
 
 # Same data every run, so a reseed doesn't quietly change the numbers the
 # screenshots were taken against.
@@ -220,6 +215,61 @@ def call(base, path, payload=None, token=None, method=None):
         raise
 
 
+_STARTED_SERVICES: list[subprocess.Popen] = []
+
+
+def service_ready(url: str, timeout: float = 1) -> bool:
+    try:
+        with urllib.request.urlopen(f"{url}/healthz", timeout=timeout) as response:
+            return response.status == 200
+    except (OSError, urllib.error.URLError):
+        return False
+
+
+def ensure_service(name: str, root: Path, app: str, port: int, wait: int) -> None:
+    url = f"http://127.0.0.1:{port}"
+    if service_ready(url):
+        return
+
+    python = root / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    if not python.is_file():
+        raise SystemExit(f"Cannot start {name}: missing {python}")
+
+    print(f"Starting {name}...")
+    process = subprocess.Popen(
+        [str(python), "-m", "uvicorn", app, "--port", str(port), "--log-level", "warning"],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+    _STARTED_SERVICES.append(process)
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise SystemExit(f"Cannot start {name}: process exited with code {process.returncode}")
+        if service_ready(url):
+            return
+        time.sleep(0.5)
+    raise SystemExit(f"Cannot start {name}: timed out after {wait} seconds")
+
+
+def stop_started_services() -> None:
+    for process in _STARTED_SERVICES:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+
+
+atexit.register(stop_started_services)
+
+
+def ensure_services() -> None:
+    ensure_service("mock V-App", MOCK_ROOT, "main:app", 4001, 20)
+    ensure_service("V-Market backend", REPO_ROOT / "server", "app.main:app", 4000, 300)
+
+
 def token_for(name: str) -> str:
     user = call(MOCK, "/simulator/users", {"name": name})["data"]["user_id"]
     code = call(MOCK, "/simulator/authcode", {"user_id": user, "scopes": "profile phone"})["data"]["authCode"]
@@ -350,42 +400,21 @@ def to_vnd(row: dict, product_id: str) -> int:
 
 # --- translation and images -------------------------------------------------
 
-def _load_translations() -> dict:
-    return json.loads(TRANSLATION_CACHE.read_text(encoding="utf-8")) if TRANSLATION_CACHE.is_file() else {}
-
-
-def _save_translations(cache: dict, cache_lock: Lock | None = None) -> None:
-    if cache_lock is not None:
-        with cache_lock:
-            snapshot = dict(cache)
-    else:
-        snapshot = cache
-    TRANSLATION_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    TRANSLATION_CACHE.write_text(
-        json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def _load_image_manifest() -> dict:
-    if not IMAGE_MANIFEST.is_file():
-        return {}
+def load_json(path: Path) -> dict:
     try:
-        data = json.loads(IMAGE_MANIFEST.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
 
 
-def _save_image_manifest(manifest: dict, manifest_lock: Lock) -> None:
-    """Atomically persist a progress checkpoint for resumable image work."""
-    with manifest_lock:
-        snapshot = dict(manifest)
-        IMAGE_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
-        temporary = IMAGE_MANIFEST.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        temporary.replace(IMAGE_MANIFEST)
+def save_json(path: Path, data: dict, lock: Lock) -> None:
+    with lock:
+        snapshot = dict(data)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
 
 
 # Google serves its error page with a 200, and deep-translator hands the body
@@ -405,11 +434,9 @@ def translate(text: str, translator, cache: dict, cache_lock: Lock) -> str:
 
     try:
         result = translator.translate(text) or text
-    except Exception as error:  # noqa: BLE001
-        print(f"  translation failed: {error}")
+    except Exception:  # noqa: BLE001
         return text
     if any(marker in result for marker in ERROR_PAGE_MARKERS):
-        print("  translation failed: Google returned an error page")
         return text
 
     # Another worker may have translated the same description while this
@@ -418,129 +445,69 @@ def translate(text: str, translator, cache: dict, cache_lock: Lock) -> str:
         return cache.setdefault(key, result)
 
 
-def _amazon_main_image(page: str) -> str | None:
-    patterns = (
-        r'"hiRes"\s*:\s*"([^"]+)"',
-        r'"large"\s*:\s*"([^"]+)"',
-        r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"',
-        r'data-old-hires="([^"]+)"',
-    )
-    for pattern in patterns:
-        match = re.search(pattern, page, flags=re.IGNORECASE)
-        if not match:
-            continue
-        encoded = html.unescape(match.group(1))
-        try:
-            return json.loads(f'"{encoded}"')
-        except json.JSONDecodeError:
-            return encoded.replace(r"\u0026", "&").replace(r"\/", "/")
-    return None
-
-
-def _amazon_product_title(page: str) -> str | None:
-    match = re.search(
-        r'<span[^>]+id="productTitle"[^>]*>(.*?)</span>',
-        page,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if not match:
-        return None
-    plain = re.sub(r"<[^>]+>", " ", match.group(1))
-    return " ".join(html.unescape(plain).split()) or None
-
-
-def fetch_amazon_product(
-    product_id: str, locale: str, manifest: dict, manifest_lock: Lock
-) -> tuple[str | None, str | None]:
-    """Read title and main image from the product's own Amazon marketplace."""
+def crawl_image(
+    product_id: str,
+    title: str,
+    brand: str,
+    model: str,
+    manifest: dict,
+    manifest_lock: Lock,
+) -> str | None:
+    from icrawler.builtin import BingImageCrawler
     from PIL import Image
 
     safe_id = "".join(c for c in product_id if c.isalnum() or c in "-_")
-    marketplace = AMAZON_MARKETPLACES.get(locale.upper(), "www.amazon.com")
-    source_page = f"https://{marketplace}/dp/{product_id}"
+    query = " ".join(
+        part for part in (f'"{product_id}"', brand, model, title[:120]) if part
+    )
+    signature = hashlib.sha256(query.encode()).hexdigest()[:16]
     with manifest_lock:
         cached = manifest.get(product_id)
-    if cached and cached.get("sourcePage") == source_page:
-        if cached.get("status") == "missing":
-            return None, cached.get("title")
+    if cached:
         selected = cached.get("selected") or {}
         cached_file = IMAGE_DIR / str(selected.get("file") or "")
         if cached_file.is_file():
-            return (
-                f"{BACKEND}/uploads/amazon-m2/{cached_file.name}",
-                cached.get("title"),
-            )
+            return f"{BACKEND}/uploads/amazon-m2/{cached_file.name}"
+        if cached.get("querySignature") == signature and cached.get("status") == "missing":
+            return None
 
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     selected = None
-    amazon_title = None
-    status = "error"
     try:
-        page_request = urllib.request.Request(
-            source_page,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 Chrome/130 Safari/537.36"
-                ),
-                "Accept-Language": "en-US,en;q=0.9",
-            },
-        )
-        with urllib.request.urlopen(page_request, timeout=15) as response:
-            page = response.read().decode("utf-8", "ignore")
-        amazon_title = _amazon_product_title(page)
-        image_url = _amazon_main_image(page)
-        if image_url is None:
-            # A 200 page with neither title nor image is usually Amazon's
-            # robot check, not proof that the ASIN has no image. Keep it
-            # retryable instead of poisoning the cache as permanently absent.
-            status = "missing" if amazon_title else "error"
-        else:
-            image_request = urllib.request.Request(
-                image_url,
-                headers={"User-Agent": "Mozilla/5.0", "Referer": source_page},
-            )
-            with urllib.request.urlopen(image_request, timeout=15) as response:
-                image_bytes = response.read()
-            with Image.open(BytesIO(image_bytes)) as image:
-                image.verify()
-                width, height = image.size
-                image_format = (image.format or "JPEG").lower()
-            suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
-                image_format
-            )
-            if suffix is None:
-                status = "missing"
-            else:
-                destination = IMAGE_DIR / f"{safe_id}{suffix}"
-                destination.write_bytes(image_bytes)
-                selected = {
-                    "file": destination.name,
-                    "sourcePage": source_page,
-                    "imageUrl": image_url,
-                    "width": width,
-                    "height": height,
-                }
-                status = "accepted"
-    except urllib.error.HTTPError as error:
-        if error.code == 404:
-            status = "missing"
-        else:
-            print(f"  amazon image failed for {product_id}: HTTP {error.code}")
-    except Exception as error:  # noqa: BLE001
-        print(f"  amazon image failed for {product_id}: {error}")
+        with tempfile.TemporaryDirectory(prefix=f"amazon-m2-{safe_id}-") as temp:
+            BingImageCrawler(
+                storage={"root_dir": temp}, downloader_threads=2, log_level=logging.CRITICAL
+            ).crawl(keyword=query, max_num=1, min_size=(300, 300))
+            for downloaded in Path(temp).iterdir():
+                with Image.open(downloaded) as image:
+                    image.verify()
+                    width, height = image.size
+                    suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
+                        (image.format or "").lower()
+                    )
+                if suffix:
+                    destination = IMAGE_DIR / f"{safe_id}{suffix}"
+                    shutil.copyfile(downloaded, destination)
+                    selected = {
+                        "file": destination.name,
+                        "query": query,
+                        "width": width,
+                        "height": height,
+                    }
+                    break
+    except Exception:  # noqa: BLE001
+        pass
 
     entry = {
-        "status": status,
-        "sourcePage": source_page,
-        "title": amazon_title,
+        "status": "accepted" if selected else "missing",
+        "querySignature": signature,
         "selected": selected,
     }
     with manifest_lock:
         manifest[product_id] = entry
     if selected:
-        return f"{BACKEND}/uploads/amazon-m2/{selected['file']}", amazon_title
-    return None, amazon_title
+        return f"{BACKEND}/uploads/amazon-m2/{selected['file']}"
+    return None
 
 
 def build_catalogue(
@@ -556,9 +523,9 @@ def build_catalogue(
         from deep_translator import GoogleTranslator as Translator
 
         GoogleTranslator = Translator
-    cache = _load_translations()
+    cache = load_json(TRANSLATION_CACHE)
     cache_lock = Lock()
-    image_manifest = _load_image_manifest()
+    image_manifest = load_json(IMAGE_MANIFEST)
     image_manifest_lock = Lock()
     worker_state = local()
 
@@ -583,21 +550,15 @@ def build_catalogue(
 
         brand = _clean(row.get("brand"))
         model = _clean(row.get("model"))
-        locale = _clean(row.get("locale"))
         image = None
-        source_title = raw_title
         if do_images:
-            image, amazon_title = fetch_amazon_product(
-                product_id, locale, image_manifest, image_manifest_lock
+            image = crawl_image(
+                product_id, raw_title, brand, model, image_manifest, image_manifest_lock
             )
-            if amazon_title:
-                source_title = amazon_title
-            # A small per-worker pause is enough courtesy once several
-            # products are in flight; it no longer serialises the catalogue.
             time.sleep(0.2)
 
         translator = translator_for_worker()
-        name = translate(source_title, translator, cache, cache_lock)[:200]
+        name = translate(raw_title, translator, cache, cache_lock)[:200]
         description = translate(
             _clean(row.get("desc"))[:3000] or raw_title,
             translator,
@@ -634,34 +595,33 @@ def build_catalogue(
         }
 
     catalogue: list[dict] = []
-    with_image = 0
     # Bounded batches matter here: product_ids contains fallbacks for rows
     # rejected by moderation. Submitting the whole list would keep fetching
     # thousands of unnecessary images after the requested limit was reached.
     batch_size = max(workers * 3, 1)
-    with ThreadPoolExecutor(max_workers=workers) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor, tqdm(
+        total=limit, desc="Preparing", unit="product"
+    ) as bar:
         for start in range(0, len(product_ids), batch_size):
             batch = product_ids[start : start + batch_size]
             for entry in executor.map(prepare, batch):
                 if entry is None:
                     continue
                 catalogue.append(entry)
-                with_image += 1 if entry["image"] else 0
+                bar.update()
 
                 if len(catalogue) % 10 == 0:
-                    _save_translations(cache, cache_lock)
+                    save_json(TRANSLATION_CACHE, cache, cache_lock)
                     if do_images:
-                        _save_image_manifest(image_manifest, image_manifest_lock)
-                    suffix = f", {with_image} with an image" if do_images else ""
-                    print(f"  prepared {len(catalogue)}/{limit} products{suffix}")
+                        save_json(IMAGE_MANIFEST, image_manifest, image_manifest_lock)
                 if len(catalogue) >= limit:
                     break
             if len(catalogue) >= limit:
                 break
 
-    _save_translations(cache, cache_lock)
+    save_json(TRANSLATION_CACHE, cache, cache_lock)
     if do_images:
-        _save_image_manifest(image_manifest, image_manifest_lock)
+        save_json(IMAGE_MANIFEST, image_manifest, image_manifest_lock)
     if len(catalogue) < limit:
         print(f"Warning: prepared {len(catalogue)} of the {limit} products requested")
     return catalogue
@@ -723,48 +683,45 @@ def seed_shops(catalogue: list[dict], workers: int) -> list[dict]:
         buckets[entry["shopIndex"] % len(SHOPS)].append(entry)
 
     listed: list[dict] = []
-    for index, (name, province, address, phone) in enumerate(SHOPS):
-        token = token_for(f"Chủ shop {index + 1}")
-        call(BACKEND, "/shops", {
-            "name": name,
-            "description": SHOP_DESCRIPTION,
-            "province": province,
-            "address": address,
-            "phone": phone,
-            "imageUrl": _banner_uri(index),
-            "logoUrl": _logo_uri(name, index),
-        }, token)
-
-        def create_product(entry: dict) -> dict:
-            created = call(BACKEND, "/products", {
-                "sku": entry["sku"],
-                "name": entry["name"],
-                "description": entry["description"],
-                "unit": entry["unit"],
-                "price": entry["price"],
-                "originalPrice": entry["originalPrice"],
-                "stock": entry["stock"],
-                "imageUrl": entry["image"],
-                "imageUrls": [entry["image"]] if entry["image"] else None,
+    with tqdm(total=len(catalogue), desc="Seeding", unit="product") as bar:
+        for index, (name, province, address, phone) in enumerate(SHOPS):
+            token = token_for(f"Chủ shop {index + 1}")
+            call(BACKEND, "/shops", {
+                "name": name,
+                "description": SHOP_DESCRIPTION,
+                "province": province,
+                "address": address,
+                "phone": phone,
+                "imageUrl": _banner_uri(index),
+                "logoUrl": _logo_uri(name, index),
             }, token)
-            return {"id": created["id"], "name": created["name"]}
 
-        # Product creation is independent inside a shop. A small pool keeps
-        # the local API and Postgres busy without overrunning their pools.
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            listed.extend(executor.map(create_product, buckets[index]))
+            def create_product(entry: dict) -> dict:
+                created = call(BACKEND, "/products", {
+                    "sku": entry["sku"],
+                    "name": entry["name"],
+                    "description": entry["description"],
+                    "unit": entry["unit"],
+                    "price": entry["price"],
+                    "originalPrice": entry["originalPrice"],
+                    "stock": entry["stock"],
+                    "imageUrl": entry["image"],
+                    "imageUrls": [entry["image"]] if entry["image"] else None,
+                }, token)
+                return {"id": created["id"], "name": created["name"]}
 
-        codes = []
-        for template in VOUCHERS[index]:
-            voucher = dict(template)
-            start_days, end_days = voucher.pop("days")
-            now = datetime.now(timezone.utc)
-            voucher["startsAt"] = (now + timedelta(days=start_days)).isoformat()
-            voucher["endsAt"] = (now + timedelta(days=end_days)).isoformat()
-            call(BACKEND, "/vouchers", voucher, token)
-            codes.append(voucher["code"])
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                for created in executor.map(create_product, buckets[index]):
+                    listed.append(created)
+                    bar.update()
 
-        print(f"  {name}: {len(buckets[index])} products, vouchers {', '.join(codes)}")
+            for template in VOUCHERS[index]:
+                voucher = dict(template)
+                start_days, end_days = voucher.pop("days")
+                now = datetime.now(timezone.utc)
+                voucher["startsAt"] = (now + timedelta(days=start_days)).isoformat()
+                voucher["endsAt"] = (now + timedelta(days=end_days)).isoformat()
+                call(BACKEND, "/vouchers", voucher, token)
 
     return listed
 
@@ -839,6 +796,7 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     args = parse_args()
+    ensure_services()
 
     catalogue = build_catalogue(
         limit=args.limit,
