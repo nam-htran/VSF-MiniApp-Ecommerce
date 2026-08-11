@@ -162,8 +162,10 @@ const FeedPost = ({
   onLike: () => void;
 }) => {
   const navigate = useNavigate();
+  const [expanded, setExpanded] = useState(false);
   const shopName = product.shopName ?? 'V-Market Shop';
   const baseLikes = (product.sold ?? 0) + (product.ratingCount ?? 0);
+  const canExpand = (product.description?.length ?? 0) > 130;
 
   const openProduct = () =>
     navigate('/product', {
@@ -182,7 +184,7 @@ const FeedPost = ({
           label={shopName.charAt(0).toUpperCase()}
         />
         <div className="min-w-0 flex-1">
-          <Typography size="small" weight="bold" className="truncate">
+          <Typography size="small" weight="semibold" className="truncate">
             {shopName}
           </Typography>
           <Typography size="2x-small" color="text-tertiary" className="truncate">
@@ -201,13 +203,28 @@ const FeedPost = ({
       </div>
 
       <div className="px-4 pb-3 pt-2">
-        <Typography size="small" weight="semibold" className="line-clamp-2">
+        <Typography size="small" weight="semibold">
           {product.name}
         </Typography>
         {product.description && (
-          <Typography size="x-small" color="text-secondary" className="mt-1 line-clamp-2">
+          <Typography
+            size="x-small"
+            color="text-secondary"
+            className={`mt-1 ${expanded ? '' : 'line-clamp-3'}`}>
             {product.description}
           </Typography>
+        )}
+        {canExpand && (
+          <Button
+            type="ghost"
+            theme="neutral"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(value => !value)}
+            className="mt-1 !h-auto !min-h-0 !max-h-none !justify-start !rounded-none !p-0">
+            <Typography size="x-small" weight="semibold" color="text-secondary">
+              {expanded ? 'Thu gọn' : 'Xem thêm'}
+            </Typography>
+          </Button>
         )}
       </div>
 

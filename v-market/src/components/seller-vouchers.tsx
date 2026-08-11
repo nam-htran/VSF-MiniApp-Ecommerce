@@ -146,7 +146,7 @@ export const SellerVouchers = () => {
                       size={16}
                       className="shrink-0 text-brand"
                     />
-                    <Typography size="small" weight="bold" className="truncate">
+                    <Typography size="small" weight="semibold" className="truncate">
                       {voucher.code}
                     </Typography>
                   </span>

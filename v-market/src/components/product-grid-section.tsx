@@ -133,7 +133,7 @@ export const GridProductCard = ({ product }: { product: ProductCardData }) => {
     </div>
 
     <div className="flex flex-col">
-      <Typography size="small" weight="bold" className="line-clamp-2">
+      <Typography size="small" weight="semibold" className="line-clamp-2">
         {product.name}
       </Typography>
       {product.unit && (

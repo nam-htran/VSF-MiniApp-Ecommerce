@@ -177,7 +177,7 @@ const OrderCard = ({
               }
             />
             <div className="flex min-w-0 flex-1 flex-col justify-center">
-              <Typography size="small" className="line-clamp-1">
+              <Typography size="small" weight="semibold" className="line-clamp-1">
                 {item.name}
               </Typography>
               <Typography size="2x-small" color="text-secondary">

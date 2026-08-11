@@ -98,7 +98,7 @@ const VoucherRow = ({
     />
 
     <div className="flex min-w-0 flex-1 flex-col">
-      <Typography size="small" weight="bold" className="truncate">
+      <Typography size="small" weight="semibold" className="truncate">
         {offer.code}
       </Typography>
       <Typography size="2x-small" color="text-secondary" className="line-clamp-2">

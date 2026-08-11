@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Button,
   Icon,
   Image,
   Skeleton,
@@ -11,6 +12,100 @@ import { listShopProducts } from '@/api/products';
 import { GridProductCard } from '@/components/product-grid-section';
 import { Stars } from '@/components/reviews-section';
 import { listItemToCard, type ProductCardData } from '@/lib/product-card';
+
+/** The reusable visual half of a shop preview. Product detail and Account
+ * provide different actions, but share the same banner, logo and metadata. */
+export const ShopBanner = ({
+  shop,
+  fallbackName,
+  rating = 0,
+  productCount,
+  emptyText,
+  actionLabel,
+  onClick,
+}: {
+  shop?: Shop | null;
+  fallbackName: string;
+  rating?: number;
+  productCount?: number;
+  emptyText?: string;
+  actionLabel: string;
+  onClick: () => void;
+}) => (
+  <Button
+    type="ghost"
+    theme="neutral"
+    block
+    aria-label={actionLabel}
+    onClick={onClick}
+    className="relative !block !h-auto !min-h-0 !max-h-none !w-full !rounded-none !p-0 !text-left">
+    <div
+      className="h-36 w-full bg-brand bg-cover bg-center"
+      style={
+        shop?.imageUrl
+          ? { backgroundImage: `url("${shop.imageUrl}")` }
+          : undefined
+      }
+    />
+    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
+
+    <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 p-3.5">
+      <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-global-basic-white/80 bg-alias-background shadow-md">
+        {shop?.logoUrl ? (
+          <Image src={shop.logoUrl} alt="" fit="cover" className="size-full" />
+        ) : (
+          <Icon name="office" size={24} className="text-brand" />
+        )}
+      </span>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Typography
+          size="base"
+          weight="bold"
+          className="truncate text-global-basic-white">
+          {shop?.name || fallbackName}
+        </Typography>
+        <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-global-basic-white opacity-90">
+          {rating > 0 && (
+            <span className="flex items-center gap-1">
+              <Stars value={rating} />
+              <Typography size="2x-small" className="text-global-basic-white">
+                {rating.toFixed(1)}
+              </Typography>
+            </span>
+          )}
+          {productCount !== undefined && (
+            <Typography size="2x-small" className="text-global-basic-white">
+              {productCount} sản phẩm
+            </Typography>
+          )}
+          {shop?.province && (
+            <span className="flex min-w-0 items-center gap-1">
+              <Icon name="pin" size={11} className="shrink-0 text-global-basic-white" />
+              <Typography
+                size="2x-small"
+                className="truncate text-global-basic-white">
+                {shop.province}
+              </Typography>
+            </span>
+          )}
+          {!shop && emptyText && (
+            <Typography size="2x-small" className="text-global-basic-white">
+              {emptyText}
+            </Typography>
+          )}
+        </span>
+      </div>
+
+      <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-alias-background py-1 pl-2.5 pr-1.5 shadow-sm">
+        <Typography size="x-small" weight="semibold" className="text-brand">
+          {actionLabel}
+        </Typography>
+        <Icon name="chevron-right" size={13} className="text-brand" />
+      </span>
+    </div>
+  </Button>
+);
 
 /**
  * The shop, on a product page — a small storefront rather than a row of
@@ -72,81 +167,19 @@ export const ShopPreview = ({
 
   return (
     <section className="mx-3 flex flex-col overflow-hidden rounded-2xl bg-alias-background shadow-sm">
-      {/* Header is one button: banner, logo and name all open the shop, so
-          there is nothing nested inside it to fight for the tap. */}
-      {/* One hero: the seller's banner fills the whole header and the name
-          sits on top of it, rather than in a white strip underneath — which
-          left the logo stranded on the seam and the card looking lopsided. */}
-      <button
-        type="button"
+      <ShopBanner
+        shop={shop}
+        fallbackName={fallbackName ?? 'Cửa hàng'}
+        rating={rating}
+        productCount={products.length + 1}
+        actionLabel="Xem shop"
         onClick={() => navigate('/shop', { params: { id: shop.id } })}
-        className="relative block w-full text-left">
-        <div
-          className="h-36 w-full bg-brand bg-cover bg-center"
-          style={
-            shop.imageUrl
-              ? { backgroundImage: `url("${shop.imageUrl}")` }
-              : undefined
-          }
-        />
-        {/* Darkest where the text lands, clear at the top, so the banner
-            still reads as the seller's artwork. */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
-
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-3 p-3.5">
-          <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-global-basic-white/80 bg-alias-background shadow-md">
-            {shop.logoUrl ? (
-              <Image src={shop.logoUrl} alt="" fit="cover" className="size-full" />
-            ) : (
-              <Icon name="office" size={24} className="text-brand" />
-            )}
-          </span>
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Typography
-              size="base"
-              weight="bold"
-              className="truncate text-global-basic-white">
-              {shop.name || fallbackName}
-            </Typography>
-            <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-global-basic-white opacity-90">
-              {rating > 0 && (
-                <span className="flex items-center gap-1">
-                  <Stars value={rating} />
-                  <Typography size="2x-small" className="text-global-basic-white">
-                    {rating.toFixed(1)}
-                  </Typography>
-                </span>
-              )}
-              <Typography size="2x-small" className="text-global-basic-white">
-                {products.length + 1} sản phẩm
-              </Typography>
-              {shop.province && (
-                <span className="flex min-w-0 items-center gap-1">
-                  <Icon name="pin" size={11} className="shrink-0 text-global-basic-white" />
-                  <Typography
-                    size="2x-small"
-                    className="truncate text-global-basic-white">
-                    {shop.province}
-                  </Typography>
-                </span>
-              )}
-            </span>
-          </div>
-
-          <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-alias-background py-1 pl-2.5 pr-1.5 shadow-sm">
-            <Typography size="x-small" weight="semibold" className="text-brand">
-              Xem shop
-            </Typography>
-            <Icon name="chevron-right" size={13} className="text-brand" />
-          </span>
-        </div>
-      </button>
+      />
 
       {products.length > 0 && (
         // Tinted so the white product cards read as cards against it.
         <div className="flex flex-col gap-2 bg-alias-layer-01 px-3.5 py-3">
-          <Typography size="small" weight="semibold">
+          <Typography size="base" weight="bold" component="h2">
             Sản phẩm khác của shop
           </Typography>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">

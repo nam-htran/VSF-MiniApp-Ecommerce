@@ -459,7 +459,7 @@ const ShopGroupCard = ({
           }
         />
         <div className="flex min-w-0 flex-1 flex-col justify-center">
-          <Typography size="small" className="line-clamp-2">
+          <Typography size="small" weight="semibold" className="line-clamp-2">
             {line.product.name}
           </Typography>
           {/* Which option is being bought — the buyer is about to pay, so

@@ -3,6 +3,7 @@ import {
   Avatar,
   Button,
   Icon,
+  Skeleton,
   Typography,
   useNavigate,
   type IIconName,
@@ -10,7 +11,9 @@ import {
 import { signOut, useSession } from '@/lib/auth';
 import { listAddresses, type SavedAddress } from '@/api/addresses';
 import { listOrders } from '@/api/orders';
+import { getMyShop, type Shop } from '@/api/shops';
 import { AddressBookSheet } from '@/components/address-book';
+import { ShopBanner } from '@/components/shop-preview';
 import {
   ORDER_STAGES,
   orderStage,
@@ -50,7 +53,12 @@ const SignedIn = () => {
 
   return (
     <div className="flex flex-col gap-4 bg-alias-layer-01 pb-8">
-      <Hero name={user.name} role={user.role} phone={user.phone} />
+      <Hero
+        name={user.name}
+        role={user.role}
+        phone={user.phone}
+        onClick={() => setBookOpen(true)}
+      />
 
       <OrderStages />
 
@@ -63,21 +71,8 @@ const SignedIn = () => {
         />
       </Group>
 
-      <Group title="Cài đặt">
-        <Row
-          icon="user"
-          label="Tài khoản"
-          onClick={() => setBookOpen(true)}
-        />
-      </Group>
-
       <Group title="Công cụ">
-        <Row
-          icon="office"
-          label="Kênh người bán"
-          hint={user.role === 'SELLER' ? 'Cửa hàng của tôi' : 'Mở cửa hàng'}
-          to="/seller"
-        />
+        <SellerShopBanner />
         {/* Only operators see this, and the page checks the role again —
             hiding a menu row is presentation, not access control. */}
         {user.role === 'ADMIN' && (
@@ -126,15 +121,23 @@ const Hero = ({
   name,
   role,
   phone,
+  onClick,
 }: {
   name: string | null;
   role: string;
   phone: string | null;
+  onClick: () => void;
 }) => (
-  <div style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 16px)' }}>
-    <section className="mx-3 flex items-center gap-3 rounded-2xl bg-alias-background p-3 shadow-sm">
+  <div
+    className="px-3"
+    style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 16px)' }}>
+    <button
+      type="button"
+      aria-label="Mở cài đặt tài khoản"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-2xl bg-alias-background p-3 text-left shadow-sm active:bg-alias-layer-01">
       <Avatar size={48} shape="circle" label={(name ?? '?').charAt(0)} />
-      <div className="flex min-w-0 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <Typography size="large" weight="bold" className="truncate">
           {name ?? 'Người dùng V-App'}
         </Typography>
@@ -144,9 +147,38 @@ const Hero = ({
             .join(' · ')}
         </Typography>
       </div>
-    </section>
+      <Icon
+        name="chevron-right"
+        size={18}
+        color="text-tertiary"
+        className="shrink-0"
+      />
+    </button>
   </div>
 );
+
+const SellerShopBanner = () => {
+  const navigate = useNavigate();
+  const [shop, setShop] = useState<Shop | null | undefined>(undefined);
+
+  useEffect(() => {
+    getMyShop()
+      .then(setShop)
+      .catch(() => setShop(null));
+  }, []);
+
+  if (shop === undefined) return <Skeleton className="h-36 w-full" />;
+
+  return (
+    <ShopBanner
+      shop={shop}
+      fallbackName="Mở cửa hàng của bạn"
+      emptyText="Bắt đầu bán hàng trên V-Market"
+      actionLabel={shop ? 'Quản lý' : 'Mở shop'}
+      onClick={() => navigate('/seller')}
+    />
+  );
+};
 
 /**
  * "Đơn mua" — the four stages an order passes through, each a way into the
@@ -188,7 +220,7 @@ const OrderStages = () => {
         type="button"
         onClick={() => open('all')}
         className="flex items-center justify-between px-4 pb-3 active:opacity-60">
-        <Typography size="small" weight="bold">
+        <Typography size="base" weight="bold">
           Đơn mua
         </Typography>
         <span className="flex items-center gap-0.5">

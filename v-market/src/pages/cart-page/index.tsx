@@ -139,7 +139,7 @@ const CartRow = ({ line }: { line: CartLine }) => {
           type="button"
           onClick={open}
           className="flex min-w-0 flex-col items-start text-left">
-          <Typography size="small" weight="bold" className="line-clamp-1">
+          <Typography size="small" weight="semibold" className="line-clamp-1">
             {product.name}
           </Typography>
           {/* The option bought, not the pack size — a cart row for a

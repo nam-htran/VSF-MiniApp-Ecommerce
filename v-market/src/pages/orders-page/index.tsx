@@ -127,7 +127,7 @@ const OrderCard = ({ order }: { order: OrderView }) => {
       className="flex flex-col gap-3 rounded-2xl bg-alias-background p-3 text-left shadow-sm active:bg-alias-layer-01">
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-col">
-          <Typography size="small" weight="bold">
+          <Typography size="small" weight="semibold">
             Đơn #{order.id.slice(0, 8)}
           </Typography>
           <Typography size="2x-small" color="text-tertiary">
