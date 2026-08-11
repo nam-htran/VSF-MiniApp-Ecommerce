@@ -656,8 +656,8 @@ def seed_reviews(listed: list[dict]) -> tuple[int, int]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed the V-Market demo database")
-    parser.add_argument("--limit", type=int, default=200,
-                        help="Number of Amazon-M2 products to seed (default: 200)")
+    parser.add_argument("--limit", type=int, default=2000,
+                        help="Number of Amazon-M2 products to seed (default: 2000)")
     parser.add_argument("--skip-translation", action="store_true",
                         help="Keep the original Amazon-M2 title and description")
     parser.add_argument("--skip-images", action="store_true",
