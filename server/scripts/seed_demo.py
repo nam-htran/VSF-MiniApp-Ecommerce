@@ -24,7 +24,7 @@ truncates every table it touches.
     .venv/bin/python -m pip install -r requirements.txt
     .venv/bin/python scripts/seed_demo.py
 
-Translation and image search each call out to the network once per product,
+Translation and Amazon marketplace lookup call out to the network per product,
 which dominates the runtime. Product preparation runs concurrently; tune it
 when a network starts throttling, or skip the network work for a fast run:
 
@@ -37,18 +37,18 @@ import asyncio
 import base64
 import csv
 import hashlib
+import html
 import json
-import logging
 import math
 import random
-import shutil
+import re
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from pathlib import Path
 from threading import Lock, local
 
@@ -63,6 +63,15 @@ SEMANTIC_IDS = REPO_ROOT / "ai-recommendation/output/rq-vae/semantic_ids.parquet
 IMAGE_DIR = REPO_ROOT / "server/uploads/amazon-m2"
 TRANSLATION_CACHE = Path(__file__).resolve().parent / ".amazon-m2-cache/translations.json"
 IMAGE_MANIFEST = Path(__file__).resolve().parent / ".amazon-m2-cache/image-manifest.json"
+
+AMAZON_MARKETPLACES = {
+    "DE": "www.amazon.de",
+    "ES": "www.amazon.es",
+    "FR": "www.amazon.fr",
+    "IT": "www.amazon.it",
+    "JP": "www.amazon.co.jp",
+    "UK": "www.amazon.co.uk",
+}
 
 # Same data every run, so a reseed doesn't quietly change the numbers the
 # screenshots were taken against.
@@ -409,139 +418,135 @@ def translate(text: str, translator, cache: dict, cache_lock: Lock) -> str:
         return cache.setdefault(key, result)
 
 
-def quiet_crawler_logs() -> None:
-    """icrawler calls logging.basicConfig at INFO on the root logger, which
-    buries this script's own progress lines. The downloader is quieted
-    hardest: a 403 or a dead host for one candidate is routine — two more
-    candidates follow it, and a product with no image at all is allowed."""
-    for name in ("icrawler.crawler", "feeder", "parser"):
-        logging.getLogger(name).setLevel(logging.ERROR)
-    logging.getLogger("downloader").setLevel(logging.CRITICAL)
-
-
-AMAZON_DOMAINS = {
-    "DE": "amazon.de",
-    "ES": "amazon.es",
-    "FR": "amazon.fr",
-    "IT": "amazon.it",
-    "JP": "amazon.co.jp",
-    "UK": "amazon.co.uk",
-}
-
-
-def _image_queries(
-    product_id: str, title: str, brand: str, model: str, locale: str
-) -> list[str]:
-    amazon_domain = AMAZON_DOMAINS.get(locale.upper(), "amazon.com")
-    product_terms = " ".join(
-        part for part in (product_id, brand, model, title[:100]) if part
+def _amazon_main_image(page: str) -> str | None:
+    patterns = (
+        r'"hiRes"\s*:\s*"([^"]+)"',
+        r'"large"\s*:\s*"([^"]+)"',
+        r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"',
+        r'data-old-hires="([^"]+)"',
     )
-    candidates = [
-        f"site:{amazon_domain} {product_terms}",
-        f"site:amazon.com {product_terms}",
-        product_terms,
-        " ".join(part for part in (product_id, brand, title[:100]) if part),
-        " ".join(part for part in (model, brand, title[:120]) if part),
-    ]
-    return list(dict.fromkeys(query.strip() for query in candidates if query.strip()))
+    for pattern in patterns:
+        match = re.search(pattern, page, flags=re.IGNORECASE)
+        if not match:
+            continue
+        encoded = html.unescape(match.group(1))
+        try:
+            return json.loads(f'"{encoded}"')
+        except json.JSONDecodeError:
+            return encoded.replace(r"\u0026", "&").replace(r"\/", "/")
+    return None
 
 
-def _query_signature(queries: list[str]) -> str:
-    payload = json.dumps(queries, ensure_ascii=False, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+def _amazon_product_title(page: str) -> str | None:
+    match = re.search(
+        r'<span[^>]+id="productTitle"[^>]*>(.*?)</span>',
+        page,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    plain = re.sub(r"<[^>]+>", " ", match.group(1))
+    return " ".join(html.unescape(plain).split()) or None
 
 
-def crawl_image(
-    product_id: str,
-    title: str,
-    brand: str,
-    model: str,
-    locale: str,
-    manifest: dict,
-    manifest_lock: Lock,
-) -> str | None:
-    """Take the first valid Bing photo and remember it for the next run."""
-    from icrawler.builtin import BingImageCrawler
+def fetch_amazon_product(
+    product_id: str, locale: str, manifest: dict, manifest_lock: Lock
+) -> tuple[str | None, str | None]:
+    """Read title and main image from the product's own Amazon marketplace."""
     from PIL import Image
 
     safe_id = "".join(c for c in product_id if c.isalnum() or c in "-_")
-    queries = _image_queries(product_id, title, brand, model, locale)
-    signature = _query_signature(queries)
+    marketplace = AMAZON_MARKETPLACES.get(locale.upper(), "www.amazon.com")
+    source_page = f"https://{marketplace}/dp/{product_id}"
     with manifest_lock:
         cached = manifest.get(product_id)
-    if cached and cached.get("querySignature") == signature:
+    if cached and cached.get("sourcePage") == source_page:
         if cached.get("status") == "missing":
-            return None
+            return None, cached.get("title")
         selected = cached.get("selected") or {}
         cached_file = IMAGE_DIR / str(selected.get("file") or "")
         if cached_file.is_file():
-            return f"{BACKEND}/uploads/amazon-m2/{cached_file.name}"
+            return (
+                f"{BACKEND}/uploads/amazon-m2/{cached_file.name}",
+                cached.get("title"),
+            )
 
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     selected = None
+    amazon_title = None
+    status = "error"
     try:
-        with tempfile.TemporaryDirectory(prefix=f"amazon-m2-{safe_id}-") as temp:
-            temp_path = Path(temp)
-            for query_index, query in enumerate(queries):
-                query_dir = temp_path / str(query_index)
-                BingImageCrawler(
-                    storage={"root_dir": str(query_dir)},
-                    downloader_threads=3,
-                    log_level=logging.ERROR,
-                ).crawl(
-                    keyword=query,
-                    filters={"type": "photo", "size": "medium"},
-                    max_num=4,
-                    min_size=(300, 300),
-                )
-
-                for downloaded in sorted(query_dir.glob("*")):
-                    try:
-                        with Image.open(downloaded) as image:
-                            image.verify()
-                            width, height = image.size
-                            image_format = (image.format or "JPEG").lower()
-                    except Exception:  # noqa: BLE001
-                        continue
-                    suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
-                        image_format
-                    )
-                    if suffix is None:
-                        continue
-                    destination = IMAGE_DIR / f"{safe_id}{suffix}"
-                    shutil.copyfile(downloaded, destination)
-                    selected = {
-                        "file": destination.name,
-                        "query": query,
-                        "width": width,
-                        "height": height,
-                    }
-                    break
-                if selected:
-                    break
+        page_request = urllib.request.Request(
+            source_page,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 Chrome/130 Safari/537.36"
+                ),
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        with urllib.request.urlopen(page_request, timeout=15) as response:
+            page = response.read().decode("utf-8", "ignore")
+        amazon_title = _amazon_product_title(page)
+        image_url = _amazon_main_image(page)
+        if image_url is None:
+            # A 200 page with neither title nor image is usually Amazon's
+            # robot check, not proof that the ASIN has no image. Keep it
+            # retryable instead of poisoning the cache as permanently absent.
+            status = "missing" if amazon_title else "error"
+        else:
+            image_request = urllib.request.Request(
+                image_url,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": source_page},
+            )
+            with urllib.request.urlopen(image_request, timeout=15) as response:
+                image_bytes = response.read()
+            with Image.open(BytesIO(image_bytes)) as image:
+                image.verify()
+                width, height = image.size
+                image_format = (image.format or "JPEG").lower()
+            suffix = {"jpeg": ".jpg", "png": ".png", "webp": ".webp"}.get(
+                image_format
+            )
+            if suffix is None:
+                status = "missing"
+            else:
+                destination = IMAGE_DIR / f"{safe_id}{suffix}"
+                destination.write_bytes(image_bytes)
+                selected = {
+                    "file": destination.name,
+                    "sourcePage": source_page,
+                    "imageUrl": image_url,
+                    "width": width,
+                    "height": height,
+                }
+                status = "accepted"
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            status = "missing"
+        else:
+            print(f"  amazon image failed for {product_id}: HTTP {error.code}")
     except Exception as error:  # noqa: BLE001
-        print(f"  image failed for {product_id}: {error}")
+        print(f"  amazon image failed for {product_id}: {error}")
 
     entry = {
-        "status": "accepted" if selected else "missing",
-        "querySignature": signature,
-        "queries": queries,
+        "status": status,
+        "sourcePage": source_page,
+        "title": amazon_title,
         "selected": selected,
     }
     with manifest_lock:
         manifest[product_id] = entry
     if selected:
-        return f"{BACKEND}/uploads/amazon-m2/{selected['file']}"
-    return None
+        return f"{BACKEND}/uploads/amazon-m2/{selected['file']}", amazon_title
+    return None, amazon_title
 
 
 def build_catalogue(
     limit: int, do_translate: bool, do_images: bool, workers: int
 ) -> list[dict]:
     from app.products.moderation import banned_terms_in
-
-    if do_images:
-        quiet_crawler_logs()
 
     product_ids = select_product_ids(limit)
     metadata = load_metadata(product_ids)
@@ -579,8 +584,20 @@ def build_catalogue(
         brand = _clean(row.get("brand"))
         model = _clean(row.get("model"))
         locale = _clean(row.get("locale"))
+        image = None
+        source_title = raw_title
+        if do_images:
+            image, amazon_title = fetch_amazon_product(
+                product_id, locale, image_manifest, image_manifest_lock
+            )
+            if amazon_title:
+                source_title = amazon_title
+            # A small per-worker pause is enough courtesy once several
+            # products are in flight; it no longer serialises the catalogue.
+            time.sleep(0.2)
+
         translator = translator_for_worker()
-        name = translate(raw_title, translator, cache, cache_lock)[:200]
+        name = translate(source_title, translator, cache, cache_lock)[:200]
         description = translate(
             _clean(row.get("desc"))[:3000] or raw_title,
             translator,
@@ -602,21 +619,6 @@ def build_catalogue(
         description = description[:4000]
         if banned_terms_in(name, description):
             return None
-
-        image = None
-        if do_images:
-            image = crawl_image(
-                product_id,
-                raw_title,
-                brand,
-                model,
-                locale,
-                image_manifest,
-                image_manifest_lock,
-            )
-            # A small per-worker pause is enough courtesy once several
-            # products are in flight; it no longer serialises the catalogue.
-            time.sleep(0.2)
 
         price = to_vnd(row, product_id)
         return {
@@ -823,7 +825,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-translation", action="store_true",
                         help="Keep the original Amazon-M2 title and description")
     parser.add_argument("--skip-images", action="store_true",
-                        help="Do not search Bing Images")
+                        help="Do not fetch title/images from Amazon product pages")
     parser.add_argument("--skip-reviews", action="store_true",
                         help="Seed shops and products without orders and reviews")
     args = parser.parse_args()
