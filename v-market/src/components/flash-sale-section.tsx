@@ -165,11 +165,6 @@ const ProductCard = ({ product }: { product: FlashProduct }) => {
         <Typography size="small" weight="bold" className="line-clamp-2">
           {product.name}
         </Typography>
-        {product.unit && (
-          <Typography size="2x-small" color="text-secondary" className="truncate">
-            {product.unit}
-          </Typography>
-        )}
       </div>
 
       {/* Price after any voucher, matching the badge above it — showing the

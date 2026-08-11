@@ -11,7 +11,7 @@
  *
  * Must match the `path` of each item in `bottomTabBar` in app.config.tsx.
  */
-export const TAB_ROOTS = ['/', '/cart', '/orders', '/account'];
+export const TAB_ROOTS = ['/', '/feed', '/account'];
 
 /**
  * Screens that are meaningless without an owner. Browsing stays anonymous

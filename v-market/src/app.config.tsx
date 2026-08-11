@@ -1,8 +1,8 @@
 import { IAppConfig, Icon } from '@v-miniapp/ui-react';
 import { SessionGuardLayout } from './components/session-guard-layout';
 import { TopChromeLayout } from './components/top-chrome-layout';
-import { CartTabIcon } from './components/cart-tab-icon';
 import HomePage from './pages/home-page';
+import FeedPage from './pages/feed-page';
 import ProductPage from './pages/product-page';
 import CartPage from './pages/cart-page';
 import CheckoutPage from './pages/checkout-page';
@@ -60,7 +60,6 @@ export const getAppConfig = (): IAppConfig => ({
       pathname: '/cart',
       Component: CartPage,
       navigationBar: { hidden: true },
-      bottomTabBarId: 'cart',
     },
     {
       // Checkout is a full page, not a sheet — reached from the cart. Not
@@ -105,7 +104,12 @@ export const getAppConfig = (): IAppConfig => ({
       pathname: '/orders',
       Component: OrdersPage,
       navigationBar: { title: 'Đơn hàng', hidden: true },
-      bottomTabBarId: 'orders',
+    },
+    {
+      pathname: '/feed',
+      Component: FeedPage,
+      navigationBar: { hidden: true },
+      bottomTabBarId: 'feed',
     },
     {
       // One order at /order?id=… — reached from the orders list. Not a tab
@@ -147,7 +151,7 @@ export const getAppConfig = (): IAppConfig => ({
   bottomTabBar: {
     // The active tab pops: brand colour, filled icon variant, and a
     // slight lift. The inactive state stays outline and quiet.
-    activeColor: 'global-teal-teal-60',
+    activeColor: 'alias-object-brand',
     items: [
       {
         id: 'home',
@@ -159,21 +163,12 @@ export const getAppConfig = (): IAppConfig => ({
         ),
       },
       {
-        id: 'cart',
-        name: 'Giỏ hàng',
-        path: '/cart',
-        // A live component: the config is built once, but the element
-        // inside it subscribes to the cart store and shows the count.
-        icon: <CartTabIcon />,
-        activeIcon: <CartTabIcon active />,
-      },
-      {
-        id: 'orders',
-        name: 'Đơn hàng',
-        path: '/orders',
-        icon: { name: 'receipt' },
+        id: 'feed',
+        name: 'Feed',
+        path: '/feed',
+        icon: { name: 'newspaper' },
         activeIcon: (
-          <Icon name="receipt" type="fill" className="-translate-y-0.5 scale-110 transition-transform" />
+          <Icon name="newspaper" type="fill" className="-translate-y-0.5 scale-110 transition-transform" />
         ),
       },
       {

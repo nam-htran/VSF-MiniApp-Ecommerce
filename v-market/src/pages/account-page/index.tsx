@@ -5,17 +5,26 @@ import {
   Icon,
   Typography,
   useNavigate,
+  type IIconName,
 } from '@v-miniapp/ui-react';
 import { signOut, useSession } from '@/lib/auth';
 import { listAddresses, type SavedAddress } from '@/api/addresses';
+import { listOrders } from '@/api/orders';
 import { AddressBookSheet } from '@/components/address-book';
+import {
+  ORDER_STAGES,
+  orderStage,
+  showOrders,
+  type OrderStage,
+} from '@/lib/order-stage';
 
 /**
  * Browsing never required an account — login lives here and at checkout,
  * not at the door. Signed out is a normal state, not an error.
  *
- * Signed in, this is the hub: who you are, then the shortcuts a buyer
- * reaches for — orders, the address book, the cart.
+ * Signed in, the page reads top to bottom as: who you are, where your
+ * orders have got to, then everything you can change. The chrome's search
+ * pill is off here (see NO_SEARCH) — the red hero is this page's header.
  */
 const AccountPage = () => {
   const session = useSession();
@@ -23,7 +32,6 @@ const AccountPage = () => {
 };
 
 const SignedIn = () => {
-  const navigate = useNavigate();
   const session = useSession();
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
@@ -41,81 +49,58 @@ const SignedIn = () => {
   const { user } = session;
 
   return (
-    <div className="pt-chrome flex flex-col gap-3 bg-alias-layer-01 pb-8">
-      <div className="mx-3 flex items-center gap-3 rounded-2xl bg-alias-background p-4 shadow-sm">
-        <Avatar size={56} shape="circle" label={(user.name ?? '?').charAt(0)} />
-        <div className="flex min-w-0 flex-col">
-          <Typography size="large" weight="bold" className="truncate">
-            {user.name ?? 'Người dùng V-App'}
-          </Typography>
-          <span className="flex items-center gap-2">
-            <span className="flex items-center gap-1">
-              <Icon
-                name={user.role === 'SELLER' ? 'office' : 'user'}
-                size={14}
-                className="text-global-teal-teal-60"
-              />
-              <Typography size="x-small" color="text-secondary">
-                {user.role === 'SELLER' ? 'Người bán' : 'Người mua'}
-              </Typography>
-            </span>
-            {user.phone && (
-              <Typography size="x-small" color="text-tertiary">
-                {user.phone}
-              </Typography>
-            )}
-          </span>
-        </div>
-      </div>
+    <div className="flex flex-col gap-4 bg-alias-layer-01 pb-8">
+      <Hero name={user.name} role={user.role} phone={user.phone} />
 
-      <div className="mx-4 flex flex-col overflow-hidden rounded-2xl bg-alias-background shadow-sm">
-        <MenuRow
-          icon={<Icon name="receipt" size={20} className="shrink-0 text-brand" />}
-          label="Đơn hàng của tôi"
-          onClick={() => navigate('/orders', { animation: { type: 'none' } })}
+      <OrderStages />
+
+      <Group title="Mua sắm">
+        <Row
+          icon="stack-x-plus"
+          label="Giỏ hàng"
+          to="/cart"
+          animation="none"
         />
-        <Divider />
-        <MenuRow
-          icon={<Icon name="pin" size={20} className="shrink-0 text-brand" />}
-          label="Địa chỉ của tôi"
-          hint={addresses.length ? `${addresses.length} địa chỉ` : 'Chưa có'}
+      </Group>
+
+      <Group title="Cài đặt">
+        <Row
+          icon="user"
+          label="Tài khoản"
           onClick={() => setBookOpen(true)}
         />
-        <Divider />
-        <MenuRow
-          icon={<Icon name="stack-x-plus" size={20} className="shrink-0 text-brand" />}
-          label="Giỏ hàng"
-          onClick={() => navigate('/cart', { animation: { type: 'none' } })}
-        />
-        <Divider />
-        <MenuRow
-          icon={<Icon name="office" size={20} className="shrink-0 text-brand" />}
+      </Group>
+
+      <Group title="Công cụ">
+        <Row
+          icon="office"
           label="Kênh người bán"
           hint={user.role === 'SELLER' ? 'Cửa hàng của tôi' : 'Mở cửa hàng'}
-          onClick={() => navigate('/seller')}
+          to="/seller"
         />
         {/* Only operators see this, and the page checks the role again —
             hiding a menu row is presentation, not access control. */}
         {user.role === 'ADMIN' && (
           <>
             <Divider />
-            <MenuRow
-              icon={
-                <Icon name="discount-code" size={20} className="shrink-0 text-brand" />
-              }
+            <Row
+              icon="discount-code"
               label="Đối soát thanh toán"
               hint="Tiền chờ hoàn"
-              onClick={() => navigate('/ops')}
+              to="/ops"
             />
           </>
         )}
-      </div>
+      </Group>
 
-      <div className="mx-3 mt-1">
-        <Button shape="pill" type="outline" theme="neutral" block onClick={signOut}>
-          Đăng xuất
-        </Button>
-      </div>
+      <Group title="Khác">
+        <Row
+          icon="arrow-door-out"
+          label="Đăng xuất"
+          danger
+          onClick={signOut}
+        />
+      </Group>
 
       {/* Management mode: no onSelect, so the list only edits — add, set
           default, delete — with nothing to pick. */}
@@ -132,33 +117,184 @@ const SignedIn = () => {
   );
 };
 
-const MenuRow = ({
+/**
+ * Who you are, in one quiet row — the cards below carry the page, so this
+ * only has to identify the account. The safe area is padded here because
+ * this page has no navigation bar of its own.
+ */
+const Hero = ({
+  name,
+  role,
+  phone,
+}: {
+  name: string | null;
+  role: string;
+  phone: string | null;
+}) => (
+  <div style={{ paddingTop: 'calc(var(--safe-area-inset-top, 44px) + 16px)' }}>
+    <section className="mx-3 flex items-center gap-3 rounded-2xl bg-alias-background p-3 shadow-sm">
+      <Avatar size={48} shape="circle" label={(name ?? '?').charAt(0)} />
+      <div className="flex min-w-0 flex-col">
+        <Typography size="large" weight="bold" className="truncate">
+          {name ?? 'Người dùng V-App'}
+        </Typography>
+        <Typography size="small" color="text-tertiary" className="truncate">
+          {[role === 'SELLER' ? 'Người bán' : 'Người mua', phone]
+            .filter(Boolean)
+            .join(' · ')}
+        </Typography>
+      </div>
+    </section>
+  </div>
+);
+
+/**
+ * "Đơn mua" — the four stages an order passes through, each a way into the
+ * orders list already filtered. The badge counts what the first page of
+ * orders holds; orders come back newest first, so anything still moving is
+ * on it, and the page never waits for the number to arrive.
+ */
+const OrderStages = () => {
+  const [counts, setCounts] = useState<Partial<Record<OrderStage, number>>>({});
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let alive = true;
+    listOrders()
+      .then(page => {
+        if (!alive) return;
+        const tally: Partial<Record<OrderStage, number>> = {};
+        for (const order of page.items) {
+          const stage = orderStage(order);
+          tally[stage] = (tally[stage] ?? 0) + 1;
+        }
+        setCounts(tally);
+      })
+      // No badges then. They decorate the tiles; the tiles still work.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const open = (stage: OrderStage | 'all') => {
+    showOrders(stage);
+    navigate('/orders', { animation: { type: 'none' } });
+  };
+
+  return (
+    <section className="mx-3 flex flex-col rounded-2xl bg-alias-background py-3 shadow-sm">
+      <button
+        type="button"
+        onClick={() => open('all')}
+        className="flex items-center justify-between px-4 pb-3 active:opacity-60">
+        <Typography size="small" weight="bold">
+          Đơn mua
+        </Typography>
+        <span className="flex items-center gap-0.5">
+          <Typography size="x-small" color="text-secondary">
+            Xem lịch sử mua hàng
+          </Typography>
+          <Icon name="chevron-right" size={14} color="text-tertiary" />
+        </span>
+      </button>
+
+      <div className="grid grid-cols-4">
+        {ORDER_STAGES.map(({ stage, label, icon }) => (
+          <button
+            key={stage}
+            type="button"
+            onClick={() => open(stage)}
+            className="flex flex-col items-center gap-1.5 px-1 active:opacity-60">
+            <span className="relative">
+              <Icon name={icon} size={26} className="text-brand" />
+              {!!counts[stage] && (
+                <span className="absolute -right-2.5 -top-1.5 min-w-4 rounded-full bg-global-red-red-60 px-1 text-center">
+                  <Typography
+                    size="2x-small"
+                    weight="bold"
+                    className="text-global-basic-white">
+                    {counts[stage]}
+                  </Typography>
+                </span>
+              )}
+            </span>
+            <Typography
+              size="2x-small"
+              color="text-secondary"
+              className="text-center leading-tight">
+              {label}
+            </Typography>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const Group = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className="mx-3 flex flex-col gap-1.5">
+    <Typography
+      size="x-small"
+      weight="semibold"
+      color="text-secondary"
+      className="px-1">
+      {title}
+    </Typography>
+    <div className="flex flex-col overflow-hidden rounded-2xl bg-alias-background shadow-sm">
+      {children}
+    </div>
+  </section>
+);
+
+const Row = ({
   icon,
   label,
   hint,
+  danger,
+  to,
+  animation,
   onClick,
 }: {
-  icon: ReactNode;
+  icon: IIconName;
   label: string;
   hint?: string;
-  onClick: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="flex items-center gap-3 px-4 py-3.5 text-left active:bg-alias-layer-01">
-    {icon}
-    <Typography size="small" weight="semibold" className="flex-1">
-      {label}
-    </Typography>
-    {hint && (
-      <Typography size="x-small" color="text-tertiary">
-        {hint}
+  /** Destructive: paints the row red, as the mock's "Log out" does. */
+  danger?: boolean;
+  /** Where the row goes. Rows that open a sheet pass onClick instead. */
+  to?: string;
+  animation?: 'none';
+  onClick?: () => void;
+}) => {
+  const navigate = useNavigate();
+  const tone = danger ? 'text-global-red-red-60' : undefined;
+  return (
+    <button
+      type="button"
+      onClick={
+        onClick ??
+        (() =>
+          to &&
+          navigate(to, animation ? { animation: { type: animation } } : {}))
+      }
+      className="flex items-center gap-3 px-4 py-3.5 text-left active:bg-alias-layer-01">
+      <Icon
+        name={icon}
+        size={20}
+        color={danger ? undefined : 'text-secondary'}
+        className={`shrink-0 ${tone ?? ''}`}
+      />
+      <Typography size="small" weight="semibold" className={`flex-1 ${tone ?? ''}`}>
+        {label}
       </Typography>
-    )}
-    <Icon name="chevron-right" size={16} color="text-tertiary" />
-  </button>
-);
+      {hint && (
+        <Typography size="x-small" color="text-tertiary">
+          {hint}
+        </Typography>
+      )}
+    </button>
+  );
+};
 
 const Divider = () => (
   <div className="mx-4 border-b border-alias-border-subtle-01" />

@@ -16,6 +16,13 @@ import {
   holdLeft,
 } from '@/components/order-bits';
 import { formatVnd } from '@/lib/format';
+import {
+  ORDER_STAGES,
+  orderStage,
+  showOrders,
+  useOrdersShowing,
+  type OrderStage,
+} from '@/lib/order-stage';
 
 /**
  * The buyer's orders — the one screen behind the session guard, so by the
@@ -31,32 +38,18 @@ type Feed =
   | { status: 'ready'; orders: OrderView[] }
   | { status: 'failed'; message: string };
 
-type Stage = 'pending' | 'processing' | 'shipping' | 'delivered' | 'cancelled';
-
-/** One overall stage per order, folding payment state and the per-shop
- *  fulfilment states into what a buyer scans a tab list for. */
-const orderStage = (order: OrderView): Stage => {
-  if (order.status === 'CANCELLED' || order.status === 'FAILED')
-    return 'cancelled';
-  if (order.status === 'PENDING') return 'pending';
-  const shops = order.shopOrders;
-  if (shops.length > 0 && shops.every(s => s.status === 'DELIVERED'))
-    return 'delivered';
-  if (shops.some(s => s.status === 'SHIPPING')) return 'shipping';
-  return 'processing';
-};
-
-const TABS: [Stage | 'all', string][] = [
+const TABS: [OrderStage | 'all', string][] = [
   ['all', 'Tất cả'],
-  ['pending', 'Chờ thanh toán'],
-  ['processing', 'Đang xử lý'],
-  ['shipping', 'Đang giao'],
-  ['delivered', 'Đã giao'],
+  ...ORDER_STAGES.map(
+    ({ stage, label }) => [stage, label] as [OrderStage, string]
+  ),
 ];
 
 const OrdersPage = () => {
   const [feed, setFeed] = useState<Feed>({ status: 'loading' });
-  const [tab, setTab] = useState<Stage | 'all'>('all');
+  // Shared, not local: the account tiles open this page already filtered,
+  // and the page is kept alive so they cannot hand it a starting value.
+  const tab = useOrdersShowing();
 
   const load = () => {
     setFeed({ status: 'loading' });
@@ -96,7 +89,7 @@ const OrdersPage = () => {
           <button
             key={value}
             type="button"
-            onClick={() => setTab(value)}
+            onClick={() => showOrders(value)}
             className={`shrink-0 rounded-full px-3 py-1.5 ${
               tab === value ? 'bg-brand' : 'bg-alias-layer-01'
             }`}>
