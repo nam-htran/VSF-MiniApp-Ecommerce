@@ -16,7 +16,6 @@ import {
   listMyProducts,
   listShopProducts,
   type ApiProduct,
-  type ApiProductListItem,
 } from '@/api/products';
 import { useSession } from '@/lib/auth';
 import { ProductStrip } from '@/components/product-strip';
@@ -28,26 +27,7 @@ import { SellerVouchers } from '@/components/seller-vouchers';
 import { Stars } from '@/components/reviews-section';
 import { CATEGORIES } from '@/lib/categories';
 import { formatVnd } from '@/lib/format';
-import type { ProductCardData } from '@/lib/product-card';
-
-const toCard = (item: ApiProductListItem): ProductCardData => ({
-  id: item.id,
-  name: item.name,
-  description: item.description,
-  unit: item.unit ?? undefined,
-  price: item.price,
-  oldPrice: item.originalPrice ?? undefined,
-  image: item.imageUrl ?? undefined,
-  shopId: item.shopId,
-  shopName: item.shopName,
-  shopProvince: item.shopProvince,
-  ratingAverage: item.ratingAverage,
-  ratingCount: item.ratingCount,
-  sold: item.sold,
-  category: item.category,
-  emoji: '🛒',
-  tint: 'bg-global-neutral-neutral-10',
-});
+import { listItemToCard, type ProductCardData } from '@/lib/product-card';
 
 /**
  * A shop's storefront at /shop?id=… — a hero, the shop's name and stats,
@@ -95,7 +75,7 @@ const ShopPage = () => {
   const loadProducts = useCallback(() => {
     if (!id) return;
     listShopProducts(id, 50)
-      .then(page => setProducts(page.items.map(toCard)))
+      .then(page => setProducts(page.items.map(listItemToCard)))
       .catch(() => setProducts([]));
   }, [id]);
 

@@ -1,89 +1,53 @@
-import { useEffect, useState } from 'react';
-import { Alert, Button, PullToRefresh, Toast } from '@v-miniapp/ui-react';
-import { listAllProducts, type ApiProductListItem } from '@/api/products';
+import { useCallback } from 'react';
+import {
+  Alert,
+  Button,
+  PullToRefresh,
+  Toast,
+  Typography,
+} from '@v-miniapp/ui-react';
+import { listProducts, PRODUCT_PAGE } from '@/api/products';
 import { FlashSaleSection } from '@/components/flash-sale-section';
 import { ProductGridSection } from '@/components/product-grid-section';
 import { PromoSection } from '@/components/promo-section';
-import { RecommendedSection } from '@/components/recommended-section';
-import type { ProductCardData } from '@/lib/product-card';
-
-const toCard = (item: ApiProductListItem): ProductCardData => ({
-  id: item.id,
-  name: item.name,
-  description: item.description,
-  unit: item.unit ?? undefined,
-  price: item.price,
-  oldPrice: item.originalPrice ?? undefined,
-  image: item.imageUrl ?? undefined,
-  shopId: item.shopId,
-  shopName: item.shopName,
-  shopProvince: item.shopProvince,
-  ratingAverage: item.ratingAverage,
-  ratingCount: item.ratingCount,
-  sold: item.sold,
-  emoji: '🛒',
-  tint: 'bg-global-neutral-neutral-10',
-});
-
-type Feed =
-  | { status: 'loading' }
-  | { status: 'ready'; products: ProductCardData[] }
-  | { status: 'failed'; message: string };
+import { usePagedProducts } from '@/lib/paged-feed';
 
 /**
- * The database is the only source: one walk of GET /products feeds the grid
- * with everything and the flash strip with the discounted items. The
- * storefront shows the whole catalogue, so it fetches the whole catalogue —
- * the server caps a page at 50, which is why listAllProducts pages until the
- * server says it is done.
+ * The storefront, a page at a time. The grid draws one page, then asks for
+ * the next when the shopper nears the bottom, and keeps going for as long
+ * as the server says there is more — no ceiling on how far it scrolls. It
+ * does not fetch the marketplace before showing any of it: at two thousand
+ * products that was forty requests before the first card appeared.
  *
- * While loading the sections show skeletons; on failure the page says so
- * and offers a retry instead of pretending with fake content.
+ * The grid is the recommendation. There is no strip beside it: the server
+ * ranks this feed from what the shopper has been looking at, so opening a
+ * product reorders the marketplace itself.
  *
  * Pull down to refresh — only here, the storefront. Other tabs (cart,
  * orders, account) reload on their own actions and a pull there would
- * mean nothing, so PullToRefresh wraps this page alone.
+ * mean nothing, so PullToRefresh wraps this page alone. It is also where a
+ * new ranking is picked up: `keepAlive` keeps this page mounted behind the
+ * product being read, so nothing refetches on its own.
  */
 const HomePage = () => {
-  const [feed, setFeed] = useState<Feed>({ status: 'loading' });
+  const page = useCallback(
+    (offset: number) => listProducts(PRODUCT_PAGE, offset),
+    []
+  );
+  const { feed, load, refresh, sentinel } = usePagedProducts(page);
 
-  // First paint (and the retry button): show skeletons, and on failure show
-  // the error page — there is nothing on screen to protect.
-  const load = () => {
-    setFeed({ status: 'loading' });
-    listAllProducts()
-      .then(items => setFeed({ status: 'ready', products: items.map(toCard) }))
-      .catch(error =>
-        setFeed({
-          status: 'failed',
-          message: error instanceof Error ? error.message : String(error),
-        })
-      );
-  };
-
-  // Pull-to-refresh: returns the promise so the spinner stays up until the
-  // fetch settles, and never drops back to skeletons. The current products
-  // stay put while the new ones arrive; a failure keeps what's on screen and
-  // only warns, rather than blanking a page the seller was already reading.
-  const refresh = () =>
-    listAllProducts()
-      .then(items => setFeed({ status: 'ready', products: items.map(toCard) }))
-      .catch(() =>
-        Toast.show({
-          type: 'negative',
-          message: 'Không làm mới được, thử lại sau',
-          position: 'bottom',
-        })
-      );
-
-  useEffect(load, []);
-
-  const products =
-    feed.status === 'ready' ? feed.products : undefined;
+  const onRefresh = () =>
+    refresh().catch(() =>
+      Toast.show({
+        type: 'negative',
+        message: 'Không làm mới được, thử lại sau',
+        position: 'bottom',
+      })
+    );
 
   return (
     <PullToRefresh
-      onRefresh={refresh}
+      onRefresh={onRefresh}
       pullingText="Kéo xuống để làm mới"
       canReleaseText="Thả ra để làm mới"
       refreshingText="Đang làm mới…"
@@ -101,11 +65,17 @@ const HomePage = () => {
           </div>
         ) : (
           <>
-            <FlashSaleSection products={products} />
-            {/* Fetches on its own rather than sharing the page's feed —
-                the server picks these products, not the client. */}
-            <RecommendedSection />
-            <ProductGridSection products={products} />
+            <FlashSaleSection />
+            <ProductGridSection
+              products={feed.status === 'ready' ? feed.products : undefined}
+            />
+            {feed.status === 'ready' && feed.hasMore && (
+              <div ref={sentinel} className="flex justify-center py-6">
+                <Typography size="small" color="text-secondary">
+                  Đang tải thêm…
+                </Typography>
+              </div>
+            )}
           </>
         )}
       </div>

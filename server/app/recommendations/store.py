@@ -17,6 +17,7 @@ prefix matcher remains the fallback and also powers related products.
 
 import uuid
 from datetime import datetime
+from itertools import zip_longest
 
 from sqlalchemy import DateTime, ForeignKey, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,23 @@ from app.recommendations import predictor
 # How much history to reason from. Long enough to see a theme, short enough
 # that yesterday's browsing does not drown what they are looking at now.
 HISTORY_DEPTH = 10
+
+# Held across the pages of one storefront walk: a ranking recomputed per
+# page would shift under the walk and a product could arrive twice or not
+# at all. Only shoppers with history get an entry — everyone else is served
+# the shop window, which needs no ranking to be stable.
+_rankings: dict[str, tuple[list[str], str]] = {}
+
+# The same, for visitors with no account to key on. One slot rather than a
+# table: a walk sends the same history with every page, so holding the last
+# answer computes it once per walk, and nothing accumulates. Interleaved
+# visitors evict each other and simply recompute — the ranking is a pure
+# function of what the request carried, so a miss costs time and never
+# correctness.
+#
+# Staleness is bounded by what a ranking is: an order, not a result set.
+# Which products exist comes from SQL on every request either way.
+_last_anonymous: tuple[tuple[str, ...], list[str] | None, str | None] | None = None
 
 
 class ProductView(Base):
@@ -56,6 +74,7 @@ async def record_view(session: AsyncSession, user_id: str, product_id: str) -> N
         )
     )
     await session.commit()
+    _rankings.pop(user_id, None)
 
 
 async def recent_view_events(
@@ -144,11 +163,16 @@ async def _predicted_rows(
         ]
         pools.append(sorted(pool, key=_business_order))
 
-    picked = []
-    for pool in pools:
-        picked += pool[: limit - len(picked)]
-        if len(picked) == limit:
-            break
+    # One product from each cluster per round, in beam order, until the pools
+    # run dry. Draining a cluster before touching the next put eight rolls of
+    # tape across the storefront's whole first screen while beams two and
+    # three waited below the fold.
+    picked = [
+        row
+        for round_ in zip_longest(*pools)
+        for row in round_
+        if row is not None
+    ][:limit]
     picked_ids = {row["product"].id for row in picked}
 
     # The demo catalogue is thin. Only after every exact cluster is short do
@@ -203,18 +227,40 @@ async def _history_rows(
 async def recommend(
     session: AsyncSession, user_id: str, limit: int
 ) -> tuple[list[dict], str]:
-    """Products for the "for you" strip, and which route produced them.
+    """Products for a signed-in shopper, and which route produced them."""
+    return await recommend_from(
+        session, await recent_view_events(session, user_id), limit
+    )
 
-    The reason is returned rather than logged because the client shows it:
-    a strip that says why it is there is honest about a cold start instead
-    of dressing up the best-seller list as personalisation.
+
+async def recommend_from(
+    session: AsyncSession, events: list[str], limit: int
+) -> tuple[list[dict], str]:
+    """The ranking itself, given a browsing history from anywhere.
+
+    Signed in, that history is the product_views table. Signed out it is
+    whatever the shopper's own device kept and sent, because a marketplace
+    that only recommends to people with accounts recommends to almost
+    nobody. Same routes either way — where the sequence came from changes
+    nothing about how it is read.
+
+    `events` is oldest first and keeps repeats: the model was trained on
+    sessions, and looking at one product four times says something a
+    deduplicated list would lose.
+
+    Only what the Semantic IDs actually reach is returned — a few dozen
+    products, however large the catalogue. Everything else is left out
+    rather than padded with best sellers: the listing query already orders
+    what this does not name, by the same units-sold measure and with a
+    rating tiebreak this had no way to apply. Padding meant building the
+    whole catalogue in Python to arrive at an order SQL was going to
+    produce anyway.
     """
-    events = await recent_view_events(session, user_id)
     history = list(dict.fromkeys(reversed(events)))
     model_history = await _semantic_ids(session, events)
     seeds = list(dict.fromkeys(reversed(model_history)))
     if not seeds:
-        return await products.list_popular(session, limit), "popular"
+        return [], "popular"
 
     predictions = await predictor.predict(model_history)
     rows = (
@@ -225,17 +271,81 @@ async def recommend(
     source = "transformer" if rows else None
 
     if len(rows) < limit:
+        # All three levels, deepest first — _history_rows sorts by how much
+        # of the prefix matches. Sharing only the coarse code is a broad
+        # category resemblance and a weak signal, but it is still a signal
+        # about this shopper, which is more than the units-sold order it
+        # would otherwise fall to.
         exclude = history + [row["product"].id for row in rows]
         fallback = await _history_rows(
-            session, seeds, exclude, limit - len(rows), min_depth=2
+            session, seeds, exclude, limit - len(rows), min_depth=1
         )
         rows += fallback
         if fallback and source is None:
             source = "semantic-id"
-    if len(rows) < limit:
-        already = [row["product"].id for row in rows] + history
-        rows += await products.list_popular(session, limit - len(rows), already)
     return rows, source or "popular"
+
+
+async def ranked_product_ids(
+    session: AsyncSession, user_id: str
+) -> tuple[list[str] | None, str]:
+    """recommend()'s order as ids the product listing can sort by, and which
+    route produced it.
+
+    The route travels with the ranking because nothing else can show it. Once
+    recommendations are an order rather than a labelled strip, a Transformer
+    answer and a best-seller fallback look identical on screen.
+
+    No ranking at all for a shopper who has looked at nothing: the listing's
+    own shop window is already the best-seller order, so ordering by a copy
+    of it would cost a walk of the catalogue to change nothing.
+    """
+    cached = _rankings.get(user_id)
+    if cached is not None:
+        return cached
+
+    if not await _semantic_ids(session, await recent_view_events(session, user_id)):
+        return None, "popular"
+
+    # Bounded by the catalogue rather than by a cut-off chosen by hand. The
+    # Semantic IDs stop well short of it either way.
+    rows, source = await recommend(
+        session, user_id, await products.count_active(session)
+    )
+    ranking = ([row["product"].id for row in rows] or None, source)
+    _rankings[user_id] = ranking
+    return ranking
+
+
+async def ranked_for_seen(
+    session: AsyncSession, seen: list[str]
+) -> tuple[list[str] | None, str | None]:
+    """The same ranking for a shopper with no account, from the history their
+    own device kept and sent.
+
+    Held for the length of a walk, like the signed-in one, so the Transformer
+    runs once per storefront load rather than once per page as the shopper
+    scrolls.
+
+    Nothing is stored, though: a visitor without an account leaves no
+    browsing record on the server, and their history stays theirs to clear.
+    """
+    global _last_anonymous
+    key = tuple(seen)
+    if _last_anonymous is not None and _last_anonymous[0] == key:
+        return _last_anonymous[1], _last_anonymous[2]
+
+    if not seen or not await _semantic_ids(session, seen):
+        ranking: list[str] | None = None
+        source: str | None = None
+    else:
+        rows, source = await recommend_from(
+            session, seen, await products.count_active(session)
+        )
+        ranking = [row["product"].id for row in rows] or None
+
+    _last_anonymous = (key, ranking, source)
+    return ranking, source
 
 
 async def related(

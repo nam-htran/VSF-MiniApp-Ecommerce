@@ -1,34 +1,18 @@
 import { apiRequest } from './client';
 import { currentToken } from '@/lib/auth';
+import { rememberSeen } from '@/lib/seen';
 import type { ApiProductListItem } from './products';
 
 /**
- * The "for you" strip, and the browsing history behind it.
+ * Related products, and the browsing history behind the ranking.
  *
- * Both need a session: the server has nothing to personalise from without
- * a shopper, and a view belongs to somebody.
+ * A view needs a session: it belongs to somebody.
  */
 
 const bearer = (): Record<string, string> | undefined => {
   const token = currentToken();
   return token ? { Authorization: `Bearer ${token}` } : undefined;
 };
-
-/**
- * `source` says whether the Transformer, SID fallback, or best-seller
- * fallback answered. The strip does not call popularity personalisation.
- */
-export type RecommendationSource = 'transformer' | 'semantic-id' | 'popular';
-
-export type Recommendations = {
-  items: ApiProductListItem[];
-  source: RecommendationSource;
-};
-
-export const listRecommendations = (limit = 10) =>
-  apiRequest<Recommendations>(`/recommendations?limit=${limit}`, {
-    headers: bearer(),
-  });
 
 /** Related products need no user session: the current product supplies the SID. */
 export const listRelatedProducts = (productId: string, limit = 10) =>
@@ -37,11 +21,20 @@ export const listRelatedProducts = (productId: string, limit = 10) =>
   );
 
 /**
- * Tell the server this product was opened. Fire-and-forget: a lost view
- * costs a little recommendation quality and nothing else, so it must never
- * delay or break the page the shopper actually asked for.
+ * Remember that this product was opened, on the device and — for a shopper
+ * with an account — on the server too.
+ *
+ * The local copy is written first and always: the POST needs a session and
+ * is refused without one, which used to mean a visitor browsing anonymously
+ * built no history at all and was never recommended anything.
+ *
+ * Fire-and-forget: a lost view costs a little recommendation quality and
+ * nothing else, so it must never delay or break the page the shopper asked
+ * for. Nothing on screen is told either — a feed already fetched picks the
+ * new order up when it is next asked for, on pull-to-refresh or app start.
  */
 export const recordProductView = (productId: string): void => {
+  rememberSeen(productId);
   void apiRequest(`/products/${productId}/view`, {
     method: 'POST',
     headers: bearer(),

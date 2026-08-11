@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Numeric,
     UniqueConstraint,
+    case,
     func,
     or_,
     select,
@@ -250,6 +251,7 @@ async def list_active(
     offset: int,
     on_sale: bool = False,
     q: str | None = None,
+    rank: list[str] | None = None,
 ) -> list[dict]:
     """The marketplace storefront: active products across all shops, each
     with the card's data — shop name and province (for the delivery
@@ -260,6 +262,10 @@ async def list_active(
 
     `q` filters by product name or shop name, case-insensitively — the
     search box, moved off the client so it covers the whole catalogue.
+
+    `rank` is the shopper's recommendation ordering, product ids best first,
+    from recommendations.ranked_product_ids. Without one — signed out, or
+    nothing viewed yet — the shop window order below is the whole answer.
     """
     from app.shops.store import Shop
 
@@ -290,10 +296,27 @@ async def list_active(
             )
         )
 
+    # Product.id last for a total order: without it Postgres may return ties
+    # in any order and one product can appear on two pages.
+    window = (
+        sold.c.sold.desc().nullslast(),
+        rating.c.avg.desc().nullslast(),
+        Product.id,
+    )
+    if rank:
+        order = (
+            case(
+                {product_id: place for place, product_id in enumerate(rank)},
+                value=Product.id,
+                else_=len(rank),
+            ),
+            *window,
+        )
+    else:
+        order = window
+
     rows = await session.execute(
-        # Ordered so paging is stable — without it Postgres may return
-        # rows in any order and one product can appear on two pages.
-        query.order_by(Product.name, Product.id).limit(limit).offset(offset)
+        query.order_by(*order).limit(limit).offset(offset)
     )
     return [
         {
@@ -532,6 +555,39 @@ async def active_semantic_ids(
         )
     )
     return [tuple(row) for row in rows.all()]
+
+
+async def count_active(session: AsyncSession) -> int:
+    """How many products the storefront can show."""
+    from app.shops.store import Shop
+
+    return await session.scalar(
+        select(func.count())
+        .select_from(Product)
+        .join(Shop, Shop.id == Product.shop_id)
+        .where(Product.status == "ACTIVE", Shop.status == "ACTIVE")
+    )
+
+
+async def count_semantic_ids(session: AsyncSession) -> int:
+    """How many distinct Semantic IDs the ACTIVE catalogue holds.
+
+    The cheap half of active_semantic_ids, for checking whether a beam mask
+    built earlier still describes the catalogue.
+    """
+    return await session.scalar(
+        select(func.count()).select_from(
+            select(Product.sid_0, Product.sid_1, Product.sid_2)
+            .distinct()
+            .where(
+                Product.status == "ACTIVE",
+                Product.sid_0.is_not(None),
+                Product.sid_1.is_not(None),
+                Product.sid_2.is_not(None),
+            )
+            .subquery()
+        )
+    )
 
 
 async def write_semantic_ids(

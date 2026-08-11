@@ -49,6 +49,23 @@ async def current_user(
 CurrentUser = Annotated[MarketUser, Depends(current_user)]
 
 
+async def optional_user(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    authorization: Annotated[str | None, Header()] = None,
+) -> MarketUser | None:
+    """Who is browsing, if anyone. A bad or missing token is an absence of a
+    shopper, never a 401 — browsing must not fail on a credential."""
+    if authorization is None or not authorization.startswith("Bearer "):
+        return None
+    try:
+        return await current_user(session, authorization)
+    except HTTPException:
+        return None
+
+
+OptionalUser = Annotated[MarketUser | None, Depends(optional_user)]
+
+
 async def current_seller(user: CurrentUser) -> MarketUser:
     if user.role != "SELLER":
         raise HTTPException(

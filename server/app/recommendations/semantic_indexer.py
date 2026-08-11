@@ -190,6 +190,29 @@ async def _index_one_batch() -> int:
     return len(pending)
 
 
+async def _resync_catalogue_mask() -> None:
+    """Rebuild the beam mask if the catalogue no longer matches it.
+
+    Every write this application makes refreshes the mask itself, but not
+    every write goes through the application: scripts/seed_demo.py assigns
+    Semantic IDs with a bulk UPDATE, and a mask left over from before that
+    does not fail — beam search keeps generating, confidently, out of the
+    clusters the catalogue used to have. Checking a count each scan costs
+    one query and bounds that staleness by the scan interval.
+    """
+    if not predictor.ready():
+        return
+    async with SessionFactory() as session:
+        live = await products.count_semantic_ids(session)
+    if live != predictor.catalogue_size():
+        logger.info(
+            "Catalogue changed outside the indexer (%s -> %s); refreshing the beam mask",
+            predictor.catalogue_size(),
+            live,
+        )
+        await predictor.refresh_catalogue()
+
+
 async def _run() -> None:
     first_scan = True
     while True:
@@ -209,6 +232,7 @@ async def _run() -> None:
 
             while await _index_one_batch() == settings.semantic_batch_size:
                 pass
+            await _resync_catalogue_mask()
         except asyncio.CancelledError:
             raise
         except Exception:

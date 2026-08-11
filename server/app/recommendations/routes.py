@@ -1,4 +1,8 @@
-"""Recommendations, and the browsing history they run on."""
+"""Related products, and the browsing history the storefront ranking runs on.
+
+There is no recommendations endpoint. The ranking recommendations produce is
+the order of GET /products, so it is served there rather than beside it.
+"""
 
 from typing import Annotated
 
@@ -41,32 +45,6 @@ async def record_view(
             status_code=status.HTTP_404_NOT_FOUND, detail="Product not found"
         )
     await recommendations.record_view(session, user.id, product_id)
-
-
-@router.get("/recommendations")
-async def list_recommendations(
-    session: Session,
-    user: CurrentUser,
-    limit: Annotated[int, Query(ge=1, le=20)] = 10,
-) -> dict:
-    """The "for you" strip. Signed-in only — without a shopper there is no
-    history, and a strip built from nobody's behaviour is just a second
-    product grid.
-
-    A signed-in shopper who has looked at nothing still gets an answer, from
-    best sellers. `source` says which route produced it, so the strip can
-    label itself honestly rather than calling a popularity list
-    personalisation.
-    """
-    rows, source = await recommendations.recommend(session, user.id, limit)
-    live = await vouchers.list_live(session)
-    options = await products.variants_for(
-        session, [row["product"].id for row in rows]
-    )
-    return {
-        "items": _items(rows, live, options),
-        "source": source,
-    }
 
 
 @router.get("/products/{product_id}/related")

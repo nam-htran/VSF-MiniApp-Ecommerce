@@ -1,5 +1,6 @@
 import { apiRequest } from './client';
 import { currentToken } from '@/lib/auth';
+import { seenProducts } from '@/lib/seen';
 
 const bearer = (): Record<string, string> | undefined => {
   const token = currentToken();
@@ -97,6 +98,10 @@ export type ApiProductListItem = ApiProduct & {
 export type ProductPage = {
   items: ApiProductListItem[];
   hasMore: boolean;
+  /** Which route ordered this page — null for a request with no session.
+   *  Nothing renders it; an order cannot show its own reasoning, so this is
+   *  how you tell a Transformer answer from a best-seller fallback. */
+  rankedBy: 'transformer' | 'semantic-id' | 'popular' | null;
 };
 
 /** Public — one shop's active products, for the "more from this shop" strip.
@@ -111,44 +116,48 @@ export function listShopProducts(shopId: string, limit = 10) {
  * Public — the storefront across every shop, no session needed. `q`
  * searches by product or shop name across the whole catalogue (server
  * side), not just the page fetched here.
+ *
+ * The token, when there is one, only changes the order — the server ranks
+ * this feed from what the shopper has been looking at. Without a token the
+ * device's own history is sent instead, so a visitor with no account is
+ * still recommended to.
  */
-export function listProducts(limit = 20, offset = 0, q?: string) {
+/** How much of the storefront one request carries. Not a ceiling on what a
+ *  page may show — callers keep asking with a larger offset until `hasMore`
+ *  says there is nothing left. Named so the pages that scroll through the
+ *  catalogue and the request that serves them agree on one number. */
+export const PRODUCT_PAGE = 20;
+
+export async function listProducts(
+  limit = PRODUCT_PAGE,
+  offset = 0,
+  q?: string
+) {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   if (q && q.trim()) params.set('q', q.trim());
-  return apiRequest<ProductPage>(`/products?${params.toString()}`);
-}
 
-/** Public — only discounted items, for the flash-sale "see all" page. */
-export function listOnSale(limit = 50) {
-  return apiRequest<ProductPage>(`/products?onSale=true&limit=${limit}`);
-}
-
-/** The server caps a page at 50, so "everything" is a walk, not a request. */
-const MAX_PAGE = 50;
-
-/** Stops a bad `hasMore` from looping forever — 100 pages is 5000 products,
- *  well past anything this marketplace holds. */
-const MAX_PAGES = 100;
-
-/**
- * Public — every active product, fetched a page at a time until the server
- * says there is no more. The storefront renders the whole catalogue rather
- * than a first page, so it has to ask for the whole catalogue.
- */
-export async function listAllProducts(q?: string) {
-  const items: ApiProductListItem[] = [];
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const next = await listProducts(MAX_PAGE, items.length, q);
-    items.push(...next.items);
-    // An empty page ends the walk too: hasMore is `page === limit`, so a
-    // catalogue that divides evenly by 50 reports one more page than exists.
-    if (!next.hasMore || next.items.length === 0) break;
+  const headers = bearer();
+  if (!headers) {
+    // Only signed out: with a session the server has the history already,
+    // and its own copy is the one that counts.
+    const seen = await seenProducts();
+    if (seen.length > 0) params.set('seen', seen.join(','));
   }
-  return items;
+  return apiRequest<ProductPage>(`/products?${params.toString()}`, { headers });
 }
+
+/** Public — only discounted items, for the flash-sale strip and its "see
+ *  all" page. Paged like the storefront: the strip shows the first page,
+ *  the page behind it scrolls through the rest. */
+export function listOnSale(limit = PRODUCT_PAGE, offset = 0) {
+  return apiRequest<ProductPage>(
+    `/products?onSale=true&limit=${limit}&offset=${offset}`
+  );
+}
+
 
 // --- Seller-facing (bearer required) ---
 

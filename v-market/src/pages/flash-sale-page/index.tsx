@@ -1,50 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Icon, Typography } from '@v-miniapp/ui-react';
-import { listOnSale, type ApiProductListItem } from '@/api/products';
+import { listOnSale, PRODUCT_PAGE } from '@/api/products';
 import { CategoryRow } from '@/components/category-row';
 import { ProductGridSection } from '@/components/product-grid-section';
-import type { ProductCardData } from '@/lib/product-card';
-
-const toCard = (item: ApiProductListItem): ProductCardData => ({
-  id: item.id,
-  name: item.name,
-  description: item.description,
-  unit: item.unit ?? undefined,
-  price: item.price,
-  oldPrice: item.originalPrice ?? undefined,
-  image: item.imageUrl ?? undefined,
-  shopId: item.shopId,
-  shopName: item.shopName,
-  shopProvince: item.shopProvince,
-  ratingAverage: item.ratingAverage,
-  ratingCount: item.ratingCount,
-  sold: item.sold,
-  category: item.category,
-  emoji: '🛒',
-  tint: 'bg-global-neutral-neutral-10',
-});
+import { usePagedProducts } from '@/lib/paged-feed';
 
 /**
  * All the flash-sale items — the "see all" page behind the home strip.
  * Every discounted product across the catalogue, in the same card as the
- * storefront grid.
+ * storefront grid, scrolled through a page at a time.
+ *
+ * The category chips filter what has been loaded rather than asking the
+ * server for one category: /products has no category parameter. A narrow
+ * category therefore keeps the marker on screen and pulls further pages in
+ * until the matches appear, which is slower than a server-side filter and
+ * still finds everything.
  */
 const FlashSalePage = () => {
-  const [products, setProducts] = useState<ProductCardData[] | undefined>();
   const [category, setCategory] = useState<string | 'all'>('all');
+  const page = useCallback(
+    (offset: number) => listOnSale(PRODUCT_PAGE, offset),
+    []
+  );
+  const { feed, sentinel } = usePagedProducts(page);
 
-  useEffect(() => {
-    listOnSale(50)
-      .then(page => setProducts(page.items.map(toCard)))
-      .catch(() => setProducts([]));
-  }, []);
-
+  const loaded = feed.status === 'ready' ? feed.products : undefined;
   const filtered =
-    products === undefined
+    loaded === undefined
       ? undefined
       : category === 'all'
-        ? products
-        : products.filter(p => p.category === category);
+        ? loaded
+        : loaded.filter(p => p.category === category);
 
   return (
     <div className="pt-chrome flex min-h-full flex-col gap-2 bg-alias-layer-01 pb-6">
@@ -67,6 +53,14 @@ const FlashSalePage = () => {
         </div>
       ) : (
         <ProductGridSection products={filtered} />
+      )}
+
+      {feed.status === 'ready' && feed.hasMore && (
+        <div ref={sentinel} className="flex justify-center py-6">
+          <Typography size="small" color="text-secondary">
+            Đang tải thêm…
+          </Typography>
+        </div>
       )}
     </div>
   );

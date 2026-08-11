@@ -1,11 +1,16 @@
-"""The "for you" strip.
+"""The storefront ranking, which is where recommendations are served.
 
-  recommendations need a session — there is nobody to personalise for
-  a shopper with no history gets best sellers, and is told so
+  the storefront serves a visitor with no session — browsing never 401s
+  a shopper with no history gets best sellers, and rankedBy says so
   a viewed product pulls in others sharing its Semantic ID
   what you just looked at is never recommended back to you
   the closer Semantic ID wins
   a view of a product that does not exist is refused
+  a view reorders the storefront itself, and only for the shopper who made it
+  the storefront backs off through all three Semantic ID levels
+  a visitor with no account is recommended to, from history they send
+  one ranking serves a whole anonymous walk
+  a view ends the cached ranking that holds a storefront walk together
 """
 
 import httpx
@@ -16,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
 from app.products import store as products
+from app.recommendations import store as recommendations_store
 from app.recommendations.semantic_indexer import build_product_text
 from tests.conftest import USER_A_ID, USER_B_ID, _throwaway_engine
 
@@ -98,11 +104,18 @@ async def semantic_id(product_id: str) -> tuple[int | None, int | None, int | No
 
 
 async def recommendations(base_url: str, token: str, limit: int = 10) -> dict:
+    """The storefront feed, which is where recommendations are served.
+
+    Unlike the strip this replaced, the feed is the whole catalogue: products
+    the ranking leaves out are not missing, they are behind everything it
+    named.
+    """
     async with httpx.AsyncClient() as client:
         response = await client.get(
-            f"{base_url}/recommendations?limit={limit}", headers=auth(token)
+            f"{base_url}/products?limit={limit}", headers=auth(token)
         )
-    return response.json()
+    body = response.json()
+    return {"items": body["items"], "source": body["rankedBy"]}
 
 
 async def related(base_url: str, product_id: str, limit: int = 10) -> dict:
@@ -197,10 +210,24 @@ async def test_beam_catalogue_contains_only_complete_active_sids(base_url):
     assert set(catalogue) == {(7, 6, 5)}
 
 
-async def test_recommendations_need_a_session(base_url):
+async def test_the_storefront_serves_a_visitor_with_no_session(base_url):
+    """Browsing must never fail on a credential. Recommendations moved into
+    the storefront feed, so the feed has to stay public — a bad or missing
+    token is a shopper the ranking knows nothing about, not a 401."""
+    await seller_with_products(base_url, ["Bàn phím"])
+
     async with httpx.AsyncClient() as client:
-        anonymous = await client.get(f"{base_url}/recommendations")
-    assert anonymous.status_code == 401
+        anonymous = await client.get(f"{base_url}/products")
+        rubbish = await client.get(
+            f"{base_url}/products", headers=auth("not-a-token")
+        )
+
+    assert anonymous.status_code == 200
+    assert rubbish.status_code == 200
+    # Nothing personalised the order, and the feed says so rather than
+    # implying a shopper it never had.
+    assert anonymous.json()["rankedBy"] is None
+    assert rubbish.json()["rankedBy"] is None
 
 
 async def test_no_history_falls_back_to_best_sellers(base_url):
@@ -229,10 +256,11 @@ async def test_a_view_pulls_in_products_sharing_its_semantic_id(base_url):
     assert body["source"] == "semantic-id"
     returned = [item["id"] for item in body["items"]]
     # The sibling leads: it shares all three codes. The unrelated product
-    # may still appear behind it as filler, but never ahead.
+    # may still appear behind it, but never ahead.
     assert returned[0] == sibling
-    # And what they just looked at is not recommended back to them.
-    assert seen not in returned
+    # What they just looked at is left out of the ranking — not promoted,
+    # not buried either. A feed still stocks the whole marketplace.
+    assert set(returned) == {seen, sibling, stranger}
 
 
 async def test_a_closer_semantic_id_ranks_higher(base_url):
@@ -242,13 +270,15 @@ async def test_a_closer_semantic_id_ranks_higher(base_url):
     await set_semantic_id(seen, (9, 9, 9))
     # Same three codes — one cluster.
     await set_semantic_id(near, (9, 9, 9))
-    # Shares only the coarse code, so a broad resemblance and no more.
-    await set_semantic_id(far, (9, 200, 200))
+    # Shares the first two, so the same branch but not the same cluster.
+    await set_semantic_id(far, (9, 9, 8))
     buyer = await token_for(base_url, USER_B_ID)
 
     await view(base_url, buyer, seen)
     body = await recommendations(base_url, buyer)
 
+    # Depth decides: three codes shared beats two. Both are ranked, so this
+    # is the ordering itself rather than one of them arriving as filler.
     assert [item["id"] for item in body["items"]][:2] == [near, far]
 
 
@@ -298,3 +328,164 @@ async def test_viewing_a_product_that_does_not_exist_is_refused(base_url):
     buyer = await token_for(base_url, USER_B_ID)
     missing = await view(base_url, buyer, "00000000-0000-0000-0000-000000000000")
     assert missing.status_code == 404
+
+
+async def storefront(base_url: str, token: str | None = None) -> list[str]:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{base_url}/products?limit=50",
+            headers=auth(token) if token else None,
+        )
+    return [item["name"] for item in response.json()["items"]]
+
+
+async def test_a_view_reorders_the_storefront_itself(base_url):
+    """The feed is the recommendation — there is no strip to put it in."""
+    names = ["Alpha", "Alpha kèm", "Beta", "Beta kèm"]
+    ids = await seller_with_products(base_url, names)
+    alpha, alpha_pair, beta, beta_pair = ids
+    await set_semantic_id(alpha, (1, 1, 1))
+    await set_semantic_id(alpha_pair, (1, 1, 1))
+    await set_semantic_id(beta, (9, 9, 9))
+    await set_semantic_id(beta_pair, (9, 9, 9))
+
+    shopper = await token_for(base_url, USER_B_ID)
+    # Nothing sold and nothing rated, so the order falls to its last
+    # tiebreak, the product id.
+    window = [name for _, name in sorted(zip(ids, names))]
+    assert await storefront(base_url) == window
+    assert await storefront(base_url, shopper) == window
+
+    await view(base_url, shopper, beta)
+
+    ranked = await storefront(base_url, shopper)
+    # The viewed product's cluster mate leads; the rest of the marketplace
+    # is still all there, behind it.
+    assert ranked[0] == "Beta kèm"
+    assert sorted(ranked) == sorted(names)
+    assert await storefront(base_url) == window
+
+
+async def test_the_storefront_backs_off_through_all_three_sid_levels(base_url):
+    """Deepest prefix first, then the next, then the coarse one.
+
+    Sharing only the first code is a weak signal, but it is still about this
+    shopper — weaker than a cluster match and better than the units-sold
+    order the feed would otherwise fall to.
+    """
+    seen, near, mid, far, unrelated = await seller_with_products(
+        base_url, ["Đã xem", "Cùng cụm", "Cùng nhánh", "Cùng ngành", "Không liên quan"]
+    )
+    await set_semantic_id(seen, (9, 9, 9))
+    await set_semantic_id(near, (9, 9, 9))
+    await set_semantic_id(mid, (9, 9, 8))
+    await set_semantic_id(far, (9, 1, 1))
+    await set_semantic_id(unrelated, (200, 1, 1))
+    buyer = await token_for(base_url, USER_B_ID)
+
+    await view(base_url, buyer, seen)
+    body = await recommendations(base_url, buyer)
+
+    assert [item["id"] for item in body["items"]][:3] == [near, mid, far]
+    # Nothing shares a code with the history, so nothing ranks it.
+    assert unrelated not in [item["id"] for item in body["items"]][:3]
+
+
+async def test_one_ranking_serves_a_whole_anonymous_walk(base_url):
+    """The Transformer runs once per storefront load, not once per page.
+
+    The feed is scrolled through a page at a time, and every page carries
+    the same history — recomputing per page would spend the model on an
+    answer already given.
+    """
+    seen, sibling = await seller_with_products(base_url, ["Ibuprofen", "Ibuprofen 600"])
+    await set_semantic_id(seen, (7, 7, 7))
+    await set_semantic_id(sibling, (7, 7, 7))
+    recommendations_store._last_anonymous = None
+
+    async with httpx.AsyncClient() as client:
+        first = await client.get(f"{base_url}/products?limit=1&seen={seen}")
+        held = recommendations_store._last_anonymous
+        # The next page of the same walk: same history, so the held ranking
+        # answers it rather than the model.
+        await client.get(f"{base_url}/products?limit=1&offset=1&seen={seen}")
+
+    assert first.json()["rankedBy"] == "semantic-id"
+    assert held is not None
+    assert held[0] == (seen,)
+    assert recommendations_store._last_anonymous is held
+
+    # A different history is a different walk, and replaces it.
+    async with httpx.AsyncClient() as client:
+        await client.get(f"{base_url}/products?seen={sibling}")
+    assert recommendations_store._last_anonymous[0] == (sibling,)
+
+
+async def test_a_visitor_with_no_account_is_recommended_to(base_url):
+    """The history arrives with the request instead of being looked up.
+
+    Signing in cannot be the price of a useful storefront: most visitors
+    never do, and the ranking works the same either way.
+    """
+    seen, sibling, stranger = await seller_with_products(
+        base_url, ["Ibuprofen 400", "Ibuprofen 600", "Bàn phím cơ"]
+    )
+    await set_semantic_id(seen, (7, 7, 7))
+    await set_semantic_id(sibling, (7, 7, 7))
+    await set_semantic_id(stranger, (200, 1, 1))
+
+    async with httpx.AsyncClient() as client:
+        # No token anywhere — only what the device says it has been looking at.
+        ranked = (
+            await client.get(f"{base_url}/products?limit=10&seen={seen}")
+        ).json()
+
+    assert ranked["rankedBy"] == "semantic-id"
+    returned = [item["id"] for item in ranked["items"]]
+    assert returned[0] == sibling
+    assert set(returned) == {seen, sibling, stranger}
+
+    # And nothing about that visitor was written down.
+    engine = _throwaway_engine()
+    async with engine.connect() as conn:
+        recorded = await conn.scalar(text("SELECT count(*) FROM product_views"))
+    await engine.dispose()
+    assert recorded == 0
+
+
+async def test_a_visitor_sending_nothing_gets_the_plain_shop_window(base_url):
+    await seller_with_products(base_url, ["Bàn phím", "Chuột"])
+
+    async with httpx.AsyncClient() as client:
+        empty = (await client.get(f"{base_url}/products?seen=")).json()
+        junk = (await client.get(f"{base_url}/products?seen=,,%20,")).json()
+
+    # Nothing to rank from is not the same as ranked and found nothing.
+    assert empty["rankedBy"] is None
+    assert junk["rankedBy"] is None
+    assert len(empty["items"]) == 2
+
+
+async def test_a_view_forgets_the_cached_ranking(base_url):
+    """Asserted against the cache itself: over HTTP a stale ranking and a
+    fresh one list the same products until the catalogue is big enough to
+    disagree."""
+    chair, desk = await seller_with_products(base_url, ["Ghế", "Bàn"])
+    # Without these there is nothing to rank from: a view of a product the
+    # RQ-VAE has not reached yet tells the model nothing.
+    await set_semantic_id(chair, (4, 4, 4))
+    await set_semantic_id(desk, (4, 4, 4))
+    shopper = await token_for(base_url, USER_B_ID)
+    # Entries outlive the truncation between tests.
+    recommendations_store._rankings.clear()
+
+    # Nothing viewed yet, so there is nothing to rank and nothing to hold.
+    await storefront(base_url, shopper)
+    assert not recommendations_store._rankings
+
+    await view(base_url, shopper, chair)
+    await storefront(base_url, shopper)
+    assert recommendations_store._rankings, "the walk should have been cached"
+
+    await view(base_url, shopper, desk)
+    assert not recommendations_store._rankings

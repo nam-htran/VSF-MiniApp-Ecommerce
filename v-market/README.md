@@ -6,7 +6,11 @@ Frontend React 19 của V-Market, xây bằng `@v-miniapp/ui-react`,
 ## Trải nghiệm chính
 
 - Trang chủ, tìm kiếm, flash sale, gian hàng và chi tiết sản phẩm.
-- Recommendation cá nhân theo lịch sử xem và related products theo Semantic ID.
+- Lưới sản phẩm ở trang chủ và tìm kiếm chính là recommendation: server xếp hạng
+  theo lịch sử xem, không có strip riêng. Chưa đăng nhập thì lịch sử nằm trên
+  máy (`lib/seen.ts`) và gửi kèm request. Related products theo Semantic ID.
+- Thứ tự mới xuất hiện khi kéo xuống làm mới hoặc mở lại app: `keepAlive` giữ
+  trang chủ mounted, và đi lấy lại cả catalogue mỗi lần bấm sản phẩm là quá đắt.
 - Giỏ hàng nhiều shop, biến thể, voucher, checkout và theo dõi đơn.
 - Kênh người bán quản lý shop, sản phẩm, voucher và xử lý đơn.
 - Màn hình vận hành đối soát ngoại lệ thanh toán.

@@ -13,12 +13,13 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import CurrentSeller
+from app.auth.deps import CurrentSeller, OptionalUser
 from app.db import get_session
 from app.products import store as products
 from app.products.moderation import banned_terms_in
 from app.products.store import Product
 from app.recommendations import predictor, semantic_indexer
+from app.recommendations import store as recommendations
 from app.reviews import store as reviews
 from app.shops import store as shops
 from app.vouchers import store as vouchers
@@ -230,13 +231,30 @@ async def list_shop_products(
     }
 
 
+def _seen_ids(seen: str | None) -> list[str]:
+    """Parse ?seen= into the browsing history it stands for.
+
+    Trimmed to the same depth the signed-in path reads, so a client cannot
+    widen its own context by sending more, and so one long list cannot turn
+    a listing into an expensive query.
+    """
+    if not seen:
+        return []
+    ids = [part.strip() for part in seen.split(",")]
+    return [product_id for product_id in ids if product_id][
+        -recommendations.HISTORY_DEPTH :
+    ]
+
+
 @router.get("/products")
 async def list_products(
     session: Session,
+    user: OptionalUser,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
     onSale: Annotated[bool, Query()] = False,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    seen: Annotated[str | None, Query(max_length=800)] = None,
 ) -> dict:
     """Public: the marketplace storefront across all shops.
 
@@ -244,9 +262,32 @@ async def list_products(
     carries its shop's name so the card can show where it comes from.
     ?onSale=true keeps only discounted items — the flash-sale strip.
     ?q=… searches by product or shop name across the whole catalogue.
+
+    A bearer token, if one comes, only changes the order: this feed is the
+    recommendation surface, so opening a product reorders the marketplace.
+
+    Without one, `?seen=id,id,…` does the same job — recently viewed
+    products, oldest first, kept by the shopper's own device. A marketplace
+    that only recommends to people with accounts recommends to almost
+    nobody, and the server neither needs nor keeps a record to answer: the
+    history arrives with the request and is read, not stored.
+
+    `rankedBy` names the route that produced the order — `transformer`,
+    `semantic-id`, `popular`, or null when there was no history at all to
+    rank from. It is reported because an order cannot show its own
+    reasoning: a Transformer answer and a best-seller fallback are the same
+    products in a different sequence, and only this says which arrived.
     """
+    if user:
+        rank, ranked_by = await recommendations.ranked_product_ids(
+            session, user.id
+        )
+    else:
+        rank, ranked_by = await recommendations.ranked_for_seen(
+            session, _seen_ids(seen)
+        )
     page = await products.list_active(
-        session, limit=limit, offset=offset, on_sale=onSale, q=q
+        session, limit=limit, offset=offset, on_sale=onSale, q=q, rank=rank
     )
     live = await vouchers.list_live(session)
     options = await products.variants_for(
@@ -255,6 +296,7 @@ async def list_products(
     return {
         "items": [_list_item(row, live, options) for row in page],
         "hasMore": len(page) == limit,
+        "rankedBy": ranked_by,
     }
 
 

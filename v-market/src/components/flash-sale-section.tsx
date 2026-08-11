@@ -6,8 +6,13 @@ import {
   Typography,
   useNavigate,
 } from '@v-miniapp/ui-react';
+import { listOnSale } from '@/api/products';
 import { formatVnd } from '@/lib/format';
-import { discountPercent, type ProductCardData } from '@/lib/product-card';
+import {
+  discountPercent,
+  listItemToCard,
+  type ProductCardData,
+} from '@/lib/product-card';
 
 /** A flash item is defined by its old price — nothing else can render a
  * badge or a struck-through price. */
@@ -40,17 +45,35 @@ const useCountdown = () => {
  * originalPrice. undefined = still loading → skeletons; an empty list
  * hides the strip entirely, because a flash sale with nothing in it is
  * not a section.
+ *
+ * Asks for discounted products directly rather than sifting them out of
+ * the storefront feed. The feed is paged now — it starts with whatever the
+ * ranking put first, not with the whole catalogue — so filtering it would
+ * find only the sale items that happened to land on page one.
  */
-export const FlashSaleSection = ({
-  products,
-}: {
-  products?: ProductCardData[];
-}) => {
+export const FlashSaleSection = () => {
   const navigate = useNavigate();
   const countdown = useCountdown();
-  const items = products?.filter(
-    (p): p is FlashProduct => p.oldPrice !== undefined
-  );
+  const [items, setItems] = useState<FlashProduct[] | undefined>();
+
+  useEffect(() => {
+    let alive = true;
+    listOnSale()
+      .then(page => {
+        if (!alive) return;
+        setItems(
+          page.items
+            .map(listItemToCard)
+            .filter((p): p is FlashProduct => p.oldPrice !== undefined)
+        );
+      })
+      // A strip that cannot load is a strip that is not there; the
+      // storefront below is the page's actual content.
+      .catch(() => alive && setItems([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (items && items.length === 0) return null;
 
