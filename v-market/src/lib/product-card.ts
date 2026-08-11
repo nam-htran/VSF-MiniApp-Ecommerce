@@ -27,6 +27,10 @@ export type ProductCardData = {
   ratingAverage?: number;
   ratingCount?: number;
   description?: string;
+  reactionCount?: number;
+  commentCount?: number;
+  reactedByMe?: boolean;
+  reactionType?: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | null;
   /** `price` after the best live voucher — server-computed, and the figure
    *  the order will actually charge. Absent on demo cards. */
   effectivePrice?: number;
@@ -72,4 +76,8 @@ export const listItemToCard = (p: ApiProductListItem): ProductCardData => ({
   category: p.category,
   effectivePrice: p.effectivePrice,
   voucher: p.voucher,
+  reactionCount: p.reactionCount,
+  commentCount: p.commentCount,
+  reactedByMe: p.reactedByMe,
+  reactionType: p.reactionType,
 });

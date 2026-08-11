@@ -11,7 +11,10 @@ import {
   Typography,
   useNavigate,
 } from '@v-miniapp/ui-react';
+import { removeReaction, setReaction } from '@/api/feed';
 import { listProducts, PRODUCT_PAGE } from '@/api/products';
+import { FeedCommentsSheet } from '@/components/feed-comments-sheet';
+import { useSession } from '@/lib/auth';
 import { formatVnd } from '@/lib/format';
 import { usePagedProducts } from '@/lib/paged-feed';
 import type { ProductCardData } from '@/lib/product-card';
@@ -25,7 +28,6 @@ const FeedPage = () => {
     []
   );
   const { feed, load, refresh, sentinel } = usePagedProducts(page);
-  const [liked, setLiked] = useState<Set<string>>(() => new Set());
 
   const products = feed.status === 'ready' ? feed.products : [];
   const trending = products.filter(
@@ -33,15 +35,6 @@ const FeedPage = () => {
       Boolean(product.shopId) &&
       all.findIndex(item => item.shopId === product.shopId) === index
   );
-
-  const toggleLike = (id: string) => {
-    setLiked(current => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const onRefresh = () =>
     refresh().catch(() =>
@@ -105,12 +98,7 @@ const FeedPage = () => {
         ) : (
           <div className="flex flex-col gap-2 pt-2">
             {products.map(product => (
-              <FeedPost
-                key={product.id}
-                product={product}
-                liked={liked.has(product.id)}
-                onLike={() => toggleLike(product.id)}
-              />
+              <FeedPost key={product.id} product={product} />
             ))}
             {feed.hasMore && (
               <div ref={sentinel} className="flex justify-center py-6">
@@ -152,19 +140,16 @@ const TrendingShop = ({ product }: { product: ProductCardData }) => {
   );
 };
 
-const FeedPost = ({
-  product,
-  liked,
-  onLike,
-}: {
-  product: ProductCardData;
-  liked: boolean;
-  onLike: () => void;
-}) => {
+const FeedPost = ({ product }: { product: ProductCardData }) => {
   const navigate = useNavigate();
+  const session = useSession();
   const [expanded, setExpanded] = useState(false);
+  const [liked, setLiked] = useState(product.reactedByMe ?? false);
+  const [reactionCount, setReactionCount] = useState(product.reactionCount ?? 0);
+  const [commentCount, setCommentCount] = useState(product.commentCount ?? 0);
+  const [reactionBusy, setReactionBusy] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const shopName = product.shopName ?? 'V-Market Shop';
-  const baseLikes = (product.sold ?? 0) + (product.ratingCount ?? 0);
   const canExpand = (product.description?.length ?? 0) > 130;
 
   const openProduct = () =>
@@ -172,6 +157,40 @@ const FeedPost = ({
       params: { id: product.id },
       state: { product },
     });
+
+  const toggleReaction = async () => {
+    if (!session) {
+      navigate('/login', {
+        state: { loginTarget: { pathname: '/feed' } },
+      });
+      return;
+    }
+    if (reactionBusy) return;
+
+    const previousLiked = liked;
+    const previousCount = reactionCount;
+    const nextLiked = !liked;
+    setLiked(nextLiked);
+    setReactionCount(Math.max(0, previousCount + (nextLiked ? 1 : -1)));
+    setReactionBusy(true);
+    try {
+      const saved = nextLiked
+        ? await setReaction(product.id, 'LOVE')
+        : await removeReaction(product.id);
+      setLiked(saved.reactedByMe);
+      setReactionCount(saved.reactionCount);
+    } catch {
+      setLiked(previousLiked);
+      setReactionCount(previousCount);
+      Toast.show({
+        type: 'negative',
+        message: 'Không cập nhật được cảm xúc',
+        position: 'bottom',
+      });
+    } finally {
+      setReactionBusy(false);
+    }
+  };
 
   return (
     <article className="bg-alias-background py-3">
@@ -253,7 +272,8 @@ const FeedPost = ({
           type="ghost"
           theme="neutral"
           shape="pill"
-          onClick={onLike}
+          onClick={toggleReaction}
+          disabled={reactionBusy}
           leadingIcon={
             <Icon
               name="heart"
@@ -263,16 +283,16 @@ const FeedPost = ({
             />
           }
           className="!px-2">
-          {formatCount(baseLikes + (liked ? 1 : 0))}
+          {formatCount(reactionCount)}
         </Button>
         <Button
           type="ghost"
           theme="neutral"
           shape="pill"
-          onClick={() => Toast.show({ message: 'Bình luận sẽ có ở bản tiếp theo' })}
+          onClick={() => setCommentsOpen(true)}
           leadingIcon={{ name: 'message-content' }}
           className="!px-2">
-          {formatCount(product.ratingCount ?? 0)}
+          {formatCount(commentCount)}
         </Button>
       </div>
 
@@ -289,6 +309,15 @@ const FeedPost = ({
           Xem sản phẩm
         </Button>
       </div>
+
+      {commentsOpen && (
+        <FeedCommentsSheet
+          productId={product.id}
+          count={commentCount}
+          onCountChange={setCommentCount}
+          onClose={() => setCommentsOpen(false)}
+        />
+      )}
     </article>
   );
 };

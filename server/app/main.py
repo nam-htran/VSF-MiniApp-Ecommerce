@@ -12,6 +12,7 @@ from app.json_response import SafeJSONResponse
 from app import scheduler
 from app.recommendations import predictor, semantic_indexer
 from app.addresses.routes import router as addresses_router
+from app.feed.routes import router as feed_router
 from app.geo.routes import router as geo_router
 from app.orders.routes import router as orders_router
 from app.payments.routes import router as payments_router
@@ -24,6 +25,7 @@ from app.vouchers.routes import router as vouchers_router
 
 # Imported so every model is registered on Base before the first query.
 from app.addresses import store as _addresses  # noqa: F401
+from app.feed import store as _feed  # noqa: F401
 from app.orders import store as _orders  # noqa: F401
 from app.reviews import store as _reviews  # noqa: F401
 from app.products import store as _products  # noqa: F401
@@ -92,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(shops_router)
     app.include_router(products_router)
+    app.include_router(feed_router)
     app.include_router(orders_router)
     app.include_router(geo_router)
     app.include_router(addresses_router)

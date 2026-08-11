@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import CurrentSeller, OptionalUser
 from app.db import get_session
+from app.feed import store as feed
 from app.products import store as products
 from app.products.moderation import banned_terms_in
 from app.products.store import Product
@@ -290,11 +291,16 @@ async def list_products(
         session, limit=limit, offset=offset, on_sale=onSale, q=q, rank=rank
     )
     live = await vouchers.list_live(session)
-    options = await products.variants_for(
-        session, [row["product"].id for row in page]
+    product_ids = [row["product"].id for row in page]
+    options = await products.variants_for(session, product_ids)
+    social = await feed.summaries_for_products(
+        session, product_ids, user.id if user else None
     )
     return {
-        "items": [_list_item(row, live, options) for row in page],
+        "items": [
+            {**_list_item(row, live, options), **social[row["product"].id]}
+            for row in page
+        ],
         "hasMore": len(page) == limit,
         "rankedBy": ranked_by,
     }

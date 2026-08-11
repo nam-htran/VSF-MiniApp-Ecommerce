@@ -93,6 +93,10 @@ export type ApiProductListItem = ApiProduct & {
   ratingAverage: number;
   ratingCount: number;
   sold: number;
+  reactionCount?: number;
+  commentCount?: number;
+  reactedByMe?: boolean;
+  reactionType?: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | null;
 };
 
 export type ProductPage = {

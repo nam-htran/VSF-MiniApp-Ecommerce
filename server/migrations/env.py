@@ -24,8 +24,10 @@ from app.db import Base
 # Import every model module so its tables register on Base.metadata before
 # autogenerate compares them against the database.
 from app.addresses import store as _addresses  # noqa: F401
+from app.feed import store as _feed  # noqa: F401
 from app.orders import store as _orders  # noqa: F401
 from app.products import store as _products  # noqa: F401
+from app.recommendations import store as _recommendations  # noqa: F401
 from app.reviews import store as _reviews  # noqa: F401
 from app.shops import store as _shops  # noqa: F401
 from app.users import store as _users  # noqa: F401
