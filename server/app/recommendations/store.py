@@ -15,9 +15,9 @@ When configured, the Transformer generates likely next Semantic IDs. The
 prefix matcher remains the fallback and also powers related products.
 """
 
-import math
 import uuid
 from datetime import datetime
+from itertools import zip_longest
 
 from sqlalchemy import DateTime, ForeignKey, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,80 +132,46 @@ def _business_order(row: dict) -> tuple:
     return (-row["sold"], -row["ratingAverage"], row["product"].id)
 
 
-def _diversified_rows(
+def _cycled_sid_rows(
     rows: list[dict],
     semantic_ids: dict[str, tuple[int, int, int]],
     predictions: list[predictor.Prediction],
     limit: int,
 ) -> list[dict]:
-    """Rerank model recall without prescribing how many items each SID gets.
+    """Show one level-3, level-2, then level-1 match, and repeat.
 
-    The Transformer and prefix depth provide the relevance score. Every item
-    already selected adds a small penalty to candidates which repeat its
-    coarse branch, two-code branch, or exact cluster. The penalty grows with
-    repetition, so a strong cluster can still contribute several products,
-    but it cannot occupy the whole first screen merely because it is large.
+    Empty levels are simply skipped. Within one level the Transformer's score
+    wins, with marketplace signals only breaking ties.
     """
     if not rows or not predictions or limit <= 0:
         return []
 
-    top_prediction_score = max(prediction.score for prediction in predictions)
-    relevance: dict[str, float] = {}
+    pools: dict[int, list[tuple[float, dict]]] = {1: [], 2: [], 3: []}
     for row in rows:
         product_id = row["product"].id
         semantic_id = semantic_ids[product_id]
-        best = 0.0
+        best_depth = 0
+        best_score = float("-inf")
         for prediction in predictions:
             depth = _match_depth(semantic_id, [prediction.semantic_id])
-            if depth == 0:
-                continue
-            # Generation returns log-like scores. Relative exponentiation
-            # preserves their confidence gaps without depending on the
-            # absolute score scale used by a checkpoint.
-            model_score = 0.5 + 0.5 * math.exp(
-                prediction.score - top_prediction_score
-            )
-            semantic_score = (0.0, 0.15, 0.55, 1.0)[depth]
-            best = max(best, model_score + semantic_score)
-        relevance[product_id] = best
+            if depth > best_depth or (
+                depth == best_depth and prediction.score > best_score
+            ):
+                best_depth = depth
+                best_score = prediction.score
+        if best_depth:
+            pools[best_depth].append((best_score, row))
 
-    business_rows = sorted(rows, key=_business_order)
-    denominator = max(len(business_rows) - 1, 1)
-    business_score = {
-        row["product"].id: 1.0 - rank / denominator
-        for rank, row in enumerate(business_rows)
-    }
+    for pool in pools.values():
+        pool.sort(key=lambda item: (-item[0], _business_order(item[1])))
 
-    # Stable business ordering is also the tiebreak for equal rerank scores.
-    remaining = sorted(rows, key=_business_order)
-    picked: list[dict] = []
-    level_one: dict[int, int] = {}
-    level_two: dict[tuple[int, int], int] = {}
-    exact: dict[tuple[int, int, int], int] = {}
-    while remaining and len(picked) < limit:
-
-        def score(row: dict) -> float:
-            product_id = row["product"].id
-            sid = semantic_ids[product_id]
-            repetition_penalty = (
-                0.08 * level_one.get(sid[0], 0)
-                + 0.25 * level_two.get(sid[:2], 0)
-                + 0.70 * exact.get(sid, 0)
-            )
-            return (
-                relevance[product_id]
-                + 0.08 * business_score[product_id]
-                - repetition_penalty
-            )
-
-        chosen = max(remaining, key=score)
-        remaining.remove(chosen)
-        picked.append(chosen)
-        sid = semantic_ids[chosen["product"].id]
-        level_one[sid[0]] = level_one.get(sid[0], 0) + 1
-        level_two[sid[:2]] = level_two.get(sid[:2], 0) + 1
-        exact[sid] = exact.get(sid, 0) + 1
-    return picked
+    return [
+        row
+        for round_ in zip_longest(pools[3], pools[2], pools[1])
+        for item in round_
+        if item is not None
+        for row in [item[1]]
+    ][:limit]
 
 
 async def _predicted_rows(
@@ -230,7 +196,7 @@ async def _predicted_rows(
     rows = await products.list_by_ids(session, list(semantic_ids))
     by_id = {row["product"].id: row for row in rows}
 
-    return _diversified_rows(
+    return _cycled_sid_rows(
         list(by_id.values()), semantic_ids, predictions, limit
     )
 

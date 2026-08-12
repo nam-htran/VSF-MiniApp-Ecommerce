@@ -306,18 +306,29 @@ async def test_transformer_beam_drives_home_recommendations(base_url, monkeypatc
     assert [item["id"] for item in body["items"]][:2] == [exact, wider]
 
 
-async def test_transformer_does_not_fill_the_screen_from_one_cluster(
+async def test_transformer_cycles_through_sid_levels(
     base_url, monkeypatch
 ):
     from app.recommendations.predictor import Prediction
 
-    seen, exact_a, exact_b, exact_c, wider = await seller_with_products(
-        base_url, ["Đã xem", "Exact A", "Exact B", "Exact C", "Cùng nhánh"]
+    seen, exact_a, exact_b, exact_c, level_two, level_one = (
+        await seller_with_products(
+            base_url,
+            [
+                "Đã xem",
+                "Exact A",
+                "Exact B",
+                "Exact C",
+                "Cùng nhánh",
+                "Cùng ngành",
+            ],
+        )
     )
     await set_semantic_id(seen, (9, 9, 9))
     for product_id in (exact_a, exact_b, exact_c):
         await set_semantic_id(product_id, (7, 6, 5))
-    await set_semantic_id(wider, (7, 6, 4))
+    await set_semantic_id(level_two, (7, 6, 4))
+    await set_semantic_id(level_one, (7, 5, 4))
     buyer = await token_for(base_url, USER_B_ID)
 
     async def predict(history):
@@ -326,10 +337,12 @@ async def test_transformer_does_not_fill_the_screen_from_one_cluster(
     monkeypatch.setattr("app.recommendations.predictor.predict", predict)
     await view(base_url, buyer, seen)
     body = await recommendations(base_url, buyer)
-    first_ids = [item["id"] for item in body["items"][:2]]
+    first_ids = [item["id"] for item in body["items"][:4]]
 
     assert first_ids[0] in {exact_a, exact_b, exact_c}
-    assert first_ids[1] == wider
+    assert first_ids[1] == level_two
+    assert first_ids[2] == level_one
+    assert first_ids[3] in {exact_a, exact_b, exact_c} - {first_ids[0]}
 
 
 async def test_product_detail_related_backs_off_by_sid_level(base_url):
