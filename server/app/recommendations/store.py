@@ -15,9 +15,9 @@ When configured, the Transformer generates likely next Semantic IDs. The
 prefix matcher remains the fallback and also powers related products.
 """
 
+import math
 import uuid
 from datetime import datetime
-from itertools import zip_longest
 
 from sqlalchemy import DateTime, ForeignKey, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,6 +132,82 @@ def _business_order(row: dict) -> tuple:
     return (-row["sold"], -row["ratingAverage"], row["product"].id)
 
 
+def _diversified_rows(
+    rows: list[dict],
+    semantic_ids: dict[str, tuple[int, int, int]],
+    predictions: list[predictor.Prediction],
+    limit: int,
+) -> list[dict]:
+    """Rerank model recall without prescribing how many items each SID gets.
+
+    The Transformer and prefix depth provide the relevance score. Every item
+    already selected adds a small penalty to candidates which repeat its
+    coarse branch, two-code branch, or exact cluster. The penalty grows with
+    repetition, so a strong cluster can still contribute several products,
+    but it cannot occupy the whole first screen merely because it is large.
+    """
+    if not rows or not predictions or limit <= 0:
+        return []
+
+    top_prediction_score = max(prediction.score for prediction in predictions)
+    relevance: dict[str, float] = {}
+    for row in rows:
+        product_id = row["product"].id
+        semantic_id = semantic_ids[product_id]
+        best = 0.0
+        for prediction in predictions:
+            depth = _match_depth(semantic_id, [prediction.semantic_id])
+            if depth == 0:
+                continue
+            # Generation returns log-like scores. Relative exponentiation
+            # preserves their confidence gaps without depending on the
+            # absolute score scale used by a checkpoint.
+            model_score = 0.5 + 0.5 * math.exp(
+                prediction.score - top_prediction_score
+            )
+            semantic_score = (0.0, 0.15, 0.55, 1.0)[depth]
+            best = max(best, model_score + semantic_score)
+        relevance[product_id] = best
+
+    business_rows = sorted(rows, key=_business_order)
+    denominator = max(len(business_rows) - 1, 1)
+    business_score = {
+        row["product"].id: 1.0 - rank / denominator
+        for rank, row in enumerate(business_rows)
+    }
+
+    # Stable business ordering is also the tiebreak for equal rerank scores.
+    remaining = sorted(rows, key=_business_order)
+    picked: list[dict] = []
+    level_one: dict[int, int] = {}
+    level_two: dict[tuple[int, int], int] = {}
+    exact: dict[tuple[int, int, int], int] = {}
+    while remaining and len(picked) < limit:
+
+        def score(row: dict) -> float:
+            product_id = row["product"].id
+            sid = semantic_ids[product_id]
+            repetition_penalty = (
+                0.08 * level_one.get(sid[0], 0)
+                + 0.25 * level_two.get(sid[:2], 0)
+                + 0.70 * exact.get(sid, 0)
+            )
+            return (
+                relevance[product_id]
+                + 0.08 * business_score[product_id]
+                - repetition_penalty
+            )
+
+        chosen = max(remaining, key=score)
+        remaining.remove(chosen)
+        picked.append(chosen)
+        sid = semantic_ids[chosen["product"].id]
+        level_one[sid[0]] = level_one.get(sid[0], 0) + 1
+        level_two[sid[:2]] = level_two.get(sid[:2], 0) + 1
+        exact[sid] = exact.get(sid, 0) + 1
+    return picked
+
+
 async def _predicted_rows(
     session: AsyncSession,
     predictions: list[predictor.Prediction],
@@ -154,41 +230,9 @@ async def _predicted_rows(
     rows = await products.list_by_ids(session, list(semantic_ids))
     by_id = {row["product"].id: row for row in rows}
 
-    pools = []
-    for prediction in predictions:
-        pool = [
-            by_id[product_id]
-            for product_id, semantic_id in semantic_ids.items()
-            if semantic_id == prediction.semantic_id and product_id in by_id
-        ]
-        pools.append(sorted(pool, key=_business_order))
-
-    # One product from each cluster per round, in beam order, until the pools
-    # run dry. Draining a cluster before touching the next put eight rolls of
-    # tape across the storefront's whole first screen while beams two and
-    # three waited below the fold.
-    picked = [
-        row
-        for round_ in zip_longest(*pools)
-        for row in round_
-        if row is not None
-    ][:limit]
-    picked_ids = {row["product"].id for row in picked}
-
-    # The demo catalogue is thin. Only after every exact cluster is short do
-    # we widen to a two-code prefix, still respecting beam order.
-    if len(picked) < limit:
-        level_two = []
-        for beam, prediction in enumerate(predictions):
-            for product_id, semantic_id in semantic_ids.items():
-                if product_id in picked_ids or product_id not in by_id:
-                    continue
-                if semantic_id[:2] == prediction.semantic_id[:2]:
-                    level_two.append((beam, by_id[product_id]))
-                    picked_ids.add(product_id)
-        level_two.sort(key=lambda item: (item[0], _business_order(item[1])))
-        picked += [row for _, row in level_two[: limit - len(picked)]]
-    return picked
+    return _diversified_rows(
+        list(by_id.values()), semantic_ids, predictions, limit
+    )
 
 
 async def _history_rows(
