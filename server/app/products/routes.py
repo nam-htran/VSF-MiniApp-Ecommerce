@@ -6,7 +6,7 @@ sits in — checked server-side, never trusted from the request.
 """
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
@@ -255,6 +255,10 @@ async def list_products(
     offset: Annotated[int, Query(ge=0)] = 0,
     onSale: Annotated[bool, Query()] = False,
     q: Annotated[str | None, Query(max_length=100)] = None,
+    category: Annotated[str | None, Query(max_length=40)] = None,
+    minPrice: Annotated[int | None, Query(ge=0)] = None,
+    maxPrice: Annotated[int | None, Query(ge=0)] = None,
+    sort: Annotated[Literal["relevance", "price-asc", "price-desc"], Query()] = "relevance",
     seen: Annotated[str | None, Query(max_length=800)] = None,
 ) -> dict:
     """Public: the marketplace storefront across all shops.
@@ -288,7 +292,16 @@ async def list_products(
             session, _seen_ids(seen)
         )
     page = await products.list_active(
-        session, limit=limit, offset=offset, on_sale=onSale, q=q, rank=rank
+        session,
+        limit=limit,
+        offset=offset,
+        on_sale=onSale,
+        q=q,
+        category=category,
+        min_price=minPrice,
+        max_price=maxPrice,
+        sort=sort,
+        rank=rank,
     )
     live = await vouchers.list_live(session)
     product_ids = [row["product"].id for row in page]

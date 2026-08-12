@@ -5,8 +5,14 @@ import {
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
-import { setSearchQuery, useSearchQuery } from '@/lib/search-query';
+import {
+  searchFilterCount,
+  setSearchQuery,
+  useSearchFilters,
+  useSearchQuery,
+} from '@/lib/search-query';
 import { TAB_ROOTS } from '@/lib/routes';
+import { SearchFilterSheet } from '@/components/search-filter-sheet';
 
 /**
  * The app's own top chrome, as one app-level layout wrapping every page:
@@ -69,9 +75,14 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
   const location = useLocation();
   const navigate = useNavigate();
   const query = useSearchQuery();
+  const filters = useSearchFilters();
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const pathname = location?.pathname ?? '/';
+  const isHomePage = pathname === '/';
   const isSearchPage = pathname === '/search';
+  const showFilter = isSearchPage;
+  const activeFilters = searchFilterCount(filters);
   const showBack = !TAB_ROOTS.includes(pathname);
   const showSearch = !NO_SEARCH.includes(pathname) && !isSearchPage;
   const showHomeScrollBand = pathname === '/' && showSearch;
@@ -133,7 +144,9 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
           style={{
             top: 'calc(var(--safe-area-inset-top, 44px) + 8px)',
             left: showBack ? '60px' : '12px',
-            right: 'var(--vsf-header-padding-right, 112px)',
+            right: showFilter
+              ? 'calc(var(--vsf-header-padding-right, 112px) + 44px)'
+              : 'var(--vsf-header-padding-right, 112px)',
           }}>
           <Icon name="magnifier" size={16} color="text-tertiary" />
           <input
@@ -156,11 +169,17 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
             // from the right fights the illusion that this pill just opened
             // into the input. A fade keeps it feeling like the same spot.
             onClick={() => navigate('/search', { animation: { type: 'fade_in' } })}
-            className="fixed z-50 flex h-9 items-center gap-2 rounded-full bg-alias-background/90 px-3 shadow-md backdrop-blur"
+            className={`fixed z-50 flex h-9 items-center gap-2 rounded-full px-3 ${
+              isHomePage
+                ? 'bg-alias-layer-01'
+                : 'bg-alias-background/90 shadow-md backdrop-blur'
+            }`}
             style={{
               top: 'calc(var(--safe-area-inset-top, 44px) + 8px)',
               left: showBack ? '60px' : '12px',
-              right: 'var(--vsf-header-padding-right, 112px)',
+              right: showFilter
+                ? 'calc(var(--vsf-header-padding-right, 112px) + 44px)'
+                : 'var(--vsf-header-padding-right, 112px)',
             }}>
             <Icon name="magnifier" size={16} color="text-tertiary" />
             <Typography size="small" color="text-tertiary" className="truncate">
@@ -169,6 +188,34 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
           </button>
         )
       )}
+
+      {showFilter && (
+        <button
+          type="button"
+          aria-label="Mở bộ lọc tìm kiếm"
+          onClick={() => setFilterOpen(true)}
+          className="fixed z-50 flex size-9 items-center justify-center rounded-full bg-alias-layer-01 active:opacity-70"
+          style={{
+            top: 'calc(var(--safe-area-inset-top, 44px) + 8px)',
+            right: 'var(--vsf-header-padding-right, 112px)',
+          }}>
+          <Icon name="filter" size={17} className={activeFilters ? 'text-brand' : ''} />
+          {activeFilters > 0 && (
+            <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-global-basic-white">
+              {activeFilters}
+            </span>
+          )}
+        </button>
+      )}
+
+      <SearchFilterSheet
+        open={filterOpen}
+        value={filters}
+        onClose={() => setFilterOpen(false)}
+        onApply={() => {
+          setFilterOpen(false);
+        }}
+      />
     </>
   );
 };

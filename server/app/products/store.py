@@ -251,6 +251,10 @@ async def list_active(
     offset: int,
     on_sale: bool = False,
     q: str | None = None,
+    category: str | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    sort: str = "relevance",
     rank: list[str] | None = None,
 ) -> list[dict]:
     """The marketplace storefront: active products across all shops, each
@@ -287,6 +291,12 @@ async def list_active(
     if on_sale:
         # On sale = has a struck-through price. No separate flag to drift.
         query = query.where(Product.original_price.is_not(None))
+    if category:
+        query = query.where(Product.category == category)
+    if min_price is not None:
+        query = query.where(Product.price >= min_price)
+    if max_price is not None:
+        query = query.where(Product.price <= max_price)
     if q and q.strip():
         like = f"%{_escape_like(q.strip())}%"
         query = query.where(
@@ -303,7 +313,11 @@ async def list_active(
         rating.c.avg.desc().nullslast(),
         Product.id,
     )
-    if rank:
+    if sort == "price-asc":
+        order = (Product.price.asc(), Product.id)
+    elif sort == "price-desc":
+        order = (Product.price.desc(), Product.id)
+    elif rank:
         order = (
             case(
                 {product_id: place for place, product_id in enumerate(rank)},

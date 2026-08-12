@@ -1,6 +1,7 @@
 import { apiRequest } from './client';
 import { currentToken } from '@/lib/auth';
 import { seenProducts } from '@/lib/seen';
+import type { SearchFilters } from '@/lib/search-query';
 
 const bearer = (): Record<string, string> | undefined => {
   const token = currentToken();
@@ -135,13 +136,22 @@ export const PRODUCT_PAGE = 20;
 export async function listProducts(
   limit = PRODUCT_PAGE,
   offset = 0,
-  q?: string
+  q?: string,
+  filters?: SearchFilters
 ) {
   const params = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
   if (q && q.trim()) params.set('q', q.trim());
+  if (filters?.category) params.set('category', filters.category);
+  if (filters?.minPrice != null)
+    params.set('minPrice', String(filters.minPrice));
+  if (filters?.maxPrice != null)
+    params.set('maxPrice', String(filters.maxPrice));
+  if (filters?.onSale) params.set('onSale', 'true');
+  if (filters?.sort && filters.sort !== 'relevance')
+    params.set('sort', filters.sort);
 
   const headers = bearer();
   if (!headers) {

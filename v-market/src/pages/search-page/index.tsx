@@ -3,7 +3,7 @@ import { Skeleton, Typography } from '@v-miniapp/ui-react';
 import { listProducts, PRODUCT_PAGE } from '@/api/products';
 import { GridProductCard } from '@/components/product-grid-section';
 import { usePagedProducts } from '@/lib/paged-feed';
-import { useSearchQuery } from '@/lib/search-query';
+import { useSearchFilters, useSearchQuery } from '@/lib/search-query';
 
 /** Long enough that a request goes out after the user pauses rather than on
  *  every keystroke. */
@@ -21,6 +21,7 @@ const TYPING_PAUSE = 300;
  */
 const SearchPage = () => {
   const query = useSearchQuery();
+  const filters = useSearchFilters();
   const [settled, setSettled] = useState(query);
 
   useEffect(() => {
@@ -31,8 +32,13 @@ const SearchPage = () => {
   // Identifies the list: a new query is a new list, and the feed restarts.
   const page = useCallback(
     (offset: number) =>
-      listProducts(PRODUCT_PAGE, offset, settled.trim() || undefined),
-    [settled]
+      listProducts(
+        PRODUCT_PAGE,
+        offset,
+        settled.trim() || undefined,
+        filters
+      ),
+    [settled, filters]
   );
   const { feed, sentinel } = usePagedProducts(page);
 
