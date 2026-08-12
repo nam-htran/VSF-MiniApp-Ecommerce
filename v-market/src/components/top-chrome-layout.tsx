@@ -11,9 +11,8 @@ import { TAB_ROOTS } from '@/lib/routes';
 /**
  * The app's own top chrome, as one app-level layout wrapping every page:
  * a floating back button on non-tab pages, a search pill in the same row
- * as V-App's ⋯ ✕ controls, and — once the page scrolls — a brand-red
- * backdrop behind the row, because the surface the chrome borrowed (the
- * red header, a product photo) has scrolled away.
+ * as V-App's ⋯ ✕ controls. Only the home page adds a brand-red backdrop
+ * once it scrolls; secondary pages keep their own surface unchanged.
  *
  * On /search the pill becomes the real input, in exactly the same spot,
  * on a plain white band — so the transition into search doesn't jump.
@@ -75,15 +74,16 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
   const isSearchPage = pathname === '/search';
   const showBack = !TAB_ROOTS.includes(pathname);
   const showSearch = !NO_SEARCH.includes(pathname) && !isSearchPage;
+  const showHomeScrollBand = pathname === '/' && showSearch;
   const scrolled = useScrolled(pathname);
 
   return (
     <>
       {children}
 
-      {/* The band behind the chrome row. On /search it is a plain white
-          navigation bar, always on; elsewhere it is brand red and fades
-          in on scroll. Below the pill (z-40 vs z-50). */}
+      {/* The band behind the chrome row. /search owns a plain white bar;
+          only home fades in the red band on scroll. Secondary pages keep
+          their own header/background instead. Below the pill (z-40 vs z-50). */}
       {isSearchPage ? (
         <div
           aria-hidden
@@ -91,7 +91,7 @@ export const TopChromeLayout = ({ children }: PropsWithChildren) => {
           style={{ height: 'var(--chrome-h)' }}
         />
       ) : (
-        showSearch && (
+        showHomeScrollBand && (
           <div
             aria-hidden
             className={`fixed inset-x-0 top-0 z-40 bg-brand shadow-sm transition-opacity duration-200 ${
