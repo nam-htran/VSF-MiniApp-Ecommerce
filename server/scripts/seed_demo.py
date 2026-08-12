@@ -270,8 +270,23 @@ def ensure_services() -> None:
     ensure_service("V-Market backend", REPO_ROOT / "server", "app.main:app", 4000, 300)
 
 
+_vapp_users: dict[str, str] | None = None
+
+
 def token_for(name: str) -> str:
-    user = call(MOCK, "/simulator/users", {"name": name})["data"]["user_id"]
+    global _vapp_users
+    if _vapp_users is None:
+        accounts = call(MOCK, "/simulator/users")["data"]
+        _vapp_users = {}
+        for account in accounts:
+            _vapp_users.setdefault(account["name"].strip().casefold(), account["user_id"])
+
+    key = name.strip().casefold()
+    user = _vapp_users.get(key)
+    if user is None:
+        user = call(MOCK, "/simulator/users", {"name": name})["data"]["user_id"]
+        _vapp_users[key] = user
+
     code = call(MOCK, "/simulator/authcode", {"user_id": user, "scopes": "profile phone"})["data"]["authCode"]
     return call(BACKEND, "/auth/session", {"authCode": code})["token"]
 
@@ -410,11 +425,10 @@ def load_json(path: Path) -> dict:
 
 def save_json(path: Path, data: dict, lock: Lock) -> None:
     with lock:
-        snapshot = dict(data)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
 
 # Google serves its error page with a 200, and deep-translator hands the body
@@ -640,6 +654,12 @@ async def truncate() -> None:
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE TABLE products, shops, users CASCADE"))
     await engine.dispose()
+
+    # The mock owns a separate identity database. Reset it alongside the
+    # marketplace so repeated demo seeds do not accumulate fake accounts.
+    global _vapp_users
+    call(MOCK, "/simulator/users", method="DELETE")
+    _vapp_users = None
 
 
 async def write_semantic_ids(skus: list[str]) -> int:

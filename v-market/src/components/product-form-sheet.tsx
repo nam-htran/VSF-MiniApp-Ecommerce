@@ -9,6 +9,7 @@ import {
   SheetBody,
   SheetFooter,
   SheetHeader,
+  TextArea,
   TextField,
   Toast,
   Typography,
@@ -250,17 +251,22 @@ export const ProductFormSheet = ({
     <Sheet open={open} onBackdropClick={saving ? undefined : onClose}>
       <SheetHeader title={editing ? 'Sửa sản phẩm' : 'Thêm sản phẩm'} />
       <SheetBody>
-        <div className="flex flex-col gap-3 pb-2">
+        <div className="flex flex-col gap-4 pb-2">
           {/* gallery: thumbnails + an add tile, up to 8. The first is the
               cover shown on cards. */}
-          <div className="flex flex-col gap-1">
-            <Typography size="small" weight="semibold">
-              Ảnh sản phẩm
-            </Typography>
+          <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 p-3.5">
+            <span className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+                <Icon name="image" size={17} className="text-brand" />
+              </span>
+              <Typography size="small" weight="bold">
+                Hình ảnh sản phẩm
+              </Typography>
+            </span>
             <Typography size="2x-small" color="text-tertiary">
               Tối đa 8 ảnh. Ảnh đầu tiên là ảnh bìa. JPEG/PNG/WebP, ≤5MB.
             </Typography>
-            <div className="mt-1 flex flex-wrap gap-2">
+            <div className="mt-1 flex gap-2 overflow-x-auto pb-1">
               {images.map((url, i) => (
                 <div key={url} className="relative size-20">
                   <Image src={url} alt="" fit="cover" className="size-20 rounded-xl" />
@@ -285,7 +291,7 @@ export const ProductFormSheet = ({
                   type="button"
                   onClick={() => fileInput.current?.click()}
                   disabled={uploading}
-                  className="flex size-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01">
+                  className="flex size-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-brand/40 bg-global-red-red-05 active:opacity-70">
                   {uploading ? (
                     <Icon name="loader" size={20} animation="spin" />
                   ) : (
@@ -310,104 +316,139 @@ export const ProductFormSheet = ({
                 event.target.value = '';
               }}
             />
-          </div>
+          </section>
 
-          <TextField
-            value={name}
-            onChange={setName}
-            onBlur={() => touch('name')}
-            placeholder="Tên sản phẩm"
-            error={!!shownError('name')}
-            errorMessage={shownError('name')}
-          />
-          <TextField
-            value={description}
-            onChange={setDescription}
-            onBlur={() => touch('description')}
-            placeholder="Mô tả"
-            error={!!shownError('description')}
-            errorMessage={shownError('description')}
-          />
-          <Dropdown
-            placeholder="Danh mục"
-            sheetTitle="Chọn danh mục"
-            options={CATEGORIES.map(c => ({
-              value: c.key,
-              label: `${c.emoji}  ${c.label}`,
-            }))}
-            value={category}
-            onChange={setCategory}
-          />
-          {!editing && (
+          <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 p-3.5">
+            <span className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+                <Icon name="circle-info" size={17} className="text-brand" />
+              </span>
+              <Typography size="small" weight="bold">
+                Thông tin cơ bản
+              </Typography>
+            </span>
             <TextField
-              value={unit}
-              onChange={setUnit}
-              placeholder="Đơn vị (vd: Hộp 500g) — không bắt buộc"
+              label={{ text: 'Tên sản phẩm', required: true }}
+              value={name}
+              onChange={setName}
+              onBlur={() => touch('name')}
+              placeholder="Tên hiển thị với người mua"
+              error={!!shownError('name')}
+              errorMessage={shownError('name')}
             />
-          )}
-          <TextField
-            value={price}
-            onChange={setPrice}
-            onBlur={() => touch('price')}
-            placeholder="Giá bán (₫)"
-            inputMode="numeric"
-            error={!!shownError('price')}
-            errorMessage={shownError('price')}
-          />
-          {!editing && (
+            <TextArea
+              label={{ text: 'Mô tả sản phẩm', required: true }}
+              value={description}
+              onChange={setDescription}
+              onBlur={() => touch('description')}
+              placeholder="Mô tả đặc điểm, chất liệu hoặc cách sử dụng"
+              rows={4}
+              autoHeight
+              error={!!shownError('description')}
+              errorMessage={shownError('description')}
+            />
+            <Dropdown
+              label={{ text: 'Danh mục' }}
+              placeholder="Chọn danh mục phù hợp"
+              sheetTitle="Chọn danh mục"
+              options={CATEGORIES.map(c => ({
+                value: c.key,
+                label: `${c.emoji}  ${c.label}`,
+              }))}
+              value={category}
+              onChange={setCategory}
+            />
+            {!editing && (
+              <TextField
+                label={{ text: 'Đơn vị bán' }}
+                value={unit}
+                onChange={setUnit}
+                placeholder="Ví dụ: Hộp 500g, cái, bộ"
+              />
+            )}
+          </section>
+
+          <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 p-3.5">
+            <span className="flex items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+                <Icon name="wallet" size={17} className="text-brand" />
+              </span>
+              <Typography size="small" weight="bold">
+                Giá bán và tồn kho
+              </Typography>
+            </span>
             <TextField
-              value={original}
-              onChange={setOriginal}
-              onBlur={() => touch('original')}
-              placeholder="Giá gốc nếu đang giảm (₫) — không bắt buộc"
+              label={{ text: 'Giá bán', required: true }}
+              value={price}
+              onChange={setPrice}
+              onBlur={() => touch('price')}
+              placeholder="0"
+              suffix="₫"
               inputMode="numeric"
-              error={!!shownError('original')}
-              errorMessage={shownError('original')}
+              error={!!shownError('price')}
+              errorMessage={shownError('price')}
             />
-          )}
-          {/* The seller's own article number, for reconciling against
-              their stock book. Unique inside this shop; another shop may
-              use the same code. */}
-          <TextField
-            value={sku}
-            onChange={setSku}
-            placeholder="Mã SKU (không bắt buộc)"
-          />
-          <TextField
-            value={stock}
-            onChange={setStock}
-            onBlur={() => touch('stock')}
-            placeholder="Tồn kho"
-            inputMode="numeric"
-            // Once options exist their quantities are the stock, so this
-            // field would be a second number nobody reads.
-            disabled={variants.length > 0}
-            error={!!shownError('stock')}
-            errorMessage={shownError('stock')}
-          />
-          {variants.length > 0 && (
-            <Typography size="2x-small" color="text-tertiary">
-              Tồn kho lấy theo từng phân loại bên dưới (tổng{' '}
-              {variants.reduce((sum, v) => sum + v.stock, 0)}).
-            </Typography>
-          )}
-
-          <VariantEditor value={variants} onChange={setVariants} />
-
-          {originalNum !== null &&
-            Number.isFinite(originalNum) &&
-            originalNum > priceNum && (
-              <Typography size="2x-small" color="text-secondary">
-                Đang giảm từ {formatVnd(originalNum)} còn {formatVnd(priceNum)}.
+            {!editing && (
+              <TextField
+                label={{ text: 'Giá gốc' }}
+                value={original}
+                onChange={setOriginal}
+                onBlur={() => touch('original')}
+                placeholder="Để trống nếu không giảm giá"
+                suffix="₫"
+                inputMode="numeric"
+                error={!!shownError('original')}
+                errorMessage={shownError('original')}
+              />
+            )}
+            {/* The seller's own article number, for reconciling against
+                their stock book. Unique inside this shop. */}
+            <TextField
+              label={{ text: 'Mã SKU' }}
+              value={sku}
+              onChange={setSku}
+              placeholder="Mã quản lý nội bộ"
+            />
+            <TextField
+              label={{ text: 'Tồn kho', required: !hasVariants }}
+              value={stock}
+              onChange={setStock}
+              onBlur={() => touch('stock')}
+              placeholder="Số lượng có thể bán"
+              inputMode="numeric"
+              disabled={hasVariants}
+              error={!!shownError('stock')}
+              errorMessage={shownError('stock')}
+            />
+            {hasVariants && (
+              <Typography size="2x-small" color="text-tertiary">
+                Tồn kho lấy theo từng phân loại bên dưới (tổng{' '}
+                {variants.reduce((sum, v) => sum + v.stock, 0)}).
               </Typography>
             )}
 
+            {originalNum !== null &&
+              Number.isFinite(originalNum) &&
+              originalNum > priceNum && (
+                <span className="rounded-xl bg-global-red-red-05 px-3 py-2">
+                  <Typography size="2x-small" className="text-brand">
+                    Đang giảm từ {formatVnd(originalNum)} còn {formatVnd(priceNum)}.
+                  </Typography>
+                </span>
+              )}
+          </section>
+
+          <VariantEditor value={variants} onChange={setVariants} />
+
           {editing && (
-            <>
+            <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 p-3.5">
+              <Typography size="small" weight="bold">
+                Trạng thái sản phẩm
+              </Typography>
               <button
                 type="button"
                 onClick={() => setHidden(v => !v)}
-                className="flex items-center gap-2">
+                className="flex items-center gap-3 rounded-xl bg-alias-background px-3 py-3 text-left active:opacity-70">
                 <Icon
                   name={hidden ? 'eye-slash' : 'eye'}
                   size={18}
@@ -424,13 +465,13 @@ export const ProductFormSheet = ({
               <button
                 type="button"
                 onClick={() => setConfirmDelete(true)}
-                className="mt-1 flex items-center gap-2 border-t border-alias-border-subtle-01 pt-3">
+                className="flex items-center gap-3 rounded-xl bg-global-red-red-05 px-3 py-3 text-left active:opacity-70">
                 <Icon name="trash" size={18} className="text-global-red-red-60" />
                 <Typography size="small" className="text-global-red-red-60">
                   Xoá sản phẩm
                 </Typography>
               </button>
-            </>
+            </section>
           )}
         </div>
       </SheetBody>
@@ -447,11 +488,10 @@ export const ProductFormSheet = ({
           </div>
         )}
         <div className="flex w-full gap-2">
-          <Button shape="pill" type="outline" theme="neutral" block onClick={onClose}>
+          <Button type="outline" theme="neutral" block onClick={onClose}>
             Huỷ
           </Button>
           <Button
-            shape="pill"
             type="solid"
             theme="brand"
             block

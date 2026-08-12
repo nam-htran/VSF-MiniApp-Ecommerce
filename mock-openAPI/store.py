@@ -4,7 +4,7 @@ import uuid
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -128,6 +128,16 @@ async def seed_users(session: AsyncSession) -> None:
         if await session.get(VAppUser, row["user_id"]) is None:
             session.add(VAppUser(**row))
     await session.commit()
+
+
+async def reset_users(session: AsyncSession) -> None:
+    """Clear simulator accounts, then restore only the four fixed users."""
+    await session.execute(delete(VAppUser))
+    await session.commit()
+    _auth_codes.clear()
+    _access_tokens.clear()
+    _refresh_tokens.clear()
+    await seed_users(session)
 
 
 async def find_user(session: AsyncSession, user_id: str) -> VAppUser | None:

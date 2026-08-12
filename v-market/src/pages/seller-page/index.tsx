@@ -63,9 +63,11 @@ const SellerPage = () => {
   }
 
   return (
-    <div className="pt-chrome flex flex-col gap-4 px-4 pb-8">
-      <div className="flex flex-col items-center gap-2 pt-4 text-center">
-        <Icon name="office" size={44} className="text-brand" />
+    <div className="pt-chrome flex flex-col gap-4 bg-alias-layer-01 px-3 pb-8">
+      <div className="flex flex-col items-center gap-2 px-5 pb-1 pt-4 text-center">
+        <span className="flex size-14 items-center justify-center rounded-2xl bg-alias-background shadow-sm">
+          <Icon name="office" size={30} className="text-brand" />
+        </span>
         <Typography size="large" weight="bold">
           Mở cửa hàng của bạn
         </Typography>

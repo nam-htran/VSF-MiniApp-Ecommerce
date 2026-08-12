@@ -6,6 +6,7 @@ import {
   Sheet,
   SheetBody,
   SheetHeader,
+  TextArea,
   TextField,
   Toast,
   Typography,
@@ -63,7 +64,7 @@ export const AddressBookSheet = ({
   // Open straight into the form when there is nothing to pick yet.
   useEffect(() => {
     if (open) setView(addresses.length === 0 ? 'form' : 'list');
-  }, [open]);
+  }, [open, addresses.length]);
 
   return (
     <Sheet open={open} onBackdropClick={onClose}>
@@ -370,54 +371,91 @@ const AddressForm = ({
     list.map(u => ({ value: u.code, label: u.name }));
 
   return (
-    <div className="flex flex-col gap-3 pb-2">
-      <TextField value={name} onChange={setName} placeholder="Tên người nhận" />
-      <TextField value={phone} onChange={setPhone} placeholder="Số điện thoại" inputMode="tel" />
+    <div className="flex flex-col gap-4 pb-2">
+      <section className="flex flex-col gap-3 rounded-2xl bg-alias-layer-01 p-3.5">
+        <span className="flex items-center gap-2">
+          <Icon name="user" size={18} className="text-brand" />
+          <Typography size="small" weight="bold">
+            Thông tin người nhận
+          </Typography>
+        </span>
+        <TextField
+          label={{ text: 'Họ và tên', required: true }}
+          value={name}
+          onChange={setName}
+          placeholder="Ví dụ: Nguyễn Văn An"
+        />
+        <TextField
+          label={{ text: 'Số điện thoại', required: true }}
+          value={phone}
+          onChange={setPhone}
+          placeholder="Số điện thoại nhận hàng"
+          inputMode="tel"
+        />
+      </section>
 
-      <Segmented value={mode} options={MODE_OPTIONS} onChange={setMode} />
+      <section className="flex flex-col gap-3 rounded-2xl bg-alias-layer-01 p-3.5">
+        <span className="flex items-center gap-2">
+          <Icon name="pin" size={18} className="text-brand" />
+          <Typography size="small" weight="bold">
+            Địa chỉ nhận hàng
+          </Typography>
+        </span>
+        <Segmented value={mode} options={MODE_OPTIONS} onChange={setMode} />
 
-      {/* key by mode so switching entry style fades in rather than snapping. */}
-      <div key={mode} className="flex animate-fade-in flex-col gap-3">
-        {mode === 'structured' ? (
-          <>
-            <Dropdown
-              placeholder="Tỉnh / Thành phố"
-              sheetTitle="Chọn Tỉnh / Thành phố"
-              allowSearch
-              options={toOptions(provinces)}
-              value={province}
-              onChange={setProvince}
+        {/* key by mode so switching entry style fades in rather than snapping. */}
+        <div key={mode} className="flex animate-fade-in flex-col gap-3">
+          {mode === 'structured' ? (
+            <>
+              <Dropdown
+                label={{ text: 'Tỉnh / Thành phố', required: true }}
+                placeholder="Chọn tỉnh hoặc thành phố"
+                sheetTitle="Chọn Tỉnh / Thành phố"
+                allowSearch
+                options={toOptions(provinces)}
+                value={province}
+                onChange={setProvince}
+              />
+              <Dropdown
+                label={{ text: 'Quận / Huyện', required: true }}
+                placeholder="Chọn quận hoặc huyện"
+                sheetTitle="Chọn Quận / Huyện"
+                allowSearch
+                disabled={!province}
+                options={toOptions(districts)}
+                value={district}
+                onChange={setDistrict}
+              />
+              <Dropdown
+                label={{ text: 'Phường / Xã', required: true }}
+                placeholder="Chọn phường hoặc xã"
+                sheetTitle="Chọn Phường / Xã"
+                allowSearch
+                disabled={!district}
+                options={toOptions(wards)}
+                value={ward}
+                onChange={setWard}
+              />
+              <TextField
+                label={{ text: 'Địa chỉ cụ thể', required: true }}
+                value={street}
+                onChange={setStreet}
+                placeholder="Số nhà, tên đường"
+              />
+            </>
+          ) : (
+            <TextArea
+              label={{ text: 'Địa chỉ đầy đủ', required: true }}
+              value={manual}
+              onChange={setManual}
+              placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
+              rows={3}
+              autoHeight
             />
-            <Dropdown
-              placeholder="Quận / Huyện"
-              sheetTitle="Chọn Quận / Huyện"
-              allowSearch
-              disabled={!province}
-              options={toOptions(districts)}
-              value={district}
-              onChange={setDistrict}
-            />
-            <Dropdown
-              placeholder="Phường / Xã"
-              sheetTitle="Chọn Phường / Xã"
-              allowSearch
-              disabled={!district}
-              options={toOptions(wards)}
-              value={ward}
-              onChange={setWard}
-            />
-            <TextField value={street} onChange={setStreet} placeholder="Số nhà, tên đường" />
-          </>
-        ) : (
-          <TextField
-            value={manual}
-            onChange={setManual}
-            placeholder="Địa chỉ đầy đủ: số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
-          />
-        )}
-      </div>
+          )}
+        </div>
 
-      {pin ? (
+        {pin ? (
         <span className="flex animate-fade-in items-center justify-between gap-2 rounded-xl bg-global-teal-teal-10 px-3 py-2">
           <span className="flex min-w-0 items-center gap-1.5">
             <Icon name="pin-tack" size={14} className="shrink-0 text-global-teal-teal-60" />
@@ -429,20 +467,21 @@ const AddressForm = ({
             <Icon name="xmark" size={14} color="text-tertiary" />
           </button>
         </span>
-      ) : (
+        ) : (
         <Button shape="pill" type="outline" theme="neutral" block loading={pinning} onClick={useMyLocation}>
           <span className="flex items-center justify-center gap-1.5">
             <Icon name="pin-tack" size={16} />
             Ghim vị trí hiện tại
           </span>
         </Button>
-      )}
+        )}
+      </section>
 
       <button
         type="button"
         disabled={forceDefault}
         onClick={() => setMakeDefault(v => !v)}
-        className="flex items-center gap-2">
+        className="flex items-center gap-2 rounded-xl px-1 py-1.5 text-left active:opacity-60">
         <Icon
           name={makeDefault ? 'circle-check' : 'circle-info'}
           type={makeDefault ? 'fill' : 'outline'}
@@ -454,11 +493,11 @@ const AddressForm = ({
         </Typography>
       </button>
 
-      <div className="flex gap-2 pt-1">
-        <Button shape="pill" type="outline" theme="neutral" block onClick={onCancel}>
+      <div className="sticky bottom-0 flex gap-2 bg-alias-background pt-1">
+        <Button type="outline" theme="neutral" block onClick={onCancel}>
           Huỷ
         </Button>
-        <Button shape="pill" type="solid" theme="brand" block loading={saving} disabled={!canSave} onClick={save}>
+        <Button type="solid" theme="brand" block loading={saving} disabled={!canSave} onClick={save}>
           Lưu địa chỉ
         </Button>
       </div>

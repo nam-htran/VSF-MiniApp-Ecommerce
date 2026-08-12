@@ -276,7 +276,10 @@ const ShopPage = () => {
       <Sheet open={editingShop} onBackdropClick={() => setEditingShop(false)}>
         <SheetHeader title="Sửa cửa hàng" />
         <SheetBody>
-          <div className="pb-2">
+          <div className="flex flex-col gap-3 pb-3 pt-1">
+            <Typography size="x-small" color="text-secondary" className="px-1">
+              Thông tin này sẽ hiển thị trên trang cửa hàng và trang sản phẩm.
+            </Typography>
             <ShopForm
               shop={shop}
               onSaved={() => {
@@ -313,15 +316,22 @@ const OwnerProducts = ({
   onEdit: (product: ApiProduct) => void;
 }) => (
   <div className="flex flex-col gap-2">
-    <div className="flex items-center justify-between px-4">
-      <Typography size="base" weight="bold">
-        Sản phẩm của bạn
-      </Typography>
-      <Button shape="pill" type="solid-subtle" theme="brand" size="medium" onClick={onAdd}>
-        <span className="flex items-center gap-1">
-          <Icon name="plus" size={16} />
-          Thêm
-        </span>
+    <div className="mx-3 flex items-center justify-between rounded-2xl bg-alias-background p-3 shadow-sm">
+      <span className="flex min-w-0 flex-col">
+        <Typography size="base" weight="bold">
+          Sản phẩm của bạn
+        </Typography>
+        <Typography size="2x-small" color="text-secondary">
+          {products.length} sản phẩm · Chạm một sản phẩm để chỉnh sửa
+        </Typography>
+      </span>
+      <Button
+        type="solid"
+        theme="brand"
+        size="medium"
+        leadingIcon={{ name: 'plus', size: 16 }}
+        onClick={onAdd}>
+        Thêm
       </Button>
     </div>
 

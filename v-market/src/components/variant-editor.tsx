@@ -100,7 +100,7 @@ export const VariantEditor = ({
     );
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl bg-alias-layer-01 p-3">
+    <div className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 p-3.5">
       <div className="flex items-center justify-between">
         <Typography size="small" weight="bold">
           Phân loại

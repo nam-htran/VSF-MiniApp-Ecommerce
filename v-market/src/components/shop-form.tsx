@@ -4,6 +4,7 @@ import {
   Dropdown,
   Icon,
   Image,
+  TextArea,
   TextField,
   Toast,
   Typography,
@@ -103,19 +104,28 @@ export const ShopForm = ({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {/* Banner with the logo overlapping its corner — as it looks on the
           shop page. Both uploaded by the seller. */}
-      <div className="relative">
+      <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 bg-alias-background p-3.5">
+        <span className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+            <Icon name="image" size={17} className="text-brand" />
+          </span>
+          <Typography size="small" weight="bold">
+            Hình ảnh cửa hàng
+          </Typography>
+        </span>
+        <div className="relative">
         <button
           type="button"
           onClick={() => bannerInput.current?.click()}
           disabled={uploading !== null}
-          className="flex h-28 w-full items-center justify-center overflow-hidden rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01">
+          className="flex h-32 w-full items-center justify-center overflow-hidden rounded-xl border border-dashed border-alias-border-subtle-01 bg-alias-layer-01 active:opacity-80">
           {uploading === 'banner' ? (
             <Icon name="loader" size={22} animation="spin" />
           ) : banner ? (
-            <Image src={banner} alt="" fit="cover" className="h-28 w-full" />
+            <Image src={banner} alt="" fit="cover" className="h-32 w-full" />
           ) : (
             <span className="flex flex-col items-center gap-1">
               <Icon name="image" size={22} color="text-tertiary" />
@@ -138,10 +148,11 @@ export const ShopForm = ({
             <Icon name="office" size={20} color="text-tertiary" />
           )}
         </button>
-      </div>
-      <Typography size="2x-small" color="text-tertiary" className="pl-1">
-        Bấm để tải ảnh nền và logo. JPEG/PNG/WebP, ≤5MB.
-      </Typography>
+        </div>
+        <Typography size="2x-small" color="text-tertiary" className="pl-1 pt-1">
+          Bấm vào ảnh nền hoặc logo để thay đổi. JPEG/PNG/WebP, tối đa 5MB.
+        </Typography>
+      </section>
 
       <input
         ref={bannerInput}
@@ -166,34 +177,65 @@ export const ShopForm = ({
         }}
       />
 
-      <TextField value={name} onChange={setName} placeholder="Tên cửa hàng" />
-      <TextField
-        value={description}
-        onChange={setDescription}
-        placeholder="Giới thiệu ngắn về cửa hàng"
-      />
-      {/* Province drives the delivery estimate; the picker keeps it exact. */}
-      <Dropdown
-        placeholder="Tỉnh / Thành phố (để ước tính giao hàng)"
-        sheetTitle="Chọn Tỉnh / Thành phố"
-        allowSearch
-        options={provinces.map(u => ({ value: u.name, label: u.name }))}
-        value={province}
-        onChange={setProvince}
-      />
-      <TextField
-        value={address}
-        onChange={setAddress}
-        placeholder="Địa chỉ lấy hàng (số nhà, đường, quận/huyện)"
-      />
-      <TextField
-        value={phone}
-        onChange={setPhone}
-        placeholder="Số điện thoại liên hệ"
-        inputMode="tel"
-      />
+      <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 bg-alias-background p-3.5">
+        <span className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+            <Icon name="office" size={17} className="text-brand" />
+          </span>
+          <Typography size="small" weight="bold">
+            Thông tin cửa hàng
+          </Typography>
+        </span>
+        <TextField
+          label={{ text: 'Tên cửa hàng', required: true }}
+          value={name}
+          onChange={setName}
+          placeholder="Tên hiển thị với người mua"
+        />
+        <TextArea
+          label={{ text: 'Giới thiệu', required: true }}
+          value={description}
+          onChange={setDescription}
+          placeholder="Bạn bán gì và cửa hàng có gì đặc biệt?"
+          rows={3}
+          autoHeight
+        />
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-2xl border border-alias-border-subtle-01 bg-alias-background p-3.5">
+        <span className="flex items-center gap-2">
+          <span className="flex size-8 items-center justify-center rounded-lg bg-global-red-red-05">
+            <Icon name="pin" size={17} className="text-brand" />
+          </span>
+          <Typography size="small" weight="bold">
+            Địa chỉ lấy hàng
+          </Typography>
+        </span>
+        {/* Province drives the delivery estimate; the picker keeps it exact. */}
+        <Dropdown
+          label={{ text: 'Tỉnh / Thành phố' }}
+          placeholder="Chọn khu vực cửa hàng"
+          sheetTitle="Chọn Tỉnh / Thành phố"
+          allowSearch
+          options={provinces.map(u => ({ value: u.name, label: u.name }))}
+          value={province}
+          onChange={setProvince}
+        />
+        <TextField
+          label={{ text: 'Địa chỉ cụ thể' }}
+          value={address}
+          onChange={setAddress}
+          placeholder="Số nhà, đường, quận/huyện"
+        />
+        <TextField
+          label={{ text: 'Số điện thoại liên hệ' }}
+          value={phone}
+          onChange={setPhone}
+          placeholder="Số điện thoại của cửa hàng"
+          inputMode="tel"
+        />
+      </section>
       <Button
-        shape="pill"
         type="solid"
         theme="brand"
         block

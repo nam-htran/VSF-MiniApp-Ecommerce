@@ -58,6 +58,60 @@ textarea {
 }
 
 /*
+ * The VSF button variants already handle colour and accessibility well;
+ * this only gives them one consistent V-Market silhouette. Keep this
+ * scoped to `.vsf-button` so native icon buttons and card hit areas retain
+ * their own geometry.
+ */
+.vsf-button {
+  font-family: var(--font-sans);
+  transition:
+    transform 120ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.vsf-button--rounded {
+  border-radius: 12px;
+}
+
+.vsf-button--medium:not(.vsf-button--icon-only) {
+  min-height: 38px;
+  max-height: 38px;
+  padding-inline: 16px;
+}
+
+.vsf-button--large:not(.vsf-button--icon-only) {
+  min-height: 48px;
+  max-height: 48px;
+  padding-inline: 20px;
+}
+
+.vsf-button > .vsf-typography {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.vsf-button--solid:not(:disabled) {
+  box-shadow: 0 4px 12px rgb(227 28 35 / 18%);
+}
+
+.vsf-button--outline {
+  border-color: rgb(227 28 35 / 45%);
+}
+
+.vsf-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.vsf-button:focus-visible {
+  outline: 2px solid rgb(227 28 35 / 28%);
+  outline-offset: 2px;
+}
+
+/*
  * A short fade-and-rise for content that swaps in place — the address
  * form's field groups, the address-book views, small chips. Give the
  * swapping element a changing `key` so React remounts it and the

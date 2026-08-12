@@ -213,6 +213,13 @@ async def simulator_create_user(request: Request, session: Session):
     return ok(_public(user))
 
 
+@app.delete("/simulator/users", tags=["Demo controls"])
+async def simulator_reset_users(session: Session):
+    """Reset local simulator identities before rebuilding demo data."""
+    await store.reset_users(session)
+    return ok([_public(u) for u in await store.all_users(session)])
+
+
 @app.post("/simulator/authcode", tags=["Demo controls"])
 async def simulator_auth_code(request: Request, session: Session):
     body = await request.json()

@@ -28,8 +28,22 @@ export type VappAccount = {
   avatar_url: string;
 };
 
-export function listVappAccounts() {
-  return unwrap<VappAccount[]>(apiRequest(`${VAPP}/simulator/users`));
+export async function listVappAccounts() {
+  const accounts = await unwrap<VappAccount[]>(
+    apiRequest(`${VAPP}/simulator/users`)
+  );
+
+  // Old seed_demo runs created a fresh mock identity every time. Keep the
+  // picker usable with those existing databases while the seed script now
+  // reuses the first identity bearing the same name.
+  return accounts.filter(
+    (account, index) =>
+      accounts.findIndex(
+        candidate =>
+          candidate.name.trim().toLocaleLowerCase('vi') ===
+          account.name.trim().toLocaleLowerCase('vi')
+      ) === index
+  );
 }
 
 export function registerVappAccount(name: string) {
