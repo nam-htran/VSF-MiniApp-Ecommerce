@@ -46,19 +46,19 @@ candidate thay vì thêm suffix để ép mỗi item thành một SID riêng.
 
 | Notebook | Đầu ra |
 |---|---|
-| `01_preprocessing.ipynb` | Global catalog, product versions, train/validation sessions |
-| `02_alignment_and_embedding.ipynb` | Jina embeddings, alignment report và global embeddings |
-| `03_train_rqvae.ipynb` | RQ-VAE checkpoints và `semantic_ids.parquet` |
-| `04_train_transformer.ipynb` | Transformer checkpoints và W&B metrics |
+| `01_preprocessing.ipynb` | KuaiSearch ranking splits, catalog và product embeddings |
+| `02_eda_rqvae.ipynb` | PCA và pilot sweep cho hidden dims/codebook sizes |
+| `03_train_rqvae.ipynb` | RQ-VAE checkpoints và fixed `semantic_ids.parquet` |
+| `04_train_transformer.ipynb` | Transformer baseline; sẽ được viết lại cho Phase B teacher–student |
 
 Notebook chỉ orchestration; model và training loop nằm trong `src/`. Config cuối
-được lưu tại `src/configs/rqvae_vmarket.gin` và
+được lưu tại `src/configs/rqvae_kuaisearch.gin` và
 `src/configs/transformer_vmarket.gin`.
 
 Chạy script trực tiếp sau khi sửa đường dẫn dataset trong Gin config:
 
 ```bash
-python src/train_rqvae.py src/configs/rqvae_vmarket.gin
+python src/train_rqvae.py src/configs/rqvae_kuaisearch.gin
 python src/train_decoder.py src/configs/transformer_vmarket.gin
 ```
 

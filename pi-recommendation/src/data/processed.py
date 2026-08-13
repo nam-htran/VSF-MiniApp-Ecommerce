@@ -12,14 +12,14 @@ from data.schemas import SeqBatch
 
 @gin.constants_from_enum
 class RecDataset(Enum):
-    VMARKET = 1
+    KUAISEARCH = 1
 
 
 class ItemData(Dataset):
     def __init__(
         self,
         root: str,
-        dataset: RecDataset = RecDataset.VMARKET,
+        dataset: RecDataset = RecDataset.KUAISEARCH,
         train_test_split: str = "all",
         eval_fraction: float = 0.05,
         split_seed: int = 2026,
@@ -27,7 +27,7 @@ class ItemData(Dataset):
         index_filename: str = "global_embedding_index.parquet",
         **_,
     ) -> None:
-        if dataset is not RecDataset.VMARKET:
+        if dataset is not RecDataset.KUAISEARCH:
             raise ValueError(f"Unsupported dataset: {dataset}")
 
         root = Path(root)
@@ -86,7 +86,7 @@ class SeqData(Dataset):
     def __init__(
         self,
         root: str,
-        dataset: RecDataset = RecDataset.VMARKET,
+        dataset: RecDataset = RecDataset.KUAISEARCH,
         is_train: bool = True,
         max_seq_len: int = 20,
         session_root: str | None = None,
@@ -94,7 +94,7 @@ class SeqData(Dataset):
         index_filename: str = "global_embedding_index.parquet",
         **_,
     ) -> None:
-        if dataset is not RecDataset.VMARKET:
+        if dataset is not RecDataset.KUAISEARCH:
             raise ValueError(f"Unsupported dataset: {dataset}")
 
         root = Path(root)
