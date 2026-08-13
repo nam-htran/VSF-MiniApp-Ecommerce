@@ -1,6 +1,6 @@
 # Dataset REES46 (~15GB)
-ai-recommendation/dataset/
-ai-recommendation/output/
+dataset/
+output/
 
 # Jupyter
 .ipynb_checkpoints/

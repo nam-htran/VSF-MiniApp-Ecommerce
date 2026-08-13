@@ -1,0 +1,35 @@
+import data.processed
+
+train.iterations=200000
+train.batch_size=256
+train.learning_rate=0.0002
+train.warmup_steps=5000
+train.weight_decay=0.0001
+
+train.session_folder="/kaggle/input/vmarket-phase2-preprocessed"
+train.semantic_ids_path="/kaggle/input/vmarket-rqvae/semantic_ids.parquet"
+train.save_dir_root="/kaggle/working/transformer/"
+train.dataset=%data.processed.RecDataset.VMARKET
+
+train.vae_codebook_sizes=[128, 64, 32]
+
+train.t5_d_model=384
+train.t5_num_heads=6
+train.t5_d_ff=1024
+train.t5_num_layers=4
+train.should_add_sep_token=True
+train.top_k_for_generation=10
+train.top_k_eval_list=[1, 5, 10]
+
+train.gradient_accumulate_every=1
+train.max_grad_norm=1.0
+train.eval_every=20000
+train.eval_subset_size=20000
+train.random_seed=2026
+train.save_model_every=10000
+
+train.amp=True
+train.mixed_precision_type="fp16"
+train.wandb_logging=True
+train.wandb_project="vmarket-transformer"
+train.wandb_run_name_prefix="cluster-sid-128x64x32-t5-384-lr2e4-200k"
