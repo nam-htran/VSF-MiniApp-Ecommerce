@@ -36,7 +36,7 @@ def train(
     semantic_ids_path="output/rq-vae/semantic_ids.parquet",
     session_folder=None,
     save_dir_root="out/",
-    dataset=RecDataset.KUAISEARCH,
+    dataset=RecDataset.VMARKET,
     pretrained_decoder_path=None,
     split_batches=True,
     amp=False,

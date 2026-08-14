@@ -29,8 +29,8 @@ def train(
     batch_size=64,
     learning_rate=0.0001,
     weight_decay=0.01,
-    dataset_folder="dataset/kuaisearch",
-    dataset=RecDataset.KUAISEARCH,
+    dataset_folder="dataset/vmarket",
+    dataset=RecDataset.VMARKET,
     pretrained_rqvae_path=None,
     save_dir_root="out/",
     use_kmeans_init=True,
@@ -300,20 +300,6 @@ def train(
                             semantic_ids[f"sid_{cid}"] = corpus_ids[:, cid].astype(
                                 np.int16
                             )
-
-                        sid_columns = [f"sid_{cid}" for cid in range(vae_n_layers)]
-                        semantic_ids = semantic_ids.sort_values(
-                            [*sid_columns, "product_id"], kind="stable"
-                        )
-                        semantic_ids["sid_suffix"] = (
-                            semantic_ids.groupby(sid_columns, sort=False)
-                            .cumcount()
-                            .astype(np.int32)
-                        )
-                        semantic_ids = semantic_ids.sort_values(
-                            "product_index"
-                        ).reset_index(drop=True)
-
                         semantic_ids_path = os.path.join(
                             save_dir_root, "semantic_ids.parquet"
                         )

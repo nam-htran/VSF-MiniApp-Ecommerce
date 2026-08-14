@@ -9,7 +9,7 @@ train.weight_decay=0.0001
 train.session_folder="/kaggle/input/vmarket-phase2-preprocessed"
 train.semantic_ids_path="/kaggle/input/vmarket-rqvae/semantic_ids.parquet"
 train.save_dir_root="/kaggle/working/transformer/"
-train.dataset=%data.processed.RecDataset.KUAISEARCH
+train.dataset=%data.processed.RecDataset.VMARKET
 
 train.vae_codebook_sizes=[128, 64, 32]
 
