@@ -83,7 +83,7 @@ class QwenDistillationModel(nn.Module):
             valid_token_ids = getattr(self, f"sid_token_ids_{level}")
             level_student = student_logits[:, level].index_select(
                 dim=-1, index=valid_token_ids
-            )
+            ).float()
             ce_losses.append(
                 F.cross_entropy(level_student, target_codes[:, level].long())
             )
@@ -92,7 +92,7 @@ class QwenDistillationModel(nn.Module):
             if level < 3:
                 level_teacher = teacher_logits[:, level].index_select(
                     dim=-1, index=valid_token_ids
-                )
+                ).float()
                 temperature = self.temperature
                 kd_losses.append(
                     F.kl_div(
