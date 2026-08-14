@@ -6,8 +6,8 @@ train.learning_rate=0.0001
 train.weight_decay=0.0001
 train.batch_size=640
 
-train.dataset_folder="/kaggle/input/vmarket-phase2-embeddings"
-train.dataset=%data.processed.RecDataset.VMARKET
+train.dataset_folder="/kaggle/input/kuaisearch-preprocessed"
+train.dataset=%data.processed.RecDataset.KUAISEARCH
 train.save_dir_root="/kaggle/working/rq-vae/"
 
 train.vae_input_dim=256
@@ -26,5 +26,5 @@ train.eval_every=5000
 train.save_model_every=5000
 train.amp=False
 train.wandb_logging=True
-train.wandb_project="vmarket-rqvae"
+train.wandb_project="kuaisearch-rqvae"
 train.wandb_run_name_prefix="rotation-128x64x32-50k"
