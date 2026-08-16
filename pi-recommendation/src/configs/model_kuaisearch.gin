@@ -1,6 +1,6 @@
 train.iterations=2000
-train.batch_size=1
-train.gradient_accumulate_every=16
+train.batch_size=16
+train.gradient_accumulate_every=1
 train.learning_rate=0.00002
 train.weight_decay=0.01
 

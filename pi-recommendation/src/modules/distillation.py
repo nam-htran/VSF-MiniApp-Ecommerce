@@ -39,29 +39,28 @@ class QwenDistillationModel(nn.Module):
                 torch.as_tensor(token_ids, dtype=torch.long),
             )
 
-    def _target_logits(self, input_ids, attention_mask, labels):
-        output = self.backbone(
+    def _target_logits(self, input_ids, attention_mask):
+        hidden_states = self.backbone.get_decoder()(
             input_ids=input_ids,
             attention_mask=attention_mask,
             use_cache=False,
             return_dict=True,
+        ).last_hidden_state
+        # Four target tokens end each row, and position t predicts t + 1.
+        starts = attention_mask.sum(dim=1) - 5
+        offsets = torch.arange(4, device=hidden_states.device)
+        positions = starts.unsqueeze(1) + offsets
+        target_states = hidden_states.gather(
+            1, positions.unsqueeze(-1).expand(-1, -1, hidden_states.shape[-1])
         )
-        # Causal logits at position t predict the label at position t + 1.
-        logits = output.logits[:, :-1]
-        target_mask = labels[:, 1:] != -100
-        target_counts = target_mask.sum(dim=1)
-        if not torch.all(target_counts == 4):
-            raise ValueError("Each view must supervise exactly four SID tokens")
-        return logits[target_mask].reshape(logits.shape[0], 4, logits.shape[-1])
+        return self.backbone.get_output_embeddings()(target_states)
 
     def forward(
         self,
         student_input_ids,
         student_attention_mask,
-        student_labels,
         teacher_input_ids,
         teacher_attention_mask,
-        teacher_labels,
         target_codes,
     ) -> DistillationOutput:
         if target_codes.ndim != 2 or target_codes.shape[1] != 4:
@@ -72,12 +71,10 @@ class QwenDistillationModel(nn.Module):
             teacher_logits = self._target_logits(
                 teacher_input_ids,
                 teacher_attention_mask,
-                teacher_labels,
             )
         student_logits = self._target_logits(
             student_input_ids,
             student_attention_mask,
-            student_labels,
         )
 
         ce_losses = []

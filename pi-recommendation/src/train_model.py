@@ -9,12 +9,12 @@ import pandas as pd
 import polars as pl
 import torch
 
+from bitsandbytes.optim import AdamW8bit
 from modules.distillation import QwenDistillationModel
 from modules.utils import parse_config
 from sid.contract import SID_COLUMNS
 from sid.contract import add_sid_tokens
 from sid.contract import validate_sid_table
-from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM
@@ -194,7 +194,6 @@ def train(
         suffix_size=suffix_size,
     )
     backbone.config.use_cache = False
-    backbone.gradient_checkpointing_enable()
     model = QwenDistillationModel(
         backbone=backbone,
         sid_token_ids=sid_token_ids,
@@ -209,7 +208,6 @@ def train(
             ("teacher", teacher_max_length),
         ):
             sequences = []
-            labels = []
             for sample in samples:
                 prompt_ids = tokenizer.encode(
                     sample[f"{view}_prompt"], add_special_tokens=False
@@ -219,25 +217,23 @@ def train(
                     for name, code in zip(("a", "b", "c", "u"), sample["target_codes"])
                 ]
                 target_ids = tokenizer.convert_tokens_to_ids(target_tokens)
+                if not prompt_ids:
+                    raise ValueError(f"{view} prompt is empty")
                 if len(prompt_ids) + 4 > max_length:
                     raise ValueError(f"{view} prompt exceeds {max_length} tokens")
                 sequences.append(prompt_ids + target_ids)
-                labels.append([-100] * len(prompt_ids) + target_ids)
 
             width = max(len(sequence) for sequence in sequences)
             input_ids = torch.full(
                 (len(samples), width), tokenizer.pad_token_id, dtype=torch.long
             )
             attention_mask = torch.zeros_like(input_ids)
-            output_labels = torch.full_like(input_ids, -100)
-            for row, (sequence, row_labels) in enumerate(zip(sequences, labels)):
+            for row, sequence in enumerate(sequences):
                 length = len(sequence)
                 input_ids[row, :length] = torch.tensor(sequence)
                 attention_mask[row, :length] = 1
-                output_labels[row, :length] = torch.tensor(row_labels)
             batch[f"{view}_input_ids"] = input_ids
             batch[f"{view}_attention_mask"] = attention_mask
-            batch[f"{view}_labels"] = output_labels
 
         batch["target_codes"] = torch.tensor(
             [sample["target_codes"] for sample in samples]
@@ -258,7 +254,7 @@ def train(
     )
     train_iterator = iter(train_loader)
 
-    optimizer = AdamW(
+    optimizer = AdamW8bit(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
     model, optimizer, validation_loader = accelerator.prepare(
