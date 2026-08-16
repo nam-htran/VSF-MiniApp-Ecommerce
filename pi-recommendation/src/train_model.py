@@ -272,10 +272,17 @@ def train(
             project=wandb_project,
             name=f"{wandb_run_name_prefix}-{run_timestamp}",
             config={
+                "model_name": model_name,
+                "codebook_sizes": list(codebook_sizes),
                 "iterations": iterations,
                 "batch_size": batch_size,
                 "gradient_accumulate_every": gradient_accumulate_every,
                 "learning_rate": learning_rate,
+                "weight_decay": weight_decay,
+                "kd_weight": kd_weight,
+                "temperature": temperature,
+                "student_max_length": student_max_length,
+                "teacher_max_length": teacher_max_length,
                 "train_samples": len(train_samples),
                 "validation_samples": len(validation_samples),
             },
@@ -289,7 +296,7 @@ def train(
     for iteration in progress:
         model.train()
         optimizer.zero_grad(set_to_none=True)
-        train_metrics = torch.zeros(3, device=device)
+        train_metrics = torch.zeros(6, device=device)
 
         for _ in range(gradient_accumulate_every):
             try:
@@ -303,11 +310,21 @@ def train(
                 loss = output.loss / gradient_accumulate_every
             accelerator.backward(loss)
             train_metrics += torch.stack(
-                [output.loss.detach(), output.ce_loss.detach(), output.kd_loss.detach()]
+                [
+                    output.loss.detach(),
+                    output.ce_loss.detach(),
+                    output.kd_loss.detach(),
+                    output.teacher_ce_loss.detach(),
+                    output.student_token_accuracy.detach(),
+                    output.teacher_token_accuracy.detach(),
+                ]
             ) / gradient_accumulate_every
 
+        grad_norm = None
         if max_grad_norm is not None:
-            accelerator.clip_grad_norm_(model.parameters(), max_grad_norm)
+            grad_norm = accelerator.clip_grad_norm_(
+                model.parameters(), max_grad_norm
+            )
         optimizer.step()
         progress.set_postfix(loss=f"{train_metrics[0].item():.4f}")
 
@@ -315,11 +332,17 @@ def train(
             "train/loss": train_metrics[0].item(),
             "train/ce_loss": train_metrics[1].item(),
             "train/kd_loss": train_metrics[2].item(),
+            "train/teacher_ce_loss": train_metrics[3].item(),
+            "train/student_token_accuracy": train_metrics[4].item(),
+            "train/teacher_token_accuracy": train_metrics[5].item(),
+            "train/learning_rate": optimizer.param_groups[0]["lr"],
         }
+        if grad_norm is not None:
+            metrics["train/grad_norm"] = grad_norm.item()
         should_eval = (iteration + 1) % eval_every == 0 or iteration + 1 == iterations
         if should_eval:
             model.eval()
-            validation_metrics = torch.zeros(3, device=device)
+            validation_metrics = torch.zeros(6, device=device)
             validation_batches = 0
             with torch.no_grad():
                 for batch in validation_loader:
@@ -327,7 +350,14 @@ def train(
                     with accelerator.autocast():
                         output = model(**batch)
                     validation_metrics += torch.stack(
-                        [output.loss, output.ce_loss, output.kd_loss]
+                        [
+                            output.loss,
+                            output.ce_loss,
+                            output.kd_loss,
+                            output.teacher_ce_loss,
+                            output.student_token_accuracy,
+                            output.teacher_token_accuracy,
+                        ]
                     )
                     validation_batches += 1
             validation_metrics /= validation_batches
@@ -337,6 +367,13 @@ def train(
                     "validation/loss": validation_loss,
                     "validation/ce_loss": validation_metrics[1].item(),
                     "validation/kd_loss": validation_metrics[2].item(),
+                    "validation/teacher_ce_loss": validation_metrics[3].item(),
+                    "validation/student_token_accuracy": validation_metrics[
+                        4
+                    ].item(),
+                    "validation/teacher_token_accuracy": validation_metrics[
+                        5
+                    ].item(),
                 }
             )
             print(metrics)

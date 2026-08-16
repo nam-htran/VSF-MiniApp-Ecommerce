@@ -9,6 +9,9 @@ class DistillationOutput(NamedTuple):
     loss: Tensor
     ce_loss: Tensor
     kd_loss: Tensor
+    teacher_ce_loss: Tensor
+    student_token_accuracy: Tensor
+    teacher_token_accuracy: Tensor
 
 
 class QwenDistillationModel(nn.Module):
@@ -79,20 +82,31 @@ class QwenDistillationModel(nn.Module):
 
         ce_losses = []
         kd_losses = []
+        teacher_ce_losses = []
+        student_accuracies = []
+        teacher_accuracies = []
         for level in range(4):
             valid_token_ids = getattr(self, f"sid_token_ids_{level}")
             level_student = student_logits[:, level].index_select(
                 dim=-1, index=valid_token_ids
             ).float()
+            level_teacher = teacher_logits[:, level].index_select(
+                dim=-1, index=valid_token_ids
+            ).float()
+            targets = target_codes[:, level].long()
             ce_losses.append(
-                F.cross_entropy(level_student, target_codes[:, level].long())
+                F.cross_entropy(level_student, targets)
+            )
+            teacher_ce_losses.append(F.cross_entropy(level_teacher, targets))
+            student_accuracies.append(
+                (level_student.argmax(dim=-1) == targets).float()
+            )
+            teacher_accuracies.append(
+                (level_teacher.argmax(dim=-1) == targets).float()
             )
 
             # The collision suffix identifies the item but carries no semantics.
             if level < 3:
-                level_teacher = teacher_logits[:, level].index_select(
-                    dim=-1, index=valid_token_ids
-                ).float()
                 temperature = self.temperature
                 kd_losses.append(
                     F.kl_div(
@@ -105,5 +119,15 @@ class QwenDistillationModel(nn.Module):
 
         ce_loss = torch.stack(ce_losses).mean()
         kd_loss = torch.stack(kd_losses).mean()
+        teacher_ce_loss = torch.stack(teacher_ce_losses).mean()
+        student_token_accuracy = torch.stack(student_accuracies).mean()
+        teacher_token_accuracy = torch.stack(teacher_accuracies).mean()
         loss = ce_loss + self.kd_weight * kd_loss
-        return DistillationOutput(loss=loss, ce_loss=ce_loss, kd_loss=kd_loss)
+        return DistillationOutput(
+            loss=loss,
+            ce_loss=ce_loss,
+            kd_loss=kd_loss,
+            teacher_ce_loss=teacher_ce_loss,
+            student_token_accuracy=student_token_accuracy,
+            teacher_token_accuracy=teacher_token_accuracy,
+        )
