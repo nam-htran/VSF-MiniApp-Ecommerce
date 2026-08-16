@@ -185,7 +185,7 @@ def train(
         tokenizer.pad_token = tokenizer.eos_token
     backbone = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=torch.float16 if amp else torch.float32,
+        dtype=torch.float32,
     )
     sid_token_ids = add_sid_tokens(
         tokenizer,
