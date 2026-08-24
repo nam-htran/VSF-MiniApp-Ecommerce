@@ -5,6 +5,7 @@ import {
   Icon,
   Skeleton,
   Typography,
+  useDidShow,
   useNavigate,
 } from '@v-miniapp/ui-react';
 import { listOrders, type OrderView } from '@/api/orders';
@@ -51,9 +52,9 @@ const OrdersPage = () => {
   // and the page is kept alive so they cannot hand it a starting value.
   const tab = useOrdersShowing();
 
-  const load = () => {
-    setFeed({ status: 'loading' });
-    // One page of 50 for now; pagination is a later concern.
+  // One page of 50 for now; pagination is a later concern.
+  const fetchOrders = (showSkeleton: boolean) => {
+    if (showSkeleton) setFeed({ status: 'loading' });
     listOrders(50)
       .then(page => setFeed({ status: 'ready', orders: page.items }))
       .catch(error =>
@@ -64,7 +65,15 @@ const OrdersPage = () => {
       );
   };
 
+  const load = () => fetchOrders(true);
+
   useEffect(load, []);
+
+  // keepAlive means this page mounts once and never remounts, so the first
+  // load would be the only one: an order the courier moved on after it
+  // would sit here at its old stage for ever. Refetch quietly on each
+  // showing — no skeleton, there is already a list on screen.
+  useDidShow(() => fetchOrders(false));
 
   if (feed.status === 'loading') return <OrdersSkeleton />;
   if (feed.status === 'failed')

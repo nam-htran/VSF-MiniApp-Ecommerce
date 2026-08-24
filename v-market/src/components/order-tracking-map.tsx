@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Typography } from '@v-miniapp/ui-react';
+import type { ShopOrderView } from '@/api/orders';
 
 /**
  * A simulated delivery tracker. A real map is impossible here — third-party
@@ -10,6 +11,14 @@ import { Typography } from '@v-miniapp/ui-react';
  * There is no real logistics feed either, so progress is simulated from the
  * order's own age over a short demo window: a just-paid order sets off and
  * arrives a few minutes later. Clearly a mock — labelled as one.
+ *
+ * The same simulation runs on the server (advance_simulated_fulfilment),
+ * which is what actually moves shop_orders.status through the ladder, on
+ * windows set to match STAGE_STARTS below. This clock is only the smooth
+ * animation between those steps, and it is held to the stage the order
+ * rows have really reached: the scheduler ticks once a minute, so without
+ * the cap the widget would announce "Đã giao" while every other screen
+ * still read "Chờ lấy hàng" — which is exactly the bug it once had.
  */
 const ROUTE = 'M 20 120 C 82 116 96 42 158 54 C 214 64 252 98 302 28';
 const DEMO_WINDOW_MS = 6 * 60 * 1000;
@@ -30,8 +39,30 @@ const stageIndex = (progress: number) => {
   return index;
 };
 
-export const OrderTrackingMap = ({ createdAt }: { createdAt: string }) => {
+/**
+ * How far the order rows themselves say it has got — the ceiling the
+ * animation may not pass. CONFIRMED still covers "Đang lấy hàng": the
+ * shop has the parcel in hand either way, and it is the only stage with
+ * no status of its own. Cancelled slices are left out; a shop that called
+ * its part off is not something still on the road.
+ */
+const realCeiling = (shopOrders: ShopOrderView[]): number => {
+  const live = shopOrders.filter(s => s.status !== 'CANCELLED');
+  if (live.length === 0) return 0;
+  if (live.every(s => s.status === 'DELIVERED')) return 3;
+  if (live.some(s => s.status === 'SHIPPING')) return 2;
+  return 1;
+};
+
+export const OrderTrackingMap = ({
+  createdAt,
+  shopOrders,
+}: {
+  createdAt: string;
+  shopOrders: ShopOrderView[];
+}) => {
   const createdAtMs = new Date(createdAt).getTime();
+  const ceiling = realCeiling(shopOrders);
   const [progress, setProgress] = useState(() => progressFrom(createdAtMs));
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const pathRef = useRef<SVGPathElement>(null);
@@ -43,17 +74,24 @@ export const OrderTrackingMap = ({ createdAt }: { createdAt: string }) => {
     return () => clearInterval(id);
   }, [createdAtMs, progress]);
 
+  // Hold the courier at the stage's own mark while it waits for the
+  // server to catch up, rather than letting it idle on the doorstep.
+  const shown = Math.min(progress, STAGE_STARTS[Math.min(ceiling + 1, 3)]);
+
   // Place the marker along the path at the current progress.
   useEffect(() => {
     const path = pathRef.current;
     if (!path) return;
-    const at = path.getPointAtLength(progress * path.getTotalLength());
+    const at = path.getPointAtLength(shown * path.getTotalLength());
     setPoint({ x: at.x, y: at.y });
-  }, [progress]);
+  }, [shown]);
 
-  const current = stageIndex(progress);
-  const delivered = progress >= 1;
-  const etaMinutes = Math.ceil(((1 - progress) * DEMO_WINDOW_MS) / 60000);
+  const current = Math.min(stageIndex(progress), ceiling);
+  const delivered = current === 3;
+  const etaMinutes = Math.max(
+    1,
+    Math.ceil(((1 - progress) * DEMO_WINDOW_MS) / 60000)
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -92,7 +130,7 @@ export const OrderTrackingMap = ({ createdAt }: { createdAt: string }) => {
             strokeLinecap="round"
             pathLength={100}
             strokeDasharray={100}
-            strokeDashoffset={100 - progress * 100}
+            strokeDashoffset={100 - shown * 100}
           />
 
           {/* endpoints */}

@@ -18,9 +18,12 @@ export const orderStage = (order: OrderView): OrderStage => {
   if (order.status === 'CANCELLED' || order.status === 'FAILED')
     return 'cancelled';
   if (order.status === 'PENDING') return 'pending';
-  const shops = order.shopOrders;
-  if (shops.length > 0 && shops.every(s => s.status === 'DELIVERED'))
-    return 'delivered';
+  // Cancelled slices are left out: a shop that called its part off is not
+  // something still on its way, and counting it would pin an otherwise
+  // fully delivered order at 'processing' for good.
+  const shops = order.shopOrders.filter(s => s.status !== 'CANCELLED');
+  if (shops.length === 0) return 'cancelled';
+  if (shops.every(s => s.status === 'DELIVERED')) return 'delivered';
   if (shops.some(s => s.status === 'SHIPPING')) return 'shipping';
   return 'processing';
 };

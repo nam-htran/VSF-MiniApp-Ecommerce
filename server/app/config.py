@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     payment_grace_minutes: int = 30
     scheduler_enabled: bool = True
     scheduler_interval_seconds: int = 60
+    # The demo courier. There is no logistics feed behind this shop, so a
+    # paid order walks CONFIRMED -> SHIPPING -> DELIVERED on a timer
+    # instead. Switch it off and fulfilment is the seller's job alone.
+    #
+    # The two windows are the buyer's tracker read back in seconds: it
+    # animates a 6-minute trip and starts "Đang giao" at 0.4 of it and
+    # "Đã giao" at 0.99. Keeping the numbers in step is what stops the
+    # widget from announcing a delivery the order rows know nothing about
+    # (see OrderTrackingMap, which also refuses to run ahead of them).
+    fulfilment_sim_enabled: bool = True
+    fulfilment_ship_after_seconds: int = 144
+    fulfilment_deliver_after_seconds: int = 356
     admin_vapp_user_ids: str = ""
 
     @property

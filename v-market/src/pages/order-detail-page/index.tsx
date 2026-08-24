@@ -5,6 +5,7 @@ import {
   Skeleton,
   Toast,
   Typography,
+  useDidShow,
   useLocation,
   useNavigate,
 } from '@v-miniapp/ui-react';
@@ -45,23 +46,49 @@ const OrderDetailPage = () => {
   const [paying, setPaying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
-  const load = useCallback(() => {
-    if (!id) {
-      setState({ status: 'missing' });
-      return;
-    }
-    setState({ status: 'loading' });
-    getOrder(id)
-      .then(order => setState({ status: 'ready', order }))
-      .catch(() => setState({ status: 'missing' }));
-  }, [id]);
+  const fetchOrder = useCallback(
+    (showSkeleton: boolean) => {
+      if (!id) {
+        setState({ status: 'missing' });
+        return;
+      }
+      if (showSkeleton) setState({ status: 'loading' });
+      getOrder(id)
+        .then(order => setState({ status: 'ready', order }))
+        .catch(() => setState({ status: 'missing' }));
+    },
+    [id]
+  );
+
+  const load = useCallback(() => fetchOrder(true), [fetchOrder]);
 
   useEffect(load, [load]);
 
-  if (state.status === 'loading') return <DetailSkeleton />;
-  if (state.status === 'missing') return <NotFound />;
+  // keepAlive keeps this page mounted, so the first load would otherwise
+  // be the only one — re-read the order each time the buyer comes back,
+  // quietly, since there is already an order on screen.
+  useDidShow(() => fetchOrder(false));
 
-  const { order } = state;
+  const order = state.status === 'ready' ? state.order : null;
+
+  // And while the parcel is moving, keep re-reading: the demo courier
+  // advances it server-side on a timer (advance_simulated_fulfilment), so
+  // a buyer sitting here should watch it arrive rather than have to leave
+  // the screen and come back to find out.
+  const inFlight =
+    order?.status === 'PAID' &&
+    order.shopOrders.some(
+      s => s.status === 'CONFIRMED' || s.status === 'SHIPPING'
+    );
+
+  useEffect(() => {
+    if (!inFlight) return;
+    const id = setInterval(() => fetchOrder(false), 15_000);
+    return () => clearInterval(id);
+  }, [inFlight, fetchOrder]);
+
+  if (state.status === 'loading') return <DetailSkeleton />;
+  if (order === null) return <NotFound />;
 
   const cancelNow = async () => {
     setCancelling(true);
@@ -124,7 +151,10 @@ const OrderDetailPage = () => {
 
       {order.status === 'PAID' ? (
         <Card>
-          <OrderTrackingMap createdAt={order.createdAt} />
+          <OrderTrackingMap
+            createdAt={order.createdAt}
+            shopOrders={order.shopOrders}
+          />
         </Card>
       ) : order.status === 'PENDING' ? (
         <Card>

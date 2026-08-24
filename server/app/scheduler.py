@@ -1,6 +1,6 @@
 """The jobs that must run whether or not anybody is using the shop.
 
-Two of them, and both were previously piggy-backing on user traffic:
+Three of them. Two were previously piggy-backing on user traffic:
 
   * releasing the stock of orders nobody paid for. It ran when someone
     placed an order or opened their order list, which means a quiet night
@@ -41,6 +41,14 @@ async def _tick() -> None:
                 log.info("released stock from %d expired order(s)", released)
     except Exception:  # noqa: BLE001 — keep the loop alive
         log.exception("release_expired failed")
+
+    try:
+        async with SessionFactory() as session:
+            moved = await orders.advance_simulated_fulfilment(session)
+            if moved:
+                log.info("simulated courier moved %d shop order(s)", moved)
+    except Exception:  # noqa: BLE001
+        log.exception("advance_simulated_fulfilment failed")
 
     try:
         async with SessionFactory() as session:

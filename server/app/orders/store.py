@@ -748,6 +748,70 @@ async def advance_fulfilment(
     return shop_order, order, items, "OK"
 
 
+async def advance_simulated_fulfilment(session: AsyncSession) -> int:
+    """Walk paid orders down the fulfilment ladder on a timer.
+
+    There is no courier and no logistics feed behind this shop, so the
+    delivery is simulated — but it is simulated *here*, on the rows the
+    rest of the app reads, not in the buyer's tracker widget. That is the
+    whole point: the tracker used to run its own clock, so it announced
+    "Đã giao" while shop_orders.status still said CONFIRMED and every
+    other screen still said "Chờ lấy hàng". One clock, one source of
+    truth, and the two can no longer disagree.
+
+    The clock starts when the buyer went to pay (falling back to when the
+    order was placed), and the comparison is made in the database so a
+    naive/aware datetime can never decide whether a parcel arrived.
+
+    Delivering runs before shipping so an order older than both windows
+    lands on DELIVERED in a single pass rather than crawling one stage per
+    tick. A seller who fulfils by hand simply gets there first; this only
+    moves what is still lagging, and never touches CANCELLED.
+    """
+    from app.config import settings
+
+    if not settings.fulfilment_sim_enabled:
+        return 0
+
+    now = datetime.now(timezone.utc)
+    started = func.coalesce(Order.payment_started_at, Order.created_at)
+
+    async def due(from_statuses: list[str], after_seconds: int) -> list[ShopOrder]:
+        cutoff = now - timedelta(seconds=after_seconds)
+        return list(
+            (
+                await session.execute(
+                    select(ShopOrder)
+                    .join(Order, Order.id == ShopOrder.order_id)
+                    .where(
+                        Order.status == "PAID",
+                        ShopOrder.status.in_(from_statuses),
+                        started < cutoff,
+                    )
+                    .with_for_update(skip_locked=True, of=ShopOrder)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    moved = 0
+    for shop_order in await due(
+        ["CONFIRMED", "SHIPPING"], settings.fulfilment_deliver_after_seconds
+    ):
+        shop_order.status = "DELIVERED"
+        moved += 1
+    for shop_order in await due(
+        ["CONFIRMED"], settings.fulfilment_ship_after_seconds
+    ):
+        shop_order.status = "SHIPPING"
+        moved += 1
+
+    if moved:
+        await session.commit()
+    return moved
+
+
 async def shop_orders_view(
     session: AsyncSession, order_ids: list[str]
 ) -> dict[str, list[tuple[ShopOrder, str, list[OrderItem]]]]:

@@ -5,6 +5,7 @@ import {
   Icon,
   Skeleton,
   Typography,
+  useDidShow,
   useNavigate,
   type IIconName,
 } from '@v-miniapp/ui-react';
@@ -190,17 +191,17 @@ const OrderStages = () => {
   const [counts, setCounts] = useState<Partial<Record<OrderStage, number>>>({});
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const tally = useCallback(() => {
     let alive = true;
     listOrders()
       .then(page => {
         if (!alive) return;
-        const tally: Partial<Record<OrderStage, number>> = {};
+        const counted: Partial<Record<OrderStage, number>> = {};
         for (const order of page.items) {
           const stage = orderStage(order);
-          tally[stage] = (tally[stage] ?? 0) + 1;
+          counted[stage] = (counted[stage] ?? 0) + 1;
         }
-        setCounts(tally);
+        setCounts(counted);
       })
       // No badges then. They decorate the tiles; the tiles still work.
       .catch(() => {});
@@ -208,6 +209,12 @@ const OrderStages = () => {
       alive = false;
     };
   }, []);
+
+  useEffect(tally, [tally]);
+
+  // Same as the orders list: kept alive, so without this the badges keep
+  // counting the orders as they stood the first time the page opened.
+  useDidShow(tally);
 
   const open = (stage: OrderStage | 'all') => {
     showOrders(stage);
