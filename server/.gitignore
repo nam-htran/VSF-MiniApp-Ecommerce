@@ -4,8 +4,5 @@ __pycache__/
 .env
 .pytest_cache/
 
-# Uploaded product images (runtime, not source)
-/uploads/
-
-# Amazon-M2 translation cache used by scripts/seed_demo.py
-/scripts/.amazon-m2-cache/
+# Keep the generated cache, but not its duplicate temporary snapshot.
+/scripts/.amazon-m2-cache/*.tmp
