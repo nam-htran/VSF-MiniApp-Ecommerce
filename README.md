@@ -6,7 +6,7 @@ RQ-VAE gom sản phẩm vào các cụm phân cấp, Transformer dự đoán c�
 lịch sử xem, còn FastAPI chọn sản phẩm đang hoạt động để trả về giao diện.
 
 <p align="center">
-  <img src="docs/phase2/Architecture_RQ-VAE.png" alt="Residual Quantization V-Market" width="900" />
+  <img src="docs/phase2/TIGER/Architecture_RQ-VAE.png" alt="Residual Quantization V-Market" width="900" />
 </p>
 
 | Thành phần | Vai trò |
